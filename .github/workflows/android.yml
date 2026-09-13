@@ -13,17 +13,9 @@ permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Verify (API ${{ matrix.api-level }})
+  verify-api-31:
+    name: Verify (API 31)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        api-level: [31]
-        include:
-          - api-level: 37
-            scheduled-only: true
-    if: matrix.scheduled-only != true || github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 21
@@ -45,7 +37,7 @@ jobs:
       - name: Run instrumentation smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: ${{ matrix.api-level }}
+          api-level: 31
           arch: x86_64
           target: google_apis
           script: bash ./gradlew connectedDebugAndroidTest --stacktrace
@@ -53,7 +45,48 @@ jobs:
         if: ${{ always() && github.event_name == 'schedule' }}
         uses: actions/upload-artifact@v4
         with:
-          name: android-api-${{ matrix.api-level }}-artifacts
+          name: android-api-31-artifacts
+          if-no-files-found: warn
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/reports/
+            app/build/test-results/
+            app/build/outputs/androidTest-results/
+
+  verify-api-37-daily:
+    name: Daily verification (API 37)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install compile SDK packages
+        run: sdkmanager "platforms;android-37" "build-tools;37.0.0" "platform-tools"
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+      - name: Static checks and JVM tests
+        run: bash ./gradlew lintDebug testDebugUnitTest --stacktrace
+      - name: Assemble debug APK
+        run: bash ./gradlew assembleDebug --stacktrace
+      - name: Run instrumentation smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 37
+          arch: x86_64
+          target: google_apis
+          script: bash ./gradlew connectedDebugAndroidTest --stacktrace
+      - name: Upload APK and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-api-37-artifacts
           if-no-files-found: warn
           path: |
             app/build/outputs/apk/debug/*.apk
