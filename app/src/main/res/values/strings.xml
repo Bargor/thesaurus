@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Thesaurus</string>
+    <string name="navigation_entries">Wpisy</string>
+    <string name="navigation_summary">Podsumowanie</string>
+    <string name="navigation_reports">Raporty</string>
+    <string name="empty_entries">Nie ma jeszcze żadnych wpisów.</string>
+    <string name="empty_summary">Podsumowanie pojawi się po dodaniu wpisów.</string>
+    <string name="empty_reports">Raporty będą dostępne wkrótce.</string>
+    <string name="screen_description">Ekran: %1$s</string>
+</resources>
