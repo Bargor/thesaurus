@@ -19,13 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
           cache: gradle
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
       - name: Install compile SDK packages
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
       - name: Validate Gradle wrapper
@@ -65,13 +67,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
           cache: gradle
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
       - name: Install compile SDK packages
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
       - name: Validate Gradle wrapper
