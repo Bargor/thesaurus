@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "18500560132",
+    "project_id": "thesaurus-cef84",
+    "storage_bucket": "thesaurus-cef84.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:18500560132:android:b14a4b336b8625c624dc51",
+        "android_client_info": {
+          "package_name": "pl.bargor.thesaurus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDVchMdVtSkZGid7F9QPMTA0OFY_TuJcTo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
