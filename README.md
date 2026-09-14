@@ -10,6 +10,7 @@ placeholder empty states.
 - JDK 21
 - Android SDK Platform 37 and Build Tools 37.0.0
 - An Android 31 emulator (for instrumentation tests)
+- Node.js 22 (for the local Firebase Emulator Suite)
 - Gradle 9.6.0 via the checked-in wrapper
 
 The project uses Android Gradle Plugin 9.4.0, Kotlin 2.3.21, and a version
@@ -24,10 +25,14 @@ On macOS/Linux:
 ./gradlew assembleDebug
 ./gradlew testDebugUnitTest
 ./gradlew lintDebug
-./gradlew connectedDebugAndroidTest
+npm ci
+npm run test:rules
+npx firebase emulators:exec --project demo-thesaurus --only auth,firestore \
+  "./gradlew connectedDebugAndroidTest"
 ```
 
-On Windows, replace `./gradlew` with `gradlew.bat`.
+On Windows, replace `./gradlew` with `gradlew.bat` (including inside the
+Firebase emulator command).
 
 To install the debug build on a connected device or running emulator:
 
@@ -45,7 +50,38 @@ lint/static checks, JVM tests, debug assembly, and an API 31 instrumentation
 smoke test. Daily builds additionally run the smoke test on API 37 and upload
 the debug APK plus Android test reports.
 
-## Planned work
+## Firebase foundation
 
-Firebase integration and the expense-tracking product features are deliberately
-out of scope for this bootstrap. They will be added in future issues.
+The app contains Firestore data contracts, an offline-persistent Firestore factory,
+rules, indexes, and an emulator test suite. The Android application is registered as
+`pl.bargor.thesaurus` in Firebase project `thesaurus-cef84`; the checked-in
+`app/google-services.json` contains public client identifiers, not server credentials.
+Its API key is restricted in Google Cloud to this Android package and the registered
+debug signing certificate, and can call only Firebase Management, Cloud Logging,
+Identity Toolkit, Secure Token, Cloud Datastore, and Cloud Firestore. Before using a
+different signing certificate, register its SHA fingerprint in Firebase and add the
+same package/fingerprint pair to the Android key restriction. Never add non-Firebase
+APIs to this client key; create a separate restricted key for those services.
+
+For local rules tests install project-local Node dependencies, then run:
+
+```sh
+npm ci
+npm run test:rules
+```
+
+This starts Firestore Emulator for the `demo-thesaurus` project and runs the rules
+tests. Emulator routing must be requested explicitly by debug/test wiring; it is not
+enabled implicitly in production. Supply Firestore emulator routing to
+`FirebaseFirestoreFactory.create`; Firebase Auth has a separate emulator connection
+helper.
+
+The default Cloud Firestore database is hosted in `europe-central2` (Warsaw). Deploy
+the reviewed rules and indexes with an authenticated Firebase CLI:
+
+```sh
+npx firebase deploy --only firestore:rules,firestore:indexes
+```
+
+The visible Polish UI remains a local placeholder until authentication and household
+onboarding are implemented in the next feature.

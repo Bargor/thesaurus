@@ -1,0 +1,273 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function exactKeys(data, fields) {
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields);
+    }
+
+    function validText(value, maximum) {
+      return value is string && value.size() > 0 && value.size() <= maximum;
+    }
+
+    function validOptionalText(value, maximum) {
+      return value == null || validText(value, maximum);
+    }
+
+    function validEmail(value) {
+      return value is string && value.size() <= 254 &&
+        value.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+    }
+
+    function emailIsCaller(value) {
+      return signedIn() && request.auth.token.email != null &&
+        value == request.auth.token.email;
+    }
+
+    function member(householdId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid));
+    }
+
+    function owner(householdId) {
+      return member(householdId) &&
+        get(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data.role == 'OWNER';
+    }
+
+    function validTag(tag) {
+      return tag is string && tag.size() > 0 && tag.size() <= 40;
+    }
+
+    function validTags(tags) {
+      return tags is list && tags.size() <= 10 && tags.toSet().size() == tags.size() &&
+        (tags.size() < 1 || validTag(tags[0])) &&
+        (tags.size() < 2 || validTag(tags[1])) &&
+        (tags.size() < 3 || validTag(tags[2])) &&
+        (tags.size() < 4 || validTag(tags[3])) &&
+        (tags.size() < 5 || validTag(tags[4])) &&
+        (tags.size() < 6 || validTag(tags[5])) &&
+        (tags.size() < 7 || validTag(tags[6])) &&
+        (tags.size() < 8 || validTag(tags[7])) &&
+        (tags.size() < 9 || validTag(tags[8])) &&
+        (tags.size() < 10 || validTag(tags[9]));
+    }
+
+    function validUser(data) {
+      return exactKeys(data, ['email', 'displayName', 'createdAt', 'updatedAt']) &&
+        validEmail(data.email) && validOptionalText(data.displayName, 80) &&
+        data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function validHousehold(data) {
+      return exactKeys(data, ['name', 'ownerId', 'createdAt', 'updatedAt']) &&
+        validText(data.name, 80) && validText(data.ownerId, 128) &&
+        data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function validMember(data) {
+      return exactKeys(data, ['email', 'displayName', 'role', 'invitationId', 'joinedAt']) &&
+        validEmail(data.email) && validOptionalText(data.displayName, 80) &&
+        (data.role == 'OWNER' || data.role == 'MEMBER') &&
+        (data.invitationId == null || validText(data.invitationId, 128)) &&
+        data.joinedAt is timestamp;
+    }
+
+    function validEntry(householdId, data) {
+      return exactKeys(data, [
+          'householdId', 'amountGrosze', 'date', 'title', 'categoryId',
+          'subcategoryId', 'tags', 'authorId', 'updatedById', 'createdAt',
+          'updatedAt', 'deleted', 'deletedAt', 'deletedById'
+        ]) &&
+        data.householdId == householdId &&
+        data.amountGrosze is int && data.amountGrosze != 0 &&
+        data.date is string && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+        validOptionalText(data.title, 160) &&
+        validText(data.categoryId, 128) &&
+        validOptionalText(data.subcategoryId, 128) &&
+        validTags(data.tags) &&
+        validText(data.authorId, 128) && data.updatedById == request.auth.uid &&
+        data.createdAt is timestamp && data.updatedAt is timestamp &&
+        data.deleted is bool &&
+        ((data.deleted == false && data.deletedAt == null && data.deletedById == null) ||
+          (data.deleted == true && data.deletedAt is timestamp && data.deletedById == request.auth.uid));
+    }
+
+    function validCategory(householdId, data) {
+      return exactKeys(data, [
+          'householdId', 'name', 'color', 'archived', 'defaultEntryType',
+          'authorId', 'updatedById', 'createdAt', 'updatedAt'
+        ]) &&
+        data.householdId == householdId && validText(data.name, 60) &&
+        validOptionalText(data.color, 16) && data.archived is bool &&
+        (data.defaultEntryType == 'EXPENSE' || data.defaultEntryType == 'INCOME') &&
+        validText(data.authorId, 128) && data.updatedById == request.auth.uid &&
+        data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function validSubcategory(householdId, categoryId, data) {
+      return exactKeys(data, [
+          'householdId', 'categoryId', 'name', 'archived', 'authorId',
+          'updatedById', 'createdAt', 'updatedAt'
+        ]) &&
+        data.householdId == householdId && data.categoryId == categoryId &&
+        validText(data.name, 60) && data.archived is bool &&
+        validText(data.authorId, 128) && data.updatedById == request.auth.uid &&
+        data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function validInvitation(householdId, data) {
+      return exactKeys(data, [
+          'householdId', 'email', 'invitedBy', 'expiresAt', 'status',
+          'acceptedBy', 'createdAt'
+        ]) &&
+        data.householdId == householdId && validEmail(data.email) &&
+        validText(data.invitedBy, 128) && data.expiresAt is timestamp &&
+        data.createdAt is timestamp &&
+        (data.acceptedBy == null || validText(data.acceptedBy, 128)) &&
+        (data.status == 'PENDING' || data.status == 'ACCEPTED' || data.status == 'REVOKED');
+    }
+
+    function taxonomyEditor(householdId) {
+      return owner(householdId) || resource.data.authorId == request.auth.uid;
+    }
+
+    function acceptedMemberAfter(householdId, invitationId, email) {
+      return existsAfter(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)) &&
+        getAfter(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data.invitationId == invitationId &&
+        getAfter(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data.email == email;
+    }
+
+    match /users/{uid} {
+      allow get: if signedIn() && uid == request.auth.uid;
+      allow list: if false;
+      allow create: if signedIn() && uid == request.auth.uid &&
+        validUser(request.resource.data) && emailIsCaller(request.resource.data.email) &&
+        request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+      allow update: if signedIn() && uid == request.auth.uid &&
+        validUser(request.resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'updatedAt']) &&
+        request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /households/{householdId} {
+      allow create: if signedIn() && validHousehold(request.resource.data) &&
+        request.resource.data.ownerId == request.auth.uid &&
+        request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+      allow read: if member(householdId);
+      allow update: if owner(householdId) && validHousehold(request.resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt']) &&
+        request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow read: if member(householdId);
+
+        allow create: if signedIn() && uid == request.auth.uid &&
+          validMember(request.resource.data) && request.resource.data.role == 'OWNER' &&
+          request.resource.data.invitationId == null && emailIsCaller(request.resource.data.email) &&
+          request.resource.data.joinedAt == request.time &&
+          getAfter(/databases/$(database)/documents/households/$(householdId)).data.ownerId == request.auth.uid;
+
+        allow create: if signedIn() && uid == request.auth.uid &&
+          validMember(request.resource.data) && request.resource.data.role == 'MEMBER' &&
+          validText(request.resource.data.invitationId, 128) &&
+          emailIsCaller(request.resource.data.email) && request.resource.data.joinedAt == request.time &&
+          getAfter(/databases/$(database)/documents/households/$(householdId)/invitations/$(request.resource.data.invitationId)).data.status == 'ACCEPTED' &&
+          getAfter(/databases/$(database)/documents/households/$(householdId)/invitations/$(request.resource.data.invitationId)).data.acceptedBy == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/households/$(householdId)/invitations/$(request.resource.data.invitationId)).data.email == request.resource.data.email;
+
+        allow update: if owner(householdId) && validMember(request.resource.data) &&
+          request.resource.data.email == resource.data.email &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.invitationId == resource.data.invitationId &&
+          request.resource.data.joinedAt == resource.data.joinedAt;
+        allow delete: if owner(householdId) &&
+          uid != get(/databases/$(database)/documents/households/$(householdId)).data.ownerId;
+      }
+
+      match /entries/{entryId} {
+        allow read: if member(householdId);
+        allow create: if member(householdId) && validEntry(householdId, request.resource.data) &&
+          request.resource.data.authorId == request.auth.uid && request.resource.data.deleted == false &&
+          request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+
+        allow update: if member(householdId) && !resource.data.deleted &&
+          (owner(householdId) || resource.data.authorId == request.auth.uid) &&
+          validEntry(householdId, request.resource.data) &&
+          request.resource.data.householdId == resource.data.householdId &&
+          request.resource.data.authorId == resource.data.authorId &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.updatedAt == request.time &&
+          (request.resource.data.deleted == false ||
+            (request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'deleted', 'deletedAt', 'deletedById', 'updatedAt', 'updatedById'
+            ]) && request.resource.data.deletedAt == request.time));
+        allow delete: if false;
+      }
+
+      match /categories/{categoryId} {
+        allow read: if member(householdId);
+        allow create: if member(householdId) && validCategory(householdId, request.resource.data) &&
+          request.resource.data.authorId == request.auth.uid && request.resource.data.archived == false &&
+          request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+        allow update: if member(householdId) && taxonomyEditor(householdId) &&
+          validCategory(householdId, request.resource.data) &&
+          request.resource.data.householdId == resource.data.householdId &&
+          request.resource.data.authorId == resource.data.authorId &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+
+        match /subcategories/{subcategoryId} {
+          allow read: if member(householdId);
+          allow create: if member(householdId) &&
+            validSubcategory(householdId, categoryId, request.resource.data) &&
+            request.resource.data.authorId == request.auth.uid && request.resource.data.archived == false &&
+            request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+          allow update: if member(householdId) && taxonomyEditor(householdId) &&
+            validSubcategory(householdId, categoryId, request.resource.data) &&
+            request.resource.data.householdId == resource.data.householdId &&
+            request.resource.data.categoryId == resource.data.categoryId &&
+            request.resource.data.authorId == resource.data.authorId &&
+            request.resource.data.createdAt == resource.data.createdAt &&
+            request.resource.data.updatedAt == request.time;
+          allow delete: if false;
+        }
+      }
+
+      match /invitations/{invitationId} {
+        allow create: if owner(householdId) && validInvitation(householdId, request.resource.data) &&
+          request.resource.data.invitedBy == request.auth.uid &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.expiresAt > request.time &&
+          request.resource.data.expiresAt <= request.time + duration.value(7, 'd') &&
+          request.resource.data.status == 'PENDING' && request.resource.data.acceptedBy == null;
+
+        allow get: if owner(householdId) ||
+          (emailIsCaller(resource.data.email) &&
+            ((resource.data.status == 'PENDING' && resource.data.expiresAt > request.time) ||
+              (resource.data.status == 'ACCEPTED' &&
+                resource.data.acceptedBy == request.auth.uid)));
+        allow list: if owner(householdId);
+
+        allow update: if owner(householdId) && validInvitation(householdId, request.resource.data) &&
+          resource.data.status == 'PENDING' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+          request.resource.data.status == 'REVOKED';
+
+        allow update: if validInvitation(householdId, request.resource.data) &&
+          resource.data.status == 'PENDING' && resource.data.expiresAt > request.time &&
+          emailIsCaller(resource.data.email) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedBy']) &&
+          request.resource.data.status == 'ACCEPTED' &&
+          request.resource.data.acceptedBy == request.auth.uid &&
+          acceptedMemberAfter(householdId, invitationId, resource.data.email);
+        allow delete: if false;
+      }
+    }
+  }
+}

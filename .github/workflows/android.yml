@@ -25,13 +25,24 @@ jobs:
           java-version: '21'
           cache: gradle
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
       - name: Install compile SDK packages
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
       - name: Static checks and JVM tests
         run: bash ./gradlew lintDebug testDebugUnitTest --stacktrace
+      - name: Set up Node for local Firebase Emulator dependencies
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Run Firestore Rules tests
+        run: |
+          npm ci --ignore-scripts
+          npm run test:rules
       - name: Assemble debug APK
         run: bash ./gradlew assembleDebug --stacktrace
       - name: Enable KVM acceleration
@@ -45,7 +56,7 @@ jobs:
           api-level: 31
           arch: x86_64
           target: google_apis
-          script: bash ./gradlew connectedDebugAndroidTest --stacktrace
+          script: npx --no-install firebase emulators:exec --project demo-thesaurus --only auth,firestore "bash ./gradlew connectedDebugAndroidTest --stacktrace"
       - name: Upload APK and test reports
         if: ${{ always() && github.event_name == 'schedule' }}
         uses: actions/upload-artifact@v4
@@ -71,13 +82,24 @@ jobs:
           java-version: '21'
           cache: gradle
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
       - name: Install compile SDK packages
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
       - name: Static checks and JVM tests
         run: bash ./gradlew lintDebug testDebugUnitTest --stacktrace
+      - name: Set up Node for local Firebase Emulator dependencies
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Run Firestore Rules tests
+        run: |
+          npm ci --ignore-scripts
+          npm run test:rules
       - name: Assemble debug APK
         run: bash ./gradlew assembleDebug --stacktrace
       - name: Enable KVM acceleration
@@ -91,7 +113,7 @@ jobs:
           api-level: 37.0
           arch: x86_64
           target: google_apis
-          script: bash ./gradlew connectedDebugAndroidTest --stacktrace
+          script: npx --no-install firebase emulators:exec --project demo-thesaurus --only auth,firestore "bash ./gradlew connectedDebugAndroidTest --stacktrace"
       - name: Upload APK and test reports
         if: always()
         uses: actions/upload-artifact@v4
