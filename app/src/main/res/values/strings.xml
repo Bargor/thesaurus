@@ -7,4 +7,17 @@
     <string name="empty_summary">Podsumowanie pojawi się po dodaniu wpisów.</string>
     <string name="empty_reports">Raporty będą dostępne wkrótce.</string>
     <string name="screen_description">Ekran: %1$s</string>
+    <string name="auth_title">Thesaurus</string>
+    <string name="auth_screen_description">Logowanie i konfiguracja gospodarstwa</string>
+    <string name="auth_signed_out_description">Zaloguj się kontem Google, aby bezpiecznie korzystać ze wspólnego gospodarstwa.</string>
+    <string name="auth_google_sign_in">Zaloguj się przez Google</string>
+    <string name="auth_please_wait">Chwileczkę…</string>
+    <string name="auth_google_configuration_required">Logowanie Google wymaga jeszcze konfiguracji aplikacji. Spróbuj ponownie po jej zakończeniu.</string>
+    <string name="auth_connection_error">Nie udało się sprawdzić gospodarstwa. Sprawdź połączenie i spróbuj ponownie.</string>
+    <string name="auth_retry">Spróbuj ponownie</string>
+    <string name="auth_back">Wróć</string>
+    <string name="onboarding_welcome">Witaj, %1$s. Utwórz swoje pierwsze gospodarstwo.</string>
+    <string name="onboarding_household_name">Nazwa gospodarstwa</string>
+    <string name="onboarding_create_household">Utwórz gospodarstwo</string>
+    <string name="onboarding_error">Nie udało się utworzyć gospodarstwa. Nic nie zostało zapisane — spróbuj ponownie po odzyskaniu połączenia.</string>
 </resources>

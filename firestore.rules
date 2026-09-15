@@ -56,9 +56,25 @@ service cloud.firestore {
     }
 
     function validUser(data) {
-      return exactKeys(data, ['email', 'displayName', 'createdAt', 'updatedAt']) &&
+      return exactKeys(data, ['email', 'displayName', 'householdId', 'createdAt', 'updatedAt']) &&
         validEmail(data.email) && validOptionalText(data.displayName, 80) &&
+        validText(data.householdId, 128) &&
         data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    // Every profile has one immutable household id. getAfter makes the initial multi-document
+    // transaction possible while exists prevents a second-household transaction from starting.
+    function profileAssignedToAfter(householdId) {
+      return existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId == householdId;
+    }
+
+    function initialOwnerAfter(householdId) {
+      return profileAssignedToAfter(householdId) &&
+        existsAfter(/databases/$(database)/documents/households/$(householdId)) &&
+        getAfter(/databases/$(database)/documents/households/$(householdId)).data.ownerId == request.auth.uid &&
+        existsAfter(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)) &&
+        getAfter(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data.role == 'OWNER';
     }
 
     function validHousehold(data) {
@@ -145,6 +161,10 @@ service cloud.firestore {
       allow list: if false;
       allow create: if signedIn() && uid == request.auth.uid &&
         validUser(request.resource.data) && emailIsCaller(request.resource.data.email) &&
+        !exists(/databases/$(database)/documents/users/$(uid)) &&
+        profileAssignedToAfter(request.resource.data.householdId) &&
+        existsAfter(/databases/$(database)/documents/households/$(request.resource.data.householdId)/members/$(uid)) &&
+        getAfter(/databases/$(database)/documents/households/$(request.resource.data.householdId)/members/$(uid)).data.email == request.resource.data.email &&
         request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
       allow update: if signedIn() && uid == request.auth.uid &&
         validUser(request.resource.data) &&
@@ -155,6 +175,8 @@ service cloud.firestore {
 
     match /households/{householdId} {
       allow create: if signedIn() && validHousehold(request.resource.data) &&
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        profileAssignedToAfter(householdId) &&
         request.resource.data.ownerId == request.auth.uid &&
         request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
       allow read: if member(householdId);
@@ -170,12 +192,14 @@ service cloud.firestore {
           validMember(request.resource.data) && request.resource.data.role == 'OWNER' &&
           request.resource.data.invitationId == null && emailIsCaller(request.resource.data.email) &&
           request.resource.data.joinedAt == request.time &&
+          profileAssignedToAfter(householdId) &&
           getAfter(/databases/$(database)/documents/households/$(householdId)).data.ownerId == request.auth.uid;
 
         allow create: if signedIn() && uid == request.auth.uid &&
           validMember(request.resource.data) && request.resource.data.role == 'MEMBER' &&
           validText(request.resource.data.invitationId, 128) &&
           emailIsCaller(request.resource.data.email) && request.resource.data.joinedAt == request.time &&
+          profileAssignedToAfter(householdId) &&
           getAfter(/databases/$(database)/documents/households/$(householdId)/invitations/$(request.resource.data.invitationId)).data.status == 'ACCEPTED' &&
           getAfter(/databases/$(database)/documents/households/$(householdId)/invitations/$(request.resource.data.invitationId)).data.acceptedBy == request.auth.uid &&
           getAfter(/databases/$(database)/documents/households/$(householdId)/invitations/$(request.resource.data.invitationId)).data.email == request.resource.data.email;
@@ -211,7 +235,7 @@ service cloud.firestore {
 
       match /categories/{categoryId} {
         allow read: if member(householdId);
-        allow create: if member(householdId) && validCategory(householdId, request.resource.data) &&
+        allow create: if (member(householdId) || initialOwnerAfter(householdId)) && validCategory(householdId, request.resource.data) &&
           request.resource.data.authorId == request.auth.uid && request.resource.data.archived == false &&
           request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
         allow update: if member(householdId) && taxonomyEditor(householdId) &&
@@ -224,7 +248,7 @@ service cloud.firestore {
 
         match /subcategories/{subcategoryId} {
           allow read: if member(householdId);
-          allow create: if member(householdId) &&
+          allow create: if (member(householdId) || initialOwnerAfter(householdId)) &&
             validSubcategory(householdId, categoryId, request.resource.data) &&
             request.resource.data.authorId == request.auth.uid && request.resource.data.archived == false &&
             request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;

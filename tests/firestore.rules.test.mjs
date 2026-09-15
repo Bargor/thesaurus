@@ -33,6 +33,32 @@ const categoryRef = (database, id) => doc(database, 'households', householdId, '
 const subcategoryRef = (database, categoryId, id) =>
   doc(database, 'households', householdId, 'categories', categoryId, 'subcategories', id);
 const invitationRef = (database, id) => doc(database, 'households', householdId, 'invitations', id);
+const userRef = (database, uid) => doc(database, 'users', uid);
+
+const firstHouseholdBatch = (database, { uid, email, id }) => {
+  const batch = writeBatch(database);
+  batch.set(userRef(database, uid), {
+    email,
+    displayName: uid,
+    householdId: id,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(database, 'households', id), {
+    name: 'Pierwszy dom',
+    ownerId: uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(database, 'households', id, 'members', uid), {
+    email,
+    displayName: uid,
+    role: 'OWNER',
+    invitationId: null,
+    joinedAt: serverTimestamp(),
+  });
+  return batch;
+};
 
 const entry = (authorId, overrides = {}) => ({
   householdId,
@@ -262,23 +288,52 @@ test('subcategory author permissions and immutable category linkage are enforced
 });
 
 test('users can access only their own validated profile', async () => {
-  const alice = db('alice');
-  const user = doc(alice, 'users', 'alice');
-  await assertSucceeds(setDoc(user, {
-    email: 'alice@example.test',
-    displayName: 'Ala',
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }));
+  const alice = db('profile-alice');
+  const user = userRef(alice, 'profile-alice');
+  await assertSucceeds(firstHouseholdBatch(alice, {
+    uid: 'profile-alice', email: 'profile-alice@example.test', id: 'profile-house',
+  }).commit());
   await assertSucceeds(updateDoc(user, {
     displayName: 'Alicja',
     updatedAt: serverTimestamp(),
   }));
-  await assertFails(getDoc(doc(db('bob'), 'users', 'alice')));
+  await assertFails(getDoc(userRef(db('bob'), 'profile-alice')));
   await assertFails(updateDoc(user, {
     email: 'changed@example.test',
     updatedAt: serverTimestamp(),
   }));
+});
+
+test('initial onboarding atomically creates one owner household and starter categories', async () => {
+  const newcomer = db('newcomer');
+  const batch = firstHouseholdBatch(newcomer, {
+    uid: 'newcomer', email: 'newcomer@example.test', id: 'newcomer-house',
+  });
+  batch.set(doc(newcomer, 'households', 'newcomer-house', 'categories', 'jedzenie'), {
+    householdId: 'newcomer-house',
+    name: 'Jedzenie',
+    color: null,
+    archived: false,
+    defaultEntryType: 'EXPENSE',
+    authorId: 'newcomer',
+    updatedById: 'newcomer',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await assertSucceeds(batch.commit());
+  const membership = await getDoc(doc(newcomer, 'households', 'newcomer-house', 'members', 'newcomer'));
+  assert.equal(membership.data().role, 'OWNER');
+  await assertSucceeds(getDoc(doc(newcomer, 'households', 'newcomer-house', 'categories', 'jedzenie')));
+});
+
+test('a profile cannot create or join a second household', async () => {
+  const single = db('single');
+  await assertSucceeds(firstHouseholdBatch(single, {
+    uid: 'single', email: 'single@example.test', id: 'single-house',
+  }).commit());
+  await assertFails(firstHouseholdBatch(single, {
+    uid: 'single', email: 'single@example.test', id: 'second-house',
+  }).commit());
 });
 
 test('invitations require a matching email and expire within seven days', async () => {
@@ -321,6 +376,13 @@ test('accepting an invitation and creating membership must be one atomic batch',
   }));
 
   const batch = writeBatch(guest);
+  batch.set(userRef(guest, 'guest'), {
+    email: 'guest@example.test',
+    displayName: 'Gość',
+    householdId,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
   batch.update(invitationRef(guest, 'invite-accept'), {
     status: 'ACCEPTED',
     acceptedBy: 'guest',

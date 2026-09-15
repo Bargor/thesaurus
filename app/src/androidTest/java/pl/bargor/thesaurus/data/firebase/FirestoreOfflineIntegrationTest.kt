@@ -46,6 +46,16 @@ class FirestoreOfflineIntegrationTest {
             val household = firestore.collection(FirestorePaths.HOUSEHOLDS).document(householdId)
             firestore.runBatch { batch ->
                 batch.set(
+                    firestore.collection(FirestorePaths.USERS).document(uid),
+                    mapOf(
+                        "email" to email,
+                        "displayName" to null,
+                        "householdId" to householdId,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+                batch.set(
                     household,
                     mapOf(
                         "name" to "Dom testowy",
