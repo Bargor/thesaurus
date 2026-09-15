@@ -29,9 +29,11 @@ import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.User
+import pl.bargor.thesaurus.data.onboarding.StarterTaxonomy
 import java.time.Instant
 import java.time.LocalDate
 import java.util.Locale
+import javax.inject.Inject
 
 /** Firestore paths are intentionally centralized so security rules and data contracts stay aligned. */
 object FirestorePaths {
@@ -85,6 +87,24 @@ interface InvitationRepository {
     suspend fun create(invitation: Invitation)
     suspend fun revoke(householdId: String, invitationId: String)
     suspend fun accept(invitation: Invitation, member: Member)
+}
+
+/** A signed-in Firebase principal without coupling onboarding to the Firebase SDK. */
+data class OnboardingIdentity(val uid: String, val email: String, val displayName: String?)
+
+sealed interface FirstHouseholdResult {
+    data class Created(val householdId: String) : FirstHouseholdResult
+    data class Existing(val householdId: String) : FirstHouseholdResult
+}
+
+interface OnboardingRepository {
+    /** Uses Firestore's normal server-then-cache policy so an existing household can open offline. */
+    suspend fun householdIdFor(uid: String): String?
+    /**
+     * Creates profile, household, owner membership and starter taxonomy in one Firestore transaction.
+     * A retry returns [FirstHouseholdResult.Existing], never a second household.
+     */
+    suspend fun createFirstHousehold(identity: OnboardingIdentity, householdName: String): FirstHouseholdResult
 }
 
 /** Persistent local cache is enabled explicitly. Emulator routing is opt-in at creation time. */
@@ -167,6 +187,7 @@ private fun Instant.toTimestamp() = Timestamp(epochSecond, nano)
 
 private fun User.toDocument() = buildMap<String, Any?> {
     put("email", email.trim().lowercase(Locale.ROOT))
+    put("householdId", householdId)
     put("displayName", displayName?.trim()?.takeIf(String::isNotEmpty))
     put("updatedAt", FieldValue.serverTimestamp())
     if (createdAt == null) put("createdAt", FieldValue.serverTimestamp())
@@ -176,6 +197,7 @@ private fun DocumentSnapshot.toUser(): User? = data?.let { fields ->
     User(
         id = id,
         email = fields["email"].string() ?: return null,
+        householdId = fields["householdId"].string() ?: return null,
         displayName = fields["displayName"].string(),
         createdAt = instant("createdAt"),
         updatedAt = instant("updatedAt"),
@@ -331,12 +353,13 @@ private fun Member.toDocument() = mapOf(
     "joinedAt" to (joinedAt?.toTimestamp() ?: FieldValue.serverTimestamp()),
 )
 
-class FirestoreRepositories(private val firestore: FirebaseFirestore) :
+class FirestoreRepositories @Inject constructor(private val firestore: FirebaseFirestore) :
     UserRepository,
     HouseholdRepository,
     LedgerRepository,
     TaxonomyRepository,
-    InvitationRepository {
+    InvitationRepository,
+    OnboardingRepository {
     private fun household(id: String) = firestore.collection(FirestorePaths.HOUSEHOLDS).document(id)
 
     override fun observeUser(userId: String): Flow<SyncObservation<User>> =
@@ -344,7 +367,12 @@ class FirestoreRepositories(private val firestore: FirebaseFirestore) :
 
     override suspend fun save(user: User) {
         firestore.collection(FirestorePaths.USERS).document(user.id)
-            .set(user.toDocument(), SetOptions.merge()).await()
+            .update(
+                mapOf(
+                    "displayName" to user.displayName?.trim()?.takeIf(String::isNotEmpty),
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                ),
+            ).await()
     }
 
     override fun observeHousehold(
@@ -491,11 +519,109 @@ class FirestoreRepositories(private val firestore: FirebaseFirestore) :
         require(member.role == MemberRole.MEMBER)
         val household = household(invitation.householdId)
         firestore.runBatch { batch ->
+            batch.set(
+                firestore.collection(FirestorePaths.USERS).document(member.uid),
+                mapOf(
+                    "email" to member.email.trim().lowercase(Locale.ROOT),
+                    "displayName" to member.displayName?.trim()?.takeIf(String::isNotEmpty),
+                    "householdId" to invitation.householdId,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                ),
+            )
             batch.update(
                 household.collection(FirestorePaths.INVITATIONS).document(invitation.id),
                 mapOf("status" to InvitationStatus.ACCEPTED.name, "acceptedBy" to member.uid),
             )
             batch.set(household.collection(FirestorePaths.MEMBERS).document(member.uid), member.toDocument())
+        }.await()
+    }
+
+    override suspend fun householdIdFor(uid: String): String? =
+        firestore.collection(FirestorePaths.USERS).document(uid).get().await().toUser()?.householdId
+
+    override suspend fun createFirstHousehold(
+        identity: OnboardingIdentity,
+        householdName: String,
+    ): FirstHouseholdResult {
+        val normalizedName = householdName.trim()
+        require(normalizedName.isNotEmpty() && normalizedName.length <= 80) {
+            "Nazwa gospodarstwa musi mieć od 1 do 80 znaków."
+        }
+        val users = firestore.collection(FirestorePaths.USERS)
+        val user = users.document(identity.uid)
+        // Generate once outside the transaction: retries always target the same candidate household.
+        val household = firestore.collection(FirestorePaths.HOUSEHOLDS).document()
+        val member = household.collection(FirestorePaths.MEMBERS).document(identity.uid)
+        return firestore.runTransaction { transaction ->
+            val existing = transaction.get(user).toUser()
+            if (existing != null) {
+                FirstHouseholdResult.Existing(existing.householdId)
+            } else {
+                val normalizedEmail = identity.email.trim().lowercase(Locale.ROOT)
+                transaction.set(
+                    user,
+                    mapOf(
+                        "email" to normalizedEmail,
+                        "displayName" to identity.displayName?.trim()?.takeIf(String::isNotEmpty),
+                        "householdId" to household.id,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+                transaction.set(
+                    household,
+                    mapOf(
+                        "name" to normalizedName,
+                        "ownerId" to identity.uid,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+                transaction.set(
+                    member,
+                    mapOf(
+                        "email" to normalizedEmail,
+                        "displayName" to identity.displayName?.trim()?.takeIf(String::isNotEmpty),
+                        "role" to MemberRole.OWNER.name,
+                        "invitationId" to null,
+                        "joinedAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+                StarterTaxonomy.categories.forEach { category ->
+                    val categoryReference = household.collection(FirestorePaths.CATEGORIES).document(category.id)
+                    transaction.set(
+                        categoryReference,
+                        mapOf(
+                            "householdId" to household.id,
+                            "name" to category.name,
+                            "color" to null,
+                            "archived" to false,
+                            "defaultEntryType" to category.defaultEntryType.name,
+                            "authorId" to identity.uid,
+                            "updatedById" to identity.uid,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp(),
+                        ),
+                    )
+                    category.subcategories.forEach { subcategory ->
+                        transaction.set(
+                            categoryReference.collection(FirestorePaths.SUBCATEGORIES).document(subcategory.id),
+                            mapOf(
+                                "householdId" to household.id,
+                                "categoryId" to category.id,
+                                "name" to subcategory.name,
+                                "archived" to false,
+                                "authorId" to identity.uid,
+                                "updatedById" to identity.uid,
+                                "createdAt" to FieldValue.serverTimestamp(),
+                                "updatedAt" to FieldValue.serverTimestamp(),
+                            ),
+                        )
+                    }
+                }
+                FirstHouseholdResult.Created(household.id)
+            }
         }.await()
     }
 }

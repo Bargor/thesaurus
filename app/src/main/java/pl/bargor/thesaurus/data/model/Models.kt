@@ -35,6 +35,8 @@ data class SyncObservation<T>(
 data class User(
     val id: String,
     val email: String,
+    /** Immutable household assignment. A user belongs to exactly one household. */
+    val householdId: String,
     val displayName: String? = null,
     val createdAt: Instant? = null,
     val updatedAt: Instant? = null,
@@ -42,6 +44,7 @@ data class User(
     init {
         id.requiredId("Id użytkownika")
         require(email.trim().contains('@'))
+        householdId.requiredId("Id gospodarstwa")
         require(displayName?.trim()?.length ?: 0 <= 80)
     }
 }
