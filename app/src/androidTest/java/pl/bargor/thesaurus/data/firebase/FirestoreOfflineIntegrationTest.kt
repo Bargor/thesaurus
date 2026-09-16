@@ -12,8 +12,10 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import pl.bargor.thesaurus.LocalNetworkPermissionRule
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.SyncState
@@ -22,6 +24,9 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class FirestoreOfflineIntegrationTest {
+    @get:Rule
+    val localNetworkPermissionRule = LocalNetworkPermissionRule()
+
     @Test
     fun offlineWriteIsPendingThenSynchronizesWhenNetworkReturns() = runBlocking {
         val suffix = UUID.randomUUID().toString()
