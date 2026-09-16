@@ -8,12 +8,17 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import pl.bargor.thesaurus.LocalNetworkPermissionRule
 import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class HouseholdOnboardingIntegrationTest {
+    @get:Rule
+    val localNetworkPermissionRule = LocalNetworkPermissionRule()
+
     @Test
     fun firstHouseholdIsCompleteAndRetryDoesNotCreateAnotherOne() = runBlocking {
         val suffix = UUID.randomUUID().toString()

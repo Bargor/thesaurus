@@ -6,6 +6,12 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      run_api_37:
+        description: Run API 37 daily verification
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: "0 2 * * *"
 
@@ -71,7 +77,7 @@ jobs:
 
   verify-api-37-daily:
     name: Daily verification (API 37)
-    if: github.event_name == 'schedule'
+    if: ${{ github.event_name == 'schedule' || inputs.run_api_37 }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +90,14 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
+          cmdline-tools-version: 15859902
           packages: ''
+      - name: Prefer current Android command-line tools
+        run: |
+          # android-emulator-runner prepends cmdline-tools/latest to PATH. Point that
+          # alias at version 22.0, which understands API 37 feature-drop packages.
+          mv "$ANDROID_HOME/cmdline-tools/latest" "$RUNNER_TEMP/android-cmdline-tools-preinstalled"
+          ln -s "$ANDROID_HOME/cmdline-tools/22.0" "$ANDROID_HOME/cmdline-tools/latest"
       - name: Install compile SDK packages
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
       - name: Validate Gradle wrapper
@@ -110,7 +123,7 @@ jobs:
       - name: Run instrumentation smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 37.0
+          api-level: '37.0'
           arch: x86_64
           target: google_apis
           script: npx --no-install firebase emulators:exec --project demo-thesaurus --only auth,firestore "bash ./gradlew connectedDebugAndroidTest --stacktrace"
