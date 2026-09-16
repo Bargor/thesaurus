@@ -134,6 +134,26 @@ service cloud.firestore {
         data.createdAt is timestamp && data.updatedAt is timestamp;
     }
 
+    function activeCategoryAfter(householdId, categoryId) {
+      return existsAfter(/databases/$(database)/documents/households/$(householdId)/categories/$(categoryId)) &&
+        getAfter(/databases/$(database)/documents/households/$(householdId)/categories/$(categoryId)).data.archived == false;
+    }
+
+    function activeSubcategoryAfter(householdId, categoryId, subcategoryId) {
+      return existsAfter(/databases/$(database)/documents/households/$(householdId)/categories/$(categoryId)/subcategories/$(subcategoryId)) &&
+        getAfter(/databases/$(database)/documents/households/$(householdId)/categories/$(categoryId)/subcategories/$(subcategoryId)).data.categoryId == categoryId &&
+        getAfter(/databases/$(database)/documents/households/$(householdId)/categories/$(categoryId)/subcategories/$(subcategoryId)).data.archived == false;
+    }
+
+    function validActiveEntryTaxonomyAfter(householdId, data) {
+      return activeCategoryAfter(householdId, data.categoryId) &&
+        (data.subcategoryId == null || activeSubcategoryAfter(householdId, data.categoryId, data.subcategoryId));
+    }
+
+    function entryTaxonomyUnchanged(before, after) {
+      return before.categoryId == after.categoryId && before.subcategoryId == after.subcategoryId;
+    }
+
     function validInvitation(householdId, data) {
       return exactKeys(data, [
           'householdId', 'email', 'invitedBy', 'expiresAt', 'status',
@@ -216,6 +236,7 @@ service cloud.firestore {
       match /entries/{entryId} {
         allow read: if member(householdId);
         allow create: if member(householdId) && validEntry(householdId, request.resource.data) &&
+          validActiveEntryTaxonomyAfter(householdId, request.resource.data) &&
           request.resource.data.authorId == request.auth.uid && request.resource.data.deleted == false &&
           request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
 
@@ -226,6 +247,8 @@ service cloud.firestore {
           request.resource.data.authorId == resource.data.authorId &&
           request.resource.data.createdAt == resource.data.createdAt &&
           request.resource.data.updatedAt == request.time &&
+          (entryTaxonomyUnchanged(resource.data, request.resource.data) ||
+            validActiveEntryTaxonomyAfter(householdId, request.resource.data)) &&
           (request.resource.data.deleted == false ||
             (request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'deleted', 'deletedAt', 'deletedById', 'updatedAt', 'updatedById'
@@ -250,6 +273,7 @@ service cloud.firestore {
           allow read: if member(householdId);
           allow create: if (member(householdId) || initialOwnerAfter(householdId)) &&
             validSubcategory(householdId, categoryId, request.resource.data) &&
+            activeCategoryAfter(householdId, categoryId) &&
             request.resource.data.authorId == request.auth.uid && request.resource.data.archived == false &&
             request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
           allow update: if member(householdId) && taxonomyEditor(householdId) &&

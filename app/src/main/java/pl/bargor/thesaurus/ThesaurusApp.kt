@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import pl.bargor.thesaurus.ui.auth.AuthUiState
 import pl.bargor.thesaurus.ui.auth.AuthViewModel
+import pl.bargor.thesaurus.ui.taxonomy.TaxonomyScreen
+import pl.bargor.thesaurus.ui.taxonomy.TaxonomyViewModel
 
 enum class Destination(
     @param:StringRes val labelRes: Int,
@@ -62,7 +65,7 @@ enum class Destination(
 fun ThesaurusApp(authViewModel: AuthViewModel = viewModel()) {
     val authState by authViewModel.state.collectAsState()
     when (val state = authState) {
-        is AuthUiState.Ready -> HouseholdApp()
+        is AuthUiState.Ready -> HouseholdApp(state.identity.uid, state.householdId)
         else -> AuthenticationContent(
             state = state,
             onSignIn = authViewModel::signIn,
@@ -73,7 +76,10 @@ fun ThesaurusApp(authViewModel: AuthViewModel = viewModel()) {
 }
 
 @Composable
-internal fun HouseholdApp() {
+internal fun HouseholdApp(
+    actorId: String = "preview-user",
+    householdId: String = "preview-household",
+) {
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
@@ -120,8 +126,18 @@ internal fun HouseholdApp() {
         ) {
             Destination.entries.forEach { destination ->
                 composable(destination.route) {
-                    DestinationContent(destination)
+                    DestinationContent(
+                        destination = destination,
+                        onOpenSettings = { navController.navigate("settings") },
+                    )
                 }
+            }
+            composable("settings") {
+                TaxonomyRoute(
+                    householdId = householdId,
+                    actorId = actorId,
+                    onBack = { navController.popBackStack() },
+                )
             }
         }
     }
@@ -217,7 +233,7 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 @Composable
-private fun DestinationContent(destination: Destination) {
+private fun DestinationContent(destination: Destination, onOpenSettings: () -> Unit) {
     val label = stringResource(destination.labelRes)
     val emptyMessage = stringResource(destination.emptyMessageRes)
     val screenDescription = stringResource(R.string.screen_description, label)
@@ -240,5 +256,23 @@ private fun DestinationContent(destination: Destination) {
             text = emptyMessage,
             style = MaterialTheme.typography.bodyLarge,
         )
+        if (destination == Destination.Entries) {
+            Button(
+                modifier = Modifier.padding(top = 24.dp).testTag("open-taxonomy-settings"),
+                onClick = onOpenSettings,
+            ) { Text(stringResource(R.string.open_taxonomy_settings)) }
+        }
     }
+}
+
+@Composable
+private fun TaxonomyRoute(
+    householdId: String,
+    actorId: String,
+    onBack: () -> Unit,
+    taxonomyViewModel: TaxonomyViewModel = viewModel(),
+) {
+    LaunchedEffect(householdId, actorId) { taxonomyViewModel.start(householdId, actorId) }
+    val state by taxonomyViewModel.state.collectAsState()
+    TaxonomyScreen(state = state, onMutation = taxonomyViewModel::mutate, onBack = onBack)
 }

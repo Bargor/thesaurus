@@ -79,6 +79,20 @@ class FirestoreOfflineIntegrationTest {
                         "joinedAt" to FieldValue.serverTimestamp(),
                     ),
                 )
+                batch.set(
+                    household.collection(FirestorePaths.CATEGORIES).document("food"),
+                    mapOf(
+                        "householdId" to householdId,
+                        "name" to "Jedzenie",
+                        "color" to null,
+                        "archived" to false,
+                        "defaultEntryType" to EntryType.EXPENSE.name,
+                        "authorId" to uid,
+                        "updatedById" to uid,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
             }.await()
 
             val repository: LedgerRepository = FirestoreRepositories(firestore)

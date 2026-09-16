@@ -141,6 +141,17 @@ before(async () => {
         joinedAt: Timestamp.now(),
       });
     }
+    await setDoc(categoryRef(admin, 'food'), {
+      householdId,
+      name: 'Jedzenie',
+      color: null,
+      archived: false,
+      defaultEntryType: 'EXPENSE',
+      authorId: 'alice',
+      updatedById: 'alice',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
   });
 });
 
@@ -265,16 +276,74 @@ test('taxonomy authors and owners may update while other members and hard delete
   await assertFails(deleteDoc(categoryRef(db('alice'), 'custom-food')));
 });
 
+test('new entries require an active matching category and subcategory', async () => {
+  const alice = db('alice');
+  await assertFails(setDoc(entryRef(alice, 'missing-category'), entry('alice', { categoryId: 'missing' })));
+
+  await env.withSecurityRulesDisabled(async (context) => {
+    const admin = context.firestore();
+    await setDoc(categoryRef(admin, 'archived-category'), {
+      ...category('alice'), archived: true, createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+    await setDoc(subcategoryRef(admin, 'food', 'active-child'), {
+      ...subcategory('alice', 'food'), archived: false, createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+    await setDoc(subcategoryRef(admin, 'food', 'archived-child'), {
+      ...subcategory('alice', 'food'), archived: true, createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+    await setDoc(subcategoryRef(admin, 'food', 'mismatched-child'), {
+      ...subcategory('alice', 'other-category'), archived: false, createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+  });
+
+  await assertFails(setDoc(entryRef(alice, 'archived-category'), entry('alice', { categoryId: 'archived-category' })));
+  await assertSucceeds(setDoc(entryRef(alice, 'active-subcategory'), entry('alice', { subcategoryId: 'active-child' })));
+  await assertFails(setDoc(entryRef(alice, 'archived-subcategory'), entry('alice', { subcategoryId: 'archived-child' })));
+  await assertFails(setDoc(entryRef(alice, 'mismatched-subcategory'), entry('alice', { subcategoryId: 'mismatched-child' })));
+});
+
+test('historical entries may retain archived taxonomy but changed taxonomy must be active', async () => {
+  const alice = db('alice');
+  const reference = entryRef(alice, 'historical-category');
+  await assertSucceeds(setDoc(reference, entry('alice')));
+  await env.withSecurityRulesDisabled(async (context) => {
+    await updateDoc(categoryRef(context.firestore(), 'food'), { archived: true });
+  });
+  await assertSucceeds(updateDoc(reference, {
+    title: 'Opis historyczny', updatedById: 'alice', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(reference, {
+    categoryId: 'archived-category', updatedById: 'alice', updatedAt: serverTimestamp(),
+  }));
+  await env.withSecurityRulesDisabled(async (context) => {
+    await updateDoc(categoryRef(context.firestore(), 'food'), { archived: false });
+  });
+});
+
+test('categories accept both default entry types but preserve stable authorship and household', async () => {
+  const bob = db('bob');
+  const reference = categoryRef(bob, 'custom-income');
+  await assertSucceeds(setDoc(reference, category('bob', { defaultEntryType: 'INCOME' })));
+  await assertFails(updateDoc(reference, {
+    authorId: 'alice', updatedById: 'bob', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(reference, {
+    householdId: 'other-house', updatedById: 'bob', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(categoryRef(db('charlie'), 'forged-author'), category('bob')));
+});
+
 test('subcategory author permissions and immutable category linkage are enforced', async () => {
   const bob = db('bob');
-  const reference = subcategoryRef(bob, 'custom-food', 'market');
-  await assertSucceeds(setDoc(reference, subcategory('bob', 'custom-food')));
+  await assertSucceeds(setDoc(categoryRef(bob, 'subcategory-parent'), category('bob')));
+  const reference = subcategoryRef(bob, 'subcategory-parent', 'market');
+  await assertSucceeds(setDoc(reference, subcategory('bob', 'subcategory-parent')));
   await assertSucceeds(updateDoc(reference, {
     name: 'Sklep',
     updatedById: 'bob',
     updatedAt: serverTimestamp(),
   }));
-  await assertFails(updateDoc(subcategoryRef(db('charlie'), 'custom-food', 'market'), {
+  await assertFails(updateDoc(subcategoryRef(db('charlie'), 'subcategory-parent', 'market'), {
     name: 'Nie moja',
     updatedById: 'charlie',
     updatedAt: serverTimestamp(),
@@ -285,6 +354,28 @@ test('subcategory author permissions and immutable category linkage are enforced
     updatedAt: serverTimestamp(),
   }));
   await assertFails(deleteDoc(reference));
+});
+
+test('subcategories require an existing parent category', async () => {
+  const bob = db('bob');
+  await assertFails(setDoc(
+    subcategoryRef(bob, 'missing-category', 'orphan'),
+    subcategory('bob', 'missing-category'),
+  ));
+});
+
+test('taxonomy allows archival and restoration without changing stable ids', async () => {
+  const bob = db('bob');
+  const categoryDocument = categoryRef(bob, 'archiveable');
+  const subcategoryDocument = subcategoryRef(bob, 'archiveable', 'child');
+  await assertSucceeds(setDoc(categoryDocument, category('bob')));
+  await assertSucceeds(setDoc(subcategoryDocument, subcategory('bob', 'archiveable')));
+  await assertSucceeds(updateDoc(categoryDocument, { archived: true, updatedById: 'bob', updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(categoryDocument, { archived: false, updatedById: 'bob', updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(subcategoryDocument, { archived: true, updatedById: 'bob', updatedAt: serverTimestamp() }));
+  const saved = await getDoc(subcategoryDocument);
+  assert.equal(saved.id, 'child');
+  assert.equal(saved.data().categoryId, 'archiveable');
 });
 
 test('users can access only their own validated profile', async () => {
