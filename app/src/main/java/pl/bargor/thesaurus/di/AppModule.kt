@@ -13,6 +13,7 @@ import pl.bargor.thesaurus.data.firebase.FirebaseAuthFactory
 import pl.bargor.thesaurus.data.firebase.FirebaseFirestoreFactory
 import pl.bargor.thesaurus.data.firebase.FirestoreRepositories
 import pl.bargor.thesaurus.data.firebase.OnboardingRepository
+import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import javax.inject.Singleton
 
 @Module
@@ -35,4 +36,7 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindOnboardingRepository(repository: FirestoreRepositories): OnboardingRepository
+
+    @Binds @Singleton
+    abstract fun bindTaxonomyRepository(repository: FirestoreRepositories): TaxonomyRepository
 }
