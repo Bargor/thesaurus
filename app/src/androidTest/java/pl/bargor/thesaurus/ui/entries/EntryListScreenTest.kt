@@ -13,6 +13,8 @@ import androidx.compose.ui.test.performClick
 import java.time.LocalDate
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import pl.bargor.thesaurus.ThesaurusTheme
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.SyncState
@@ -64,6 +66,38 @@ class EntryListScreenTest {
             state = EntryListUiState(isLoading = false, error = EntryListError.LoadFailed)
         }
         composeRule.onNodeWithTag("entries-retry").performClick()
+    }
+
+    @Test
+    fun manageableRowConfirmsDeletionAndSnackbarOffersUndo() {
+        val manageable = item("managed", -500, title = "Zakupy").copy(canManage = true)
+        var state by mutableStateOf(EntryListUiState(isLoading = false, entries = listOf(manageable)))
+        var confirmedId: String? = null
+        var undoCalled = false
+        composeRule.setContent {
+            ThesaurusTheme {
+                EntryListScreen(
+                    state = state,
+                    onChangeSort = {},
+                    onLoadNextPage = {},
+                    onRetry = {},
+                    onOpenSettings = {},
+                    onAddEntry = {},
+                    onConfirmDelete = { item ->
+                        confirmedId = item.entry.id
+                        state = state.copy(entries = emptyList(), pendingDeletion = item)
+                    },
+                    onUndoDelete = { undoCalled = true },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("entry-delete-managed").performClick()
+        composeRule.onNodeWithText("Usunąć wpis?").assertIsDisplayed()
+        composeRule.onNodeWithText("Usuń").performClick()
+        assertEquals("managed", confirmedId)
+        composeRule.onNodeWithText("Cofnij").assertIsDisplayed().performClick()
+        assertTrue(undoCalled)
     }
 
     private fun item(id: String, amount: Long, title: String? = null, tags: List<String> = emptyList()) = EntryListItem(

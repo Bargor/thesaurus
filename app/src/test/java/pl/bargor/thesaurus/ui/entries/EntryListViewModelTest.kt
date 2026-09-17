@@ -8,8 +8,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -26,6 +28,7 @@ import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Household
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.Member
+import pl.bargor.thesaurus.data.model.MemberRole
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
@@ -155,6 +158,82 @@ class EntryListViewModelTest {
         assertEquals(EntryListError.LoadFailed, viewModel.state.value.error)
     }
 
+    @Test
+    fun `only author or owner receives management actions`() = runTest {
+        val ledger = FakeLedger(entries = listOf(entry("one", LocalDate.of(2026, 9, 16))))
+        val households = FakeHouseholds().also {
+            it.members.value = SyncObservation(
+                listOf(
+                    Member("author", "author@example.test", "Autor", MemberRole.MEMBER),
+                    Member("other", "other@example.test", "Inny", MemberRole.MEMBER),
+                    Member("owner", "owner@example.test", "Właściciel", MemberRole.OWNER),
+                ),
+                SyncState.SYNCED,
+            )
+        }
+        val asOther = EntryListViewModel(ledger, FakeTaxonomy(), households, FakePreference())
+        asOther.start("home", "other")
+        advanceUntilIdle()
+        assertFalse(asOther.state.value.entries.single().canManage)
+
+        val asAuthor = EntryListViewModel(ledger, FakeTaxonomy(), households, FakePreference())
+        asAuthor.start("home", "author")
+        advanceUntilIdle()
+        assertTrue(asAuthor.state.value.entries.single().canManage)
+
+        val asOwner = EntryListViewModel(ledger, FakeTaxonomy(), households, FakePreference())
+        asOwner.start("home", "owner")
+        advanceUntilIdle()
+        assertTrue(asOwner.state.value.entries.single().canManage)
+    }
+
+    @Test
+    fun `confirmed deletion can be undone before the terminal tombstone`() = runTest {
+        val ledger = FakeLedger(entries = listOf(entry("one", LocalDate.of(2026, 9, 16))))
+        val viewModel = viewModel(ledger)
+        viewModel.start("home", "author")
+        advanceUntilIdle()
+
+        viewModel.confirmDelete(viewModel.state.value.entries.single())
+        assertTrue(viewModel.state.value.entries.isEmpty())
+        assertEquals("one", viewModel.state.value.pendingDeletion?.entry?.id)
+        advanceTimeBy(ENTRY_DELETE_UNDO_WINDOW_MILLIS - 1)
+        runCurrent()
+        assertTrue(ledger.tombstones.isEmpty())
+
+        viewModel.undoDelete()
+        advanceTimeBy(ENTRY_DELETE_UNDO_WINDOW_MILLIS + 1)
+        runCurrent()
+        assertEquals("one", viewModel.state.value.entries.single().entry.id)
+        assertTrue(ledger.tombstones.isEmpty())
+    }
+
+    @Test
+    fun `undo timeout writes one tombstone and a failure restores the row`() = runTest {
+        val entry = entry("one", LocalDate.of(2026, 9, 16))
+        val ledger = FakeLedger(entries = listOf(entry))
+        val viewModel = viewModel(ledger)
+        viewModel.start("home", "author")
+        advanceUntilIdle()
+        viewModel.confirmDelete(viewModel.state.value.entries.single())
+
+        advanceTimeBy(ENTRY_DELETE_UNDO_WINDOW_MILLIS)
+        runCurrent()
+        assertEquals(listOf(Triple("home", "one", "author")), ledger.tombstones)
+        assertTrue(viewModel.state.value.entries.isEmpty())
+
+        val failingLedger = FakeLedger(entries = listOf(entry), failTombstone = true)
+        val failingViewModel = viewModel(failingLedger)
+        failingViewModel.start("home", "author")
+        advanceUntilIdle()
+        failingViewModel.confirmDelete(failingViewModel.state.value.entries.single())
+        advanceTimeBy(ENTRY_DELETE_UNDO_WINDOW_MILLIS)
+        runCurrent()
+
+        assertEquals("one", failingViewModel.state.value.entries.single().entry.id)
+        assertTrue(failingViewModel.state.value.deletionError)
+    }
+
     private fun viewModel(
         ledger: FakeLedger,
         preference: FakePreference = FakePreference(),
@@ -175,11 +254,18 @@ private class FakePreference(var value: EntryListSort = EntryListSort.ACCOUNTING
     override fun save(sort: EntryListSort) { value = sort }
 }
 
-private class FakeLedger(entries: List<LedgerEntry> = emptyList()) : LedgerRepository {
+private class FakeLedger(
+    entries: List<LedgerEntry> = emptyList(),
+    private val failTombstone: Boolean = false,
+) : LedgerRepository {
     val entries = MutableStateFlow(SyncObservation(entries, SyncState.SYNCED))
+    val tombstones = mutableListOf<Triple<String, String, String>>()
     override fun observeEntries(householdId: String, includeDeleted: Boolean): Flow<SyncObservation<List<LedgerEntry>>> = entries
     override suspend fun save(entry: LedgerEntry) = Unit
-    override suspend fun tombstone(householdId: String, entryId: String, actorId: String) = Unit
+    override suspend fun tombstone(householdId: String, entryId: String, actorId: String) {
+        if (failTombstone) error("delete failed")
+        tombstones += Triple(householdId, entryId, actorId)
+    }
 }
 
 private class FakeTaxonomy : TaxonomyRepository {
