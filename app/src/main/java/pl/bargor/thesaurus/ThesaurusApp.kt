@@ -47,6 +47,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import pl.bargor.thesaurus.ui.auth.AuthUiState
 import pl.bargor.thesaurus.ui.auth.AuthViewModel
+import pl.bargor.thesaurus.ui.entry.EntryFormScreen
+import pl.bargor.thesaurus.ui.entry.EntryFormViewModel
 import pl.bargor.thesaurus.ui.taxonomy.TaxonomyScreen
 import pl.bargor.thesaurus.ui.taxonomy.TaxonomyViewModel
 
@@ -129,11 +131,19 @@ internal fun HouseholdApp(
                     DestinationContent(
                         destination = destination,
                         onOpenSettings = { navController.navigate("settings") },
+                        onAddEntry = { navController.navigate("add-entry") },
                     )
                 }
             }
             composable("settings") {
                 TaxonomyRoute(
+                    householdId = householdId,
+                    actorId = actorId,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("add-entry") {
+                EntryFormRoute(
                     householdId = householdId,
                     actorId = actorId,
                     onBack = { navController.popBackStack() },
@@ -233,7 +243,11 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 @Composable
-private fun DestinationContent(destination: Destination, onOpenSettings: () -> Unit) {
+private fun DestinationContent(
+    destination: Destination,
+    onOpenSettings: () -> Unit,
+    onAddEntry: () -> Unit,
+) {
     val label = stringResource(destination.labelRes)
     val emptyMessage = stringResource(destination.emptyMessageRes)
     val screenDescription = stringResource(R.string.screen_description, label)
@@ -258,11 +272,38 @@ private fun DestinationContent(destination: Destination, onOpenSettings: () -> U
         )
         if (destination == Destination.Entries) {
             Button(
-                modifier = Modifier.padding(top = 24.dp).testTag("open-taxonomy-settings"),
+                modifier = Modifier.padding(top = 24.dp).testTag("add-entry"),
+                onClick = onAddEntry,
+            ) { Text(stringResource(R.string.entry_add)) }
+            Button(
+                modifier = Modifier.padding(top = 12.dp).testTag("open-taxonomy-settings"),
                 onClick = onOpenSettings,
             ) { Text(stringResource(R.string.open_taxonomy_settings)) }
         }
     }
+}
+
+@Composable
+private fun EntryFormRoute(
+    householdId: String,
+    actorId: String,
+    onBack: () -> Unit,
+    entryFormViewModel: EntryFormViewModel = viewModel(),
+) {
+    LaunchedEffect(householdId, actorId) { entryFormViewModel.start(householdId, actorId) }
+    val state by entryFormViewModel.state.collectAsState()
+    EntryFormScreen(
+        state = state,
+        onAmountChange = entryFormViewModel::updateAmount,
+        onTitleChange = entryFormViewModel::updateTitle,
+        onTagsChange = entryFormViewModel::updateTags,
+        onDateChange = entryFormViewModel::updateDate,
+        onTypeChange = entryFormViewModel::updateType,
+        onCategorySelected = entryFormViewModel::selectCategory,
+        onSubcategorySelected = entryFormViewModel::selectSubcategory,
+        onSave = entryFormViewModel::save,
+        onBack = onBack,
+    )
 }
 
 @Composable
