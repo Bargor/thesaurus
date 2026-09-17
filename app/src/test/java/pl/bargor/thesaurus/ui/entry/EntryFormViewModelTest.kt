@@ -1,5 +1,6 @@
 package pl.bargor.thesaurus.ui.entry
 
+import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -134,14 +135,55 @@ class EntryFormViewModelTest {
         assertTrue(viewModel.state.value.queuedOffline)
         assertFalse(viewModel.state.value.saving)
     }
+
+    @Test
+    fun `editing a signed entry exposes magnitude and preserves immutable author metadata`() = runTest {
+        val createdAt = Instant.parse("2026-09-14T08:00:00Z")
+        val original = LedgerEntry(
+            id = "existing", householdId = "home", amountGrosze = -1_250,
+            date = LocalDate.of(2026, 9, 14), title = "Zakupy", categoryId = "food",
+            tags = listOf("dom"), authorId = "author", updatedById = "author",
+            createdAt = createdAt,
+        )
+        val ledger = FakeLedgerRepository(initialEntries = listOf(original))
+        val viewModel = EntryFormViewModel(
+            ledger,
+            FakeTaxonomyRepository(listOf(
+                Category(
+                    "food", "home", "Jedzenie", archived = true,
+                    authorId = "author", updatedById = "author",
+                ),
+            )),
+        )
+        val today = LocalDate.of(2026, 9, 16)
+        viewModel.start("home", "owner", entryId = "existing", today = today)
+        advanceUntilIdle()
+
+        assertEquals("12,50", viewModel.state.value.amount)
+        assertEquals(EntryType.EXPENSE, viewModel.state.value.type)
+        assertEquals("Zakupy", viewModel.state.value.title)
+        assertTrue(viewModel.state.value.categories.single().category.archived)
+        viewModel.updateType(EntryType.INCOME)
+        viewModel.updateAmount("15")
+        viewModel.save(today)
+        advanceUntilIdle()
+
+        val saved = ledger.saved.single()
+        assertEquals("existing", saved.id)
+        assertEquals(1_500L, saved.amountGrosze)
+        assertEquals("author", saved.authorId)
+        assertEquals("owner", saved.updatedById)
+        assertEquals(createdAt, saved.createdAt)
+    }
 }
 
 private class FakeLedgerRepository(
     private val fail: Boolean = false,
     private val holdSaveTask: Boolean = false,
+    initialEntries: List<LedgerEntry> = emptyList(),
 ) : LedgerRepository {
     val saved = mutableListOf<LedgerEntry>()
-    private val entries = MutableStateFlow(SyncObservation(emptyList<LedgerEntry>(), SyncState.SYNCED))
+    private val entries = MutableStateFlow(SyncObservation(initialEntries, SyncState.SYNCED))
     override fun observeEntries(householdId: String, includeDeleted: Boolean): Flow<SyncObservation<List<LedgerEntry>>> =
         entries
     override suspend fun save(entry: LedgerEntry) {
