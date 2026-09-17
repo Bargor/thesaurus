@@ -49,6 +49,8 @@ import pl.bargor.thesaurus.ui.auth.AuthUiState
 import pl.bargor.thesaurus.ui.auth.AuthViewModel
 import pl.bargor.thesaurus.ui.entry.EntryFormScreen
 import pl.bargor.thesaurus.ui.entry.EntryFormViewModel
+import pl.bargor.thesaurus.ui.entries.EntryListScreen
+import pl.bargor.thesaurus.ui.entries.EntryListViewModel
 import pl.bargor.thesaurus.ui.taxonomy.TaxonomyScreen
 import pl.bargor.thesaurus.ui.taxonomy.TaxonomyViewModel
 
@@ -81,6 +83,16 @@ fun ThesaurusApp(authViewModel: AuthViewModel = viewModel()) {
 internal fun HouseholdApp(
     actorId: String = "preview-user",
     householdId: String = "preview-household",
+    entriesContent: @Composable (
+        onOpenSettings: () -> Unit,
+        onAddEntry: () -> Unit,
+    ) -> Unit = { onOpenSettings, onAddEntry ->
+        EntryListRoute(
+            householdId = householdId,
+            onOpenSettings = onOpenSettings,
+            onAddEntry = onAddEntry,
+        )
+    },
 ) {
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -126,7 +138,13 @@ internal fun HouseholdApp(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            Destination.entries.forEach { destination ->
+            composable(Destination.Entries.route) {
+                entriesContent(
+                    { navController.navigate("settings") },
+                    { navController.navigate("add-entry") },
+                )
+            }
+            Destination.entries.filter { it != Destination.Entries }.forEach { destination ->
                 composable(destination.route) {
                     DestinationContent(
                         destination = destination,
@@ -151,6 +169,25 @@ internal fun HouseholdApp(
             }
         }
     }
+}
+
+@Composable
+private fun EntryListRoute(
+    householdId: String,
+    onOpenSettings: () -> Unit,
+    onAddEntry: () -> Unit,
+    entryListViewModel: EntryListViewModel = viewModel(),
+) {
+    LaunchedEffect(householdId) { entryListViewModel.start(householdId) }
+    val state by entryListViewModel.state.collectAsState()
+    EntryListScreen(
+        state = state,
+        onChangeSort = entryListViewModel::changeSort,
+        onLoadNextPage = entryListViewModel::loadNextPage,
+        onRetry = entryListViewModel::retry,
+        onOpenSettings = onOpenSettings,
+        onAddEntry = onAddEntry,
+    )
 }
 
 @Composable

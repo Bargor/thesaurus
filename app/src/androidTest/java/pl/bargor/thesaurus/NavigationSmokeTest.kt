@@ -6,6 +6,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
 import org.junit.Rule
 import org.junit.Test
 
@@ -17,7 +19,7 @@ class NavigationSmokeTest {
     fun bottomNavigationShowsEveryDestination() {
         composeTestRule.setContent {
             ThesaurusTheme {
-                HouseholdApp()
+                HouseholdApp(entriesContent = { _, _ -> Text(stringResource(R.string.empty_entries)) })
             }
         }
         composeTestRule.onNodeWithText("Nie ma jeszcze żadnych wpisów.").assertIsDisplayed()

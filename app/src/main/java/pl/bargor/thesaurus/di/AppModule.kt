@@ -12,9 +12,12 @@ import pl.bargor.thesaurus.data.auth.FirebaseGoogleAuthRepository
 import pl.bargor.thesaurus.data.firebase.FirebaseAuthFactory
 import pl.bargor.thesaurus.data.firebase.FirebaseFirestoreFactory
 import pl.bargor.thesaurus.data.firebase.FirestoreRepositories
+import pl.bargor.thesaurus.data.firebase.HouseholdRepository
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.OnboardingRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
+import pl.bargor.thesaurus.ui.entries.EntryListSortPreference
+import pl.bargor.thesaurus.ui.entries.SharedPreferencesEntryListSortPreference
 import javax.inject.Singleton
 
 @Module
@@ -43,4 +46,12 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindLedgerRepository(repository: FirestoreRepositories): LedgerRepository
+
+    @Binds @Singleton
+    abstract fun bindHouseholdRepository(repository: FirestoreRepositories): HouseholdRepository
+
+    @Binds @Singleton
+    abstract fun bindEntryListSortPreference(
+        preference: SharedPreferencesEntryListSortPreference,
+    ): EntryListSortPreference
 }
