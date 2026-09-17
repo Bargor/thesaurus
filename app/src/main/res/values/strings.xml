@@ -22,6 +22,14 @@
     <string name="onboarding_error">Nie udało się utworzyć gospodarstwa. Nic nie zostało zapisane — spróbuj ponownie po odzyskaniu połączenia.</string>
     <string name="open_taxonomy_settings">Kategorie i podkategorie</string>
     <string name="entry_add">Dodaj wpis</string>
+    <string name="entries_sort_date">Data księgowania</string>
+    <string name="entries_sort_created">Kolejność utworzenia</string>
+    <string name="entries_load_more">Pokaż więcej</string>
+    <string name="entries_load_error">Nie udało się wczytać wpisów. Spróbuj ponownie po odzyskaniu połączenia.</string>
+    <string name="entries_sync_pending">Zmiany oczekują na synchronizację.</string>
+    <string name="entries_offline">Tryb offline — wyświetlane są dane lokalne.</string>
+    <string name="entries_unknown_category">Nieznana kategoria</string>
+    <string name="entries_author_and_date">%1$s · %2$s</string>
     <string name="entry_add_title">Nowy wpis</string>
     <string name="entry_back">Wróć</string>
     <string name="entry_amount">Kwota</string>
