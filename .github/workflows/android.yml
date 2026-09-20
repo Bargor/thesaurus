@@ -49,6 +49,8 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm run test:rules
+      - name: Test invitation link hosting fallback
+        run: npm run test:hosting
       - name: Assemble debug APK
         run: bash ./gradlew assembleDebug --stacktrace
       - name: Enable KVM acceleration
@@ -113,6 +115,8 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm run test:rules
+      - name: Test invitation link hosting fallback
+        run: npm run test:hosting
       - name: Assemble debug APK
         run: bash ./gradlew assembleDebug --stacktrace
       - name: Enable KVM acceleration

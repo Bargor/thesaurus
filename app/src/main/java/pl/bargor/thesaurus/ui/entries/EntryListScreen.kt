@@ -42,6 +42,7 @@ fun EntryListScreen(
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onAddEntry: () -> Unit,
+    onOpenFamily: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -56,6 +57,9 @@ fun EntryListScreen(
             }
         }
         SortSelector(state.sort, onChangeSort)
+        TextButton(onClick = onOpenFamily, modifier = Modifier.testTag("open-family")) {
+            Text(stringResource(R.string.open_family))
+        }
         EntryListSyncState(state.syncState)
         when {
             state.isLoading -> CircularProgressIndicator(

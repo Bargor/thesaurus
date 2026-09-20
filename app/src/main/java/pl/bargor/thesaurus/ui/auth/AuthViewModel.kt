@@ -108,6 +108,11 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /** Called after the invitation batch is acknowledged so navigation does not wait for an auth event. */
+    fun membershipAccepted(identity: OnboardingIdentity) {
+        viewModelScope.launch { refresh(identity) }
+    }
+
     private suspend fun refresh(identity: OnboardingIdentity) {
         mutableState.value = AuthUiState.CheckingSession
         runCatching { onboardingRepository.householdIdFor(identity.uid) }

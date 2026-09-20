@@ -14,11 +14,15 @@
   "emulators": {
     "firestore": { "port": 8080 },
     "auth": { "port": 9099 },
+    "hosting": { "port": 5000 },
     "ui": { "enabled": true, "port": 4000 },
     "singleProjectMode": true
   },
   "hosting": {
     "public": "hosting",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+    "ignore": ["firebase.json", "**/node_modules/**"],
+    "rewrites": [
+      { "source": "/zaproszenie/**", "destination": "/index.html" }
+    ]
   }
 }

@@ -83,5 +83,12 @@ the reviewed rules and indexes with an authenticated Firebase CLI:
 npx firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-The visible Polish UI remains a local placeholder until authentication and household
-onboarding are implemented in the next feature.
+## Family invitations and Android App Links
+
+Invitation URLs use `https://thesaurus-cef84.web.app/zaproszenie/{household}/{token}`. The app
+manifest has a strict HTTPS intent filter for that path, but Android will treat it as a verified App
+Link only after `https://thesaurus-cef84.web.app/.well-known/assetlinks.json` has been deployed.
+Serve the file as `application/json`, without redirects, and include package
+`pl.bargor.thesaurus` plus the SHA-256 fingerprint of every certificate that signs an installed APK
+(for example, debug and/or release). Do not invent a fingerprint; publishing the association on the
+HTTPS host is a deployment prerequisite.

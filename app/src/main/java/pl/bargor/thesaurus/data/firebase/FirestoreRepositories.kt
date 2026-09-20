@@ -55,6 +55,8 @@ interface HouseholdRepository {
     fun observeHousehold(householdId: String): Flow<SyncObservation<Household>>
     fun observeMembers(householdId: String): Flow<SyncObservation<List<Member>>>
     suspend fun saveHousehold(household: Household)
+    /** Owners may remove another member; Firestore Rules protect the owner document. */
+    suspend fun removeMember(householdId: String, memberId: String)
 }
 
 interface LedgerRepository {
@@ -418,6 +420,10 @@ class FirestoreRepositories @Inject constructor(private val firestore: FirebaseF
         household(household.id).set(household.toDocument(), SetOptions.merge()).await()
     }
 
+    override suspend fun removeMember(householdId: String, memberId: String) {
+        household(householdId).collection(FirestorePaths.MEMBERS).document(memberId).delete().await()
+    }
+
     override fun observeEntries(
         householdId: String,
         includeDeleted: Boolean,
@@ -518,17 +524,31 @@ class FirestoreRepositories @Inject constructor(private val firestore: FirebaseF
         require(member.invitationId == invitation.id)
         require(member.role == MemberRole.MEMBER)
         val household = household(invitation.householdId)
+        val profile = firestore.collection(FirestorePaths.USERS).document(member.uid)
+        val existingProfile = profile.get().await()
         firestore.runBatch { batch ->
-            batch.set(
-                firestore.collection(FirestorePaths.USERS).document(member.uid),
-                mapOf(
-                    "email" to member.email.trim().lowercase(Locale.ROOT),
-                    "displayName" to member.displayName?.trim()?.takeIf(String::isNotEmpty),
-                    "householdId" to invitation.householdId,
-                    "createdAt" to FieldValue.serverTimestamp(),
-                    "updatedAt" to FieldValue.serverTimestamp(),
-                ),
-            )
+            if (existingProfile.exists()) {
+                // A removed member keeps the immutable household profile. Re-inviting them to the
+                // same household must not try to rewrite createdAt or householdId.
+                batch.update(
+                    profile,
+                    mapOf(
+                        "displayName" to member.displayName?.trim()?.takeIf(String::isNotEmpty),
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+            } else {
+                batch.set(
+                    profile,
+                    mapOf(
+                        "email" to member.email.trim().lowercase(Locale.ROOT),
+                        "displayName" to member.displayName?.trim()?.takeIf(String::isNotEmpty),
+                        "householdId" to invitation.householdId,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                    ),
+                )
+            }
             batch.update(
                 household.collection(FirestorePaths.INVITATIONS).document(invitation.id),
                 mapOf("status" to InvitationStatus.ACCEPTED.name, "acceptedBy" to member.uid),
