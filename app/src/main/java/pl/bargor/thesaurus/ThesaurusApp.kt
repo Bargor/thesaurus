@@ -58,6 +58,8 @@ import pl.bargor.thesaurus.ui.family.InvitationAcceptScreen
 import pl.bargor.thesaurus.ui.family.InvitationAcceptViewModel
 import pl.bargor.thesaurus.ui.taxonomy.TaxonomyScreen
 import pl.bargor.thesaurus.ui.taxonomy.TaxonomyViewModel
+import pl.bargor.thesaurus.ui.summary.SummaryScreen
+import pl.bargor.thesaurus.ui.summary.SummaryViewModel
 
 enum class Destination(
     @param:StringRes val labelRes: Int,
@@ -138,6 +140,7 @@ internal fun HouseholdApp(
             onEditEntry = onEditEntry,
         )
     },
+    summaryContent: @Composable () -> Unit = { SummaryRoute(householdId) },
 ) {
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -191,14 +194,13 @@ internal fun HouseholdApp(
                     { entryId -> navController.navigate("edit-entry/$entryId") },
                 )
             }
-            Destination.entries.filter { it != Destination.Entries }.forEach { destination ->
-                composable(destination.route) {
-                    DestinationContent(
-                        destination = destination,
-                        onOpenSettings = { navController.navigate("settings") },
-                        onAddEntry = { navController.navigate("add-entry") },
-                    )
-                }
+            composable(Destination.Summary.route) { summaryContent() }
+            composable(Destination.Reports.route) {
+                DestinationContent(
+                    destination = Destination.Reports,
+                    onOpenSettings = { navController.navigate("settings") },
+                    onAddEntry = { navController.navigate("add-entry") },
+                )
             }
             composable("settings") {
                 TaxonomyRoute(
@@ -231,6 +233,21 @@ internal fun HouseholdApp(
             }
         }
     }
+}
+
+@Composable
+private fun SummaryRoute(
+    householdId: String,
+    summaryViewModel: SummaryViewModel = viewModel(),
+) {
+    LaunchedEffect(householdId) { summaryViewModel.start(householdId) }
+    val state by summaryViewModel.state.collectAsState()
+    SummaryScreen(
+        state = state,
+        onPreviousMonth = summaryViewModel::previousMonth,
+        onNextMonth = summaryViewModel::nextMonth,
+        onRetry = summaryViewModel::retry,
+    )
 }
 
 @Composable
