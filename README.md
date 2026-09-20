@@ -1,10 +1,11 @@
 # Thesaurus
 
 A Polish-language Android app for tracking household income and expenses.
-The **Wpisy** tab supports shared entries, **Podsumowanie** shows monthly totals,
+The **Wpisy** tab supports shared entries, **Podsumowanie** shows monthly and yearly totals,
 and **Raporty** remains a placeholder for future work.
 
-The monthly summary starts at the current month and can navigate to other months.
+The summary starts with the current month. Switch between **Miesiąc** and **Rok** to
+navigate calendar months or years; each mode remembers its selected period.
 It shows income, absolute expenses, and the signed balance. Totals update from
 Firestore's local cache, including pending writes; the screen indicates when
 cached data may be incomplete or a write is waiting for synchronization.

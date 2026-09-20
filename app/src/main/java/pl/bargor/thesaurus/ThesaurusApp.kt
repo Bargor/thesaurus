@@ -60,6 +60,7 @@ import pl.bargor.thesaurus.ui.taxonomy.TaxonomyScreen
 import pl.bargor.thesaurus.ui.taxonomy.TaxonomyViewModel
 import pl.bargor.thesaurus.ui.summary.SummaryScreen
 import pl.bargor.thesaurus.ui.summary.SummaryViewModel
+import pl.bargor.thesaurus.ui.summary.SummaryPeriodMode
 
 enum class Destination(
     @param:StringRes val labelRes: Int,
@@ -244,8 +245,15 @@ private fun SummaryRoute(
     val state by summaryViewModel.state.collectAsState()
     SummaryScreen(
         state = state,
-        onPreviousMonth = summaryViewModel::previousMonth,
-        onNextMonth = summaryViewModel::nextMonth,
+        onSelectPeriodMode = summaryViewModel::selectPeriodMode,
+        onPreviousPeriod = {
+            if (state.mode == SummaryPeriodMode.MONTH) summaryViewModel.previousMonth()
+            else summaryViewModel.previousYear()
+        },
+        onNextPeriod = {
+            if (state.mode == SummaryPeriodMode.MONTH) summaryViewModel.nextMonth()
+            else summaryViewModel.nextYear()
+        },
         onRetry = summaryViewModel::retry,
     )
 }

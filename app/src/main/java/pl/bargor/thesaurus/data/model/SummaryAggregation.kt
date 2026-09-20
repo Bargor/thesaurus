@@ -1,10 +1,13 @@
 package pl.bargor.thesaurus.data.model
 
 import java.math.BigInteger
+import java.time.Year
 import java.time.YearMonth
 
-/** Inclusive dates keep the same meaning for monthly and future yearly summaries. */
+/** Inclusive dates keep the same meaning for monthly and yearly summaries. */
 fun YearMonth.summaryPeriod(): SummaryPeriod = SummaryPeriod(atDay(1), atEndOfMonth())
+
+fun Year.summaryPeriod(): SummaryPeriod = SummaryPeriod(atDay(1), atMonth(12).atEndOfMonth())
 
 data class SummaryTotals(
     val incomeGrosze: BigInteger = BigInteger.ZERO,

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Clock
+import java.time.Year
 import java.time.YearMonth
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -19,8 +20,12 @@ import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.aggregateEntries
 import pl.bargor.thesaurus.data.model.summaryPeriod
 
+enum class SummaryPeriodMode { MONTH, YEAR }
+
 data class SummaryUiState(
     val month: YearMonth,
+    val year: Year,
+    val mode: SummaryPeriodMode = SummaryPeriodMode.MONTH,
     val totals: SummaryTotals = SummaryTotals(),
     val isLoading: Boolean = true,
     val syncState: SyncState = SyncState.SYNCED,
@@ -32,7 +37,9 @@ class SummaryViewModel @Inject constructor(
     private val ledgerRepository: LedgerRepository,
     clock: Clock,
 ) : ViewModel() {
-    private val mutableState = MutableStateFlow(SummaryUiState(month = YearMonth.now(clock)))
+    private val mutableState = MutableStateFlow(
+        SummaryUiState(month = YearMonth.now(clock), year = Year.now(clock)),
+    )
     val state: StateFlow<SummaryUiState> = mutableState.asStateFlow()
 
     private var householdId: String? = null
@@ -50,7 +57,7 @@ class SummaryViewModel @Inject constructor(
                 observation.value?.let { latestEntries = it }
                 mutableState.update { old ->
                     old.copy(
-                        totals = latestEntries?.let { aggregateEntries(it, old.month.summaryPeriod()) } ?: old.totals,
+                        totals = latestEntries?.let { aggregateEntries(it, old.summaryPeriod()) } ?: old.totals,
                         isLoading = false,
                         syncState = observation.state,
                         hasError = observation.error != null || observation.state == SyncState.ERROR,
@@ -62,6 +69,18 @@ class SummaryViewModel @Inject constructor(
 
     fun previousMonth() = changeMonth(-1)
     fun nextMonth() = changeMonth(1)
+    fun previousYear() = changeYear(-1)
+    fun nextYear() = changeYear(1)
+
+    fun selectPeriodMode(mode: SummaryPeriodMode) {
+        mutableState.update { old ->
+            old.copy(
+                mode = mode,
+                totals = latestEntries?.let { aggregateEntries(it, old.copy(mode = mode).summaryPeriod()) }
+                    ?: SummaryTotals(),
+            )
+        }
+    }
 
     private fun changeMonth(delta: Long) {
         mutableState.update { old ->
@@ -73,6 +92,16 @@ class SummaryViewModel @Inject constructor(
         }
     }
 
+    private fun changeYear(delta: Long) {
+        mutableState.update { old ->
+            val year = old.year.plusYears(delta)
+            old.copy(
+                year = year,
+                totals = latestEntries?.let { aggregateEntries(it, year.summaryPeriod()) } ?: SummaryTotals(),
+            )
+        }
+    }
+
     fun retry() { householdId?.let { startAgain(it) } }
 
     private fun startAgain(householdId: String) {
@@ -80,4 +109,9 @@ class SummaryViewModel @Inject constructor(
         observationJob = null
         start(householdId)
     }
+}
+
+private fun SummaryUiState.summaryPeriod() = when (mode) {
+    SummaryPeriodMode.MONTH -> month.summaryPeriod()
+    SummaryPeriodMode.YEAR -> year.summaryPeriod()
 }

@@ -4,10 +4,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import java.math.BigInteger
+import java.time.Year
 import java.time.YearMonth
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -20,11 +24,11 @@ class SummaryScreenTest {
     @get:Rule val composeRule = createComposeRule()
 
     @Test fun loadingEmptyOfflineErrorAndPendingStates() {
-        var state by mutableStateOf(SummaryUiState(month = YearMonth.of(2026, 9)))
+        var state by mutableStateOf(SummaryUiState(month = YearMonth.of(2026, 9), year = Year.of(2026)))
         var retries = 0
         composeRule.setContent {
             ThesaurusTheme {
-                SummaryScreen(state, {}, {}, { retries++ })
+                SummaryScreen(state, {}, {}, {}, { retries++ })
             }
         }
         composeRule.onNodeWithTag("summary-loading").assertIsDisplayed()
@@ -48,18 +52,35 @@ class SummaryScreenTest {
         composeRule.onNodeWithTag("summary-net").assertIsDisplayed()
     }
 
-    @Test fun periodControlsNavigate() {
+    @Test fun modeSelectorAndPeriodControlsNavigate() {
         var previous = 0
         var next = 0
+        var state by mutableStateOf(
+            SummaryUiState(month = YearMonth.of(2026, 9), year = Year.of(2026), isLoading = false),
+        )
         composeRule.setContent {
             ThesaurusTheme {
-                SummaryScreen(SummaryUiState(YearMonth.of(2026, 9), isLoading = false),
-                    onPreviousMonth = { previous++ }, onNextMonth = { next++ }, onRetry = {})
+                SummaryScreen(
+                    state = state,
+                    onSelectPeriodMode = { state = state.copy(mode = it) },
+                    onPreviousPeriod = { previous++ },
+                    onNextPeriod = { next++ },
+                    onRetry = {},
+                )
             }
         }
+        composeRule.onNodeWithTag("summary-mode-month").assertIsSelected()
+        composeRule.onNodeWithTag("summary-mode-year").assertIsNotSelected()
+        composeRule.onNodeWithTag("summary-mode-year").performClick()
+        composeRule.onNodeWithTag("summary-mode-year").assertIsSelected()
+        composeRule.onNodeWithTag("summary-mode-month").assertIsNotSelected()
+        composeRule.onNodeWithTag("summary-period").assertTextContains("2026")
         composeRule.onNodeWithTag("summary-previous-period").performClick()
         composeRule.onNodeWithTag("summary-next-period").performClick()
         assertEquals(1, previous)
         assertEquals(1, next)
+        composeRule.onNodeWithTag("summary-mode-month").performClick()
+        composeRule.onNodeWithTag("summary-mode-month").assertIsSelected()
+        composeRule.onNodeWithTag("summary-period").assertTextContains("Wrzesień 2026")
     }
 }
