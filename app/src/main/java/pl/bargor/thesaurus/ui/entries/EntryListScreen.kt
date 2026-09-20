@@ -53,6 +53,7 @@ fun EntryListScreen(
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onAddEntry: () -> Unit,
+    onOpenFamily: () -> Unit = {},
     onEditEntry: (String) -> Unit = {},
     onConfirmDelete: (EntryListItem) -> Unit = {},
     onUndoDelete: () -> Unit = {},
@@ -83,6 +84,9 @@ fun EntryListScreen(
                 )
                 TextButton(onClick = onOpenSettings, modifier = Modifier.testTag("open-taxonomy-settings")) {
                     Text(stringResource(R.string.open_taxonomy_settings))
+                }
+                TextButton(onClick = onOpenFamily, modifier = Modifier.testTag("open-family")) {
+                    Text(stringResource(R.string.open_family))
                 }
             }
             SortSelector(state.sort, onChangeSort)

@@ -25,7 +25,7 @@ const day = 24 * 60 * 60 * 1000;
 let env;
 
 const db = (uid, email = `${uid}@example.test`) =>
-  env.authenticatedContext(uid, { email }).firestore();
+  env.authenticatedContext(uid, { email, email_verified: true }).firestore();
 const householdRef = (database) => doc(database, 'households', householdId);
 const memberRef = (database, uid) => doc(database, 'households', householdId, 'members', uid);
 const entryRef = (database, id) => doc(database, 'households', householdId, 'entries', id);
@@ -432,7 +432,25 @@ test('invitations require a matching email and expire within seven days', async 
   const reference = invitationRef(alice, 'invite-visible');
   await assertSucceeds(setDoc(reference, invitation()));
   await assertSucceeds(getDoc(invitationRef(db('guest', 'guest@example.test'), 'invite-visible')));
+  await assertSucceeds(getDoc(invitationRef(db('guest-uppercase', 'GUEST@EXAMPLE.TEST'), 'invite-visible')));
   await assertFails(getDoc(invitationRef(db('guest', 'other@example.test'), 'invite-visible')));
+  const unverified = env.authenticatedContext('unverified', {
+    email: 'guest@example.test', email_verified: false,
+  }).firestore();
+  await assertFails(getDoc(invitationRef(unverified, 'invite-visible')));
+  const unverifiedAcceptance = writeBatch(unverified);
+  unverifiedAcceptance.set(userRef(unverified, 'unverified'), {
+    email: 'guest@example.test', displayName: 'Niezweryfikowany', householdId,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  unverifiedAcceptance.update(invitationRef(unverified, 'invite-visible'), {
+    status: 'ACCEPTED', acceptedBy: 'unverified',
+  });
+  unverifiedAcceptance.set(memberRef(unverified, 'unverified'), {
+    email: 'guest@example.test', displayName: 'Niezweryfikowany', role: 'MEMBER',
+    invitationId: 'invite-visible', joinedAt: serverTimestamp(),
+  });
+  await assertFails(unverifiedAcceptance.commit());
   await assertFails(getDoc(invitationRef(db('bob'), 'invite-visible')));
   await assertFails(setDoc(invitationRef(alice, 'too-long'), invitation({
     expiresAt: Timestamp.fromMillis(Date.now() + 8 * day),
@@ -490,7 +508,7 @@ test('accepting an invitation and creating membership must be one atomic batch',
   await assertSucceeds(getDoc(invitationRef(guest, 'invite-accept')));
 });
 
-test('an expired invitation cannot be read or accepted', async () => {
+test('an expired invitation can be explained to its addressee but not accepted', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
     await setDoc(invitationRef(context.firestore(), 'expired'), invitation({
       expiresAt: Timestamp.fromMillis(Date.now() - day),
@@ -498,9 +516,115 @@ test('an expired invitation cannot be read or accepted', async () => {
     }));
   });
   const guest = db('late-guest', 'guest@example.test');
-  await assertFails(getDoc(invitationRef(guest, 'expired')));
+  const expired = await assertSucceeds(getDoc(invitationRef(guest, 'expired')));
+  assert.equal(expired.data().status, 'PENDING');
   await assertFails(updateDoc(invitationRef(guest, 'expired'), {
     status: 'ACCEPTED',
     acceptedBy: 'late-guest',
   }));
+});
+
+test('revoked invitation can be explained to its addressee but not accepted', async () => {
+  const alice = db('alice');
+  await assertSucceeds(setDoc(invitationRef(alice, 'invite-revoked'), invitation()));
+  await assertSucceeds(updateDoc(invitationRef(alice, 'invite-revoked'), { status: 'REVOKED' }));
+
+  const recipient = db('revoked-guest', 'guest@example.test');
+  const revoked = await assertSucceeds(getDoc(invitationRef(recipient, 'invite-revoked')));
+  assert.equal(revoked.data().status, 'REVOKED');
+  await assertFails(updateDoc(invitationRef(recipient, 'invite-revoked'), {
+    status: 'ACCEPTED', acceptedBy: 'revoked-guest',
+  }));
+});
+
+test('accepted invitation cannot be replayed by a second matching-email account', async () => {
+  const alice = db('alice');
+  await assertSucceeds(setDoc(invitationRef(alice, 'invite-once'), invitation()));
+
+  const first = db('first-recipient', 'guest@example.test');
+  const accepted = writeBatch(first);
+  accepted.set(userRef(first, 'first-recipient'), {
+    email: 'guest@example.test', displayName: 'Pierwszy', householdId,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  accepted.update(invitationRef(first, 'invite-once'), {
+    status: 'ACCEPTED', acceptedBy: 'first-recipient',
+  });
+  accepted.set(memberRef(first, 'first-recipient'), {
+    email: 'guest@example.test', displayName: 'Pierwszy', role: 'MEMBER',
+    invitationId: 'invite-once', joinedAt: serverTimestamp(),
+  });
+  await assertSucceeds(accepted.commit());
+
+  const second = db('second-recipient', 'guest@example.test');
+  const replay = writeBatch(second);
+  replay.set(userRef(second, 'second-recipient'), {
+    email: 'guest@example.test', displayName: 'Drugi', householdId,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  replay.update(invitationRef(second, 'invite-once'), {
+    status: 'ACCEPTED', acceptedBy: 'second-recipient',
+  });
+  replay.set(memberRef(second, 'second-recipient'), {
+    email: 'guest@example.test', displayName: 'Drugi', role: 'MEMBER',
+    invitationId: 'invite-once', joinedAt: serverTimestamp(),
+  });
+  await assertFails(replay.commit());
+  await assertFails(getDoc(householdRef(second)));
+});
+
+test('removed member can rejoin the same household with a fresh invitation', async () => {
+  const alice = db('alice');
+  const recipient = db('returning-member', 'returning@example.test');
+  await assertSucceeds(setDoc(invitationRef(alice, 'invite-return-first'), invitation({
+    email: 'returning@example.test',
+  })));
+
+  const firstAcceptance = writeBatch(recipient);
+  firstAcceptance.set(userRef(recipient, 'returning-member'), {
+    email: 'returning@example.test', displayName: 'Powracający', householdId,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  firstAcceptance.update(invitationRef(recipient, 'invite-return-first'), {
+    status: 'ACCEPTED', acceptedBy: 'returning-member',
+  });
+  firstAcceptance.set(memberRef(recipient, 'returning-member'), {
+    email: 'returning@example.test', displayName: 'Powracający', role: 'MEMBER',
+    invitationId: 'invite-return-first', joinedAt: serverTimestamp(),
+  });
+  await assertSucceeds(firstAcceptance.commit());
+  await assertSucceeds(deleteDoc(memberRef(alice, 'returning-member')));
+  await assertFails(getDoc(householdRef(recipient)));
+
+  await assertSucceeds(setDoc(invitationRef(alice, 'invite-return-second'), invitation({
+    email: 'returning@example.test',
+  })));
+  const secondAcceptance = writeBatch(recipient);
+  secondAcceptance.update(userRef(recipient, 'returning-member'), {
+    displayName: 'Powracający', updatedAt: serverTimestamp(),
+  });
+  secondAcceptance.update(invitationRef(recipient, 'invite-return-second'), {
+    status: 'ACCEPTED', acceptedBy: 'returning-member',
+  });
+  secondAcceptance.set(memberRef(recipient, 'returning-member'), {
+    email: 'returning@example.test', displayName: 'Powracający', role: 'MEMBER',
+    invitationId: 'invite-return-second', joinedAt: serverTimestamp(),
+  });
+  await assertSucceeds(secondAcceptance.commit());
+  await assertSucceeds(getDoc(householdRef(recipient)));
+});
+
+test('owner removal revokes household access but preserves entry attribution', async () => {
+  const alice = db('alice');
+  const bob = db('bob');
+  await assertSucceeds(setDoc(entryRef(bob, 'former-member-entry'), entry('bob')));
+  await assertFails(deleteDoc(memberRef(bob, 'charlie')));
+  await assertFails(deleteDoc(memberRef(alice, 'alice')));
+  await assertSucceeds(deleteDoc(memberRef(alice, 'bob')));
+
+  await assertFails(getDoc(householdRef(bob)));
+  await assertFails(getDoc(entryRef(bob, 'former-member-entry')));
+  await assertFails(setDoc(entryRef(bob, 'former-member-new-entry'), entry('bob')));
+  const historical = await assertSucceeds(getDoc(entryRef(alice, 'former-member-entry')));
+  assert.equal(historical.data().authorId, 'bob');
 });

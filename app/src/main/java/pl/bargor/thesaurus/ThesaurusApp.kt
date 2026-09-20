@@ -2,6 +2,7 @@ package pl.bargor.thesaurus
 
 import androidx.annotation.StringRes
 import android.app.Activity
+import android.content.Intent
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +52,10 @@ import pl.bargor.thesaurus.ui.entry.EntryFormScreen
 import pl.bargor.thesaurus.ui.entry.EntryFormViewModel
 import pl.bargor.thesaurus.ui.entries.EntryListScreen
 import pl.bargor.thesaurus.ui.entries.EntryListViewModel
+import pl.bargor.thesaurus.ui.family.FamilyScreen
+import pl.bargor.thesaurus.ui.family.FamilyViewModel
+import pl.bargor.thesaurus.ui.family.InvitationAcceptScreen
+import pl.bargor.thesaurus.ui.family.InvitationAcceptViewModel
 import pl.bargor.thesaurus.ui.taxonomy.TaxonomyScreen
 import pl.bargor.thesaurus.ui.taxonomy.TaxonomyViewModel
 
@@ -66,10 +71,45 @@ enum class Destination(
 }
 
 @Composable
-fun ThesaurusApp(authViewModel: AuthViewModel = viewModel()) {
+fun ThesaurusApp(
+    authViewModel: AuthViewModel = viewModel(),
+    invitationLink: FamilyInvitationLink? = null,
+) {
     val authState by authViewModel.state.collectAsState()
+    var pendingInvitation by remember { mutableStateOf(invitationLink) }
+    LaunchedEffect(invitationLink) { pendingInvitation = invitationLink }
     when (val state = authState) {
-        is AuthUiState.Ready -> HouseholdApp(state.identity.uid, state.householdId)
+        is AuthUiState.Ready -> if (pendingInvitation == null) {
+            HouseholdApp(state.identity.uid, state.householdId)
+        } else if (pendingInvitation?.householdId == state.householdId) {
+            InvitationAcceptRoute(
+                link = pendingInvitation!!,
+                identity = state.identity,
+                onSignOut = authViewModel::signOut,
+                onAccepted = { identity ->
+                    pendingInvitation = null
+                    authViewModel.membershipAccepted(identity)
+                },
+            )
+        } else {
+            ExistingHouseholdInvitationContent { pendingInvitation = null }
+        }
+        is AuthUiState.NeedsHousehold -> pendingInvitation?.let { link ->
+            InvitationAcceptRoute(
+                link,
+                state.identity,
+                authViewModel::signOut,
+                onAccepted = { identity ->
+                    pendingInvitation = null
+                    authViewModel.membershipAccepted(identity)
+                },
+            )
+        } ?: AuthenticationContent(
+            state = state,
+            onSignIn = authViewModel::signIn,
+            onCreateHousehold = authViewModel::createHousehold,
+            onRetry = authViewModel::retry,
+        )
         else -> AuthenticationContent(
             state = state,
             onSignIn = authViewModel::signIn,
@@ -86,13 +126,15 @@ internal fun HouseholdApp(
     entriesContent: @Composable (
         onOpenSettings: () -> Unit,
         onAddEntry: () -> Unit,
+        onOpenFamily: () -> Unit,
         onEditEntry: (String) -> Unit,
-    ) -> Unit = { onOpenSettings, onAddEntry, onEditEntry ->
+    ) -> Unit = { onOpenSettings, onAddEntry, onOpenFamily, onEditEntry ->
         EntryListRoute(
             householdId = householdId,
             actorId = actorId,
             onOpenSettings = onOpenSettings,
             onAddEntry = onAddEntry,
+            onOpenFamily = onOpenFamily,
             onEditEntry = onEditEntry,
         )
     },
@@ -145,6 +187,7 @@ internal fun HouseholdApp(
                 entriesContent(
                     { navController.navigate("settings") },
                     { navController.navigate("add-entry") },
+                    { navController.navigate("family") },
                     { entryId -> navController.navigate("edit-entry/$entryId") },
                 )
             }
@@ -159,6 +202,13 @@ internal fun HouseholdApp(
             }
             composable("settings") {
                 TaxonomyRoute(
+                    householdId = householdId,
+                    actorId = actorId,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("family") {
+                FamilyRoute(
                     householdId = householdId,
                     actorId = actorId,
                     onBack = { navController.popBackStack() },
@@ -189,6 +239,7 @@ private fun EntryListRoute(
     actorId: String,
     onOpenSettings: () -> Unit,
     onAddEntry: () -> Unit,
+    onOpenFamily: () -> Unit,
     onEditEntry: (String) -> Unit,
     entryListViewModel: EntryListViewModel = viewModel(),
 ) {
@@ -201,10 +252,73 @@ private fun EntryListRoute(
         onRetry = entryListViewModel::retry,
         onOpenSettings = onOpenSettings,
         onAddEntry = onAddEntry,
+        onOpenFamily = onOpenFamily,
         onEditEntry = onEditEntry,
         onConfirmDelete = entryListViewModel::confirmDelete,
         onUndoDelete = entryListViewModel::undoDelete,
     )
+}
+
+@Composable
+private fun FamilyRoute(
+    householdId: String,
+    actorId: String,
+    onBack: () -> Unit,
+    familyViewModel: FamilyViewModel = viewModel(),
+) {
+    val context = LocalContext.current
+    val shareChooserTitle = stringResource(R.string.family_share_chooser)
+    LaunchedEffect(householdId, actorId) { familyViewModel.start(householdId, actorId) }
+    val state by familyViewModel.state.collectAsState()
+    LaunchedEffect(state.shareUrl) {
+        state.shareUrl?.let { url ->
+            context.startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url),
+                    shareChooserTitle,
+                ),
+            )
+            familyViewModel.shareHandled()
+        }
+    }
+    FamilyScreen(
+        state = state,
+        onCreateInvitation = familyViewModel::createInvitation,
+        onRevokeInvitation = familyViewModel::revokeInvitation,
+        onRemoveMember = familyViewModel::removeMember,
+        onClearError = familyViewModel::clearError,
+        onBack = onBack,
+    )
+}
+
+@Composable
+private fun InvitationAcceptRoute(
+    link: FamilyInvitationLink,
+    identity: pl.bargor.thesaurus.data.firebase.OnboardingIdentity,
+    onSignOut: () -> Unit,
+    onAccepted: (pl.bargor.thesaurus.data.firebase.OnboardingIdentity) -> Unit,
+    invitationAcceptViewModel: InvitationAcceptViewModel = viewModel(),
+) {
+    LaunchedEffect(link, identity) { invitationAcceptViewModel.start(link, identity) }
+    val state by invitationAcceptViewModel.state.collectAsState()
+    LaunchedEffect(state) {
+        if (state is pl.bargor.thesaurus.ui.family.InvitationAcceptUiState.Accepted) onAccepted(identity)
+    }
+    InvitationAcceptScreen(state = state, onAccept = invitationAcceptViewModel::accept, onSignOut = onSignOut)
+}
+
+@Composable
+private fun ExistingHouseholdInvitationContent(onContinue: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(stringResource(R.string.invitation_existing_household), style = MaterialTheme.typography.bodyLarge)
+        Button(modifier = Modifier.padding(top = 16.dp), onClick = onContinue) {
+            Text(stringResource(R.string.invitation_continue))
+        }
+    }
 }
 
 @Composable

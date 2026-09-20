@@ -283,4 +283,5 @@ private class FakeHouseholds : HouseholdRepository {
     override fun observeHousehold(householdId: String): Flow<SyncObservation<Household>> = flowOf(SyncObservation(state = SyncState.SYNCED))
     override fun observeMembers(householdId: String): Flow<SyncObservation<List<Member>>> = members
     override suspend fun saveHousehold(household: Household) = Unit
+    override suspend fun removeMember(householdId: String, memberId: String) = Unit
 }

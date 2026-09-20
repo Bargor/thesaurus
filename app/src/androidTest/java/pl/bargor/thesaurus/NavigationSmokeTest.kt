@@ -19,7 +19,7 @@ class NavigationSmokeTest {
     fun bottomNavigationShowsEveryDestination() {
         composeTestRule.setContent {
             ThesaurusTheme {
-                HouseholdApp(entriesContent = { _, _, _ -> Text(stringResource(R.string.empty_entries)) })
+                HouseholdApp(entriesContent = { _, _, _, _ -> Text(stringResource(R.string.empty_entries)) })
             }
         }
         composeTestRule.onNodeWithText("Nie ma jeszcze żadnych wpisów.").assertIsDisplayed()
