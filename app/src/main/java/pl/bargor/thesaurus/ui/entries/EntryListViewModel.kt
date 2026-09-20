@@ -7,6 +7,7 @@ import java.time.Instant
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +23,7 @@ import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.Member
+import pl.bargor.thesaurus.data.model.MemberRole
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
@@ -35,6 +37,7 @@ data class EntryListItem(
     val categoryName: String?,
     val subcategoryName: String?,
     val authorName: String,
+    val canManage: Boolean = false,
 )
 
 data class EntryListUiState(
@@ -44,12 +47,18 @@ data class EntryListUiState(
     val sort: EntryListSort = EntryListSort.ACCOUNTING_DATE,
     val syncState: SyncState = SyncState.SYNCED,
     val error: EntryListError? = null,
+    val pendingDeletion: EntryListItem? = null,
+    val deletionError: Boolean = false,
 ) {
     val visibleEntries: List<EntryListItem> get() = entries.take(visibleCount)
     val hasMore: Boolean get() = visibleCount < entries.size
 }
 
 sealed interface EntryListError { data object LoadFailed : EntryListError }
+
+// Material's short snackbar is normally about four seconds. The small buffer prevents a
+// last-frame action from racing a Firestore tombstone that has already been submitted.
+const val ENTRY_DELETE_UNDO_WINDOW_MILLIS = 6_000L
 
 private data class TaxonomySnapshot(
     val categories: List<Category>,
@@ -73,13 +82,22 @@ class EntryListViewModel @Inject constructor(
     val state: StateFlow<EntryListUiState> = mutableState.asStateFlow()
 
     private var householdId: String? = null
+    private var actorId: String? = null
     private var observeJob: Job? = null
+    private var deleteJob: Job? = null
+    private val locallyHiddenEntryIds = mutableSetOf<String>()
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun start(householdId: String) {
-        if (this.householdId == householdId && observeJob?.isActive == true) return
+    fun start(householdId: String) = start(householdId, actorId = "")
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun start(householdId: String, actorId: String) {
+        if (this.householdId == householdId && this.actorId == actorId && observeJob?.isActive == true) return
         this.householdId = householdId
+        this.actorId = actorId
         observeJob?.cancel()
+        deleteJob?.cancel()
+        locallyHiddenEntryIds.clear()
         val sort = sortPreference.read()
         mutableState.value = EntryListUiState(sort = sort)
         observeJob = viewModelScope.launch {
@@ -97,12 +115,14 @@ class EntryListViewModel @Inject constructor(
                     )
                     mutableState.update { old ->
                         val items = snapshot.entries.value.orEmpty().let { entries ->
-                            toItems(entries, snapshot.taxonomy, snapshot.members.value.orEmpty(), old.sort)
+                            toItems(entries, snapshot.taxonomy, snapshot.members.value.orEmpty(), actorId, old.sort)
                         }
+                        locallyHiddenEntryIds.retainAll(items.map { it.entry.id }.toSet())
+                        val visibleItems = items.filterNot { it.entry.id in locallyHiddenEntryIds }
                         old.copy(
                             isLoading = false,
-                            entries = items,
-                            visibleCount = old.visibleCount.coerceAtMost(items.size).coerceAtLeast(ENTRY_LIST_PAGE_SIZE),
+                            entries = visibleItems,
+                            visibleCount = old.visibleCount.coerceAtMost(visibleItems.size).coerceAtLeast(ENTRY_LIST_PAGE_SIZE),
                             syncState = syncState,
                             error = error?.let { EntryListError.LoadFailed },
                         )
@@ -127,10 +147,58 @@ class EntryListViewModel @Inject constructor(
 
     fun retry() { householdId?.let(::startAfterFailure) }
 
+    /** Starts the undo window only after the confirmation dialog is accepted. */
+    fun confirmDelete(item: EntryListItem) {
+        val household = householdId ?: return
+        val actor = actorId ?: return
+        val current = state.value.entries.firstOrNull { it.entry.id == item.entry.id } ?: return
+        if (!current.canManage || deleteJob?.isActive == true) return
+        locallyHiddenEntryIds += item.entry.id
+        mutableState.update { old ->
+            old.copy(
+                entries = old.entries.filterNot { it.entry.id == current.entry.id },
+                pendingDeletion = current,
+                deletionError = false,
+            )
+        }
+        deleteJob = viewModelScope.launch {
+            delay(ENTRY_DELETE_UNDO_WINDOW_MILLIS)
+            runCatching { ledgerRepository.tombstone(household, current.entry.id, actor) }
+                .onFailure {
+                    locallyHiddenEntryIds -= current.entry.id
+                    mutableState.update { old ->
+                        old.copy(
+                            entries = sortItems(old.entries + current, old.sort),
+                            pendingDeletion = null,
+                            deletionError = true,
+                        )
+                    }
+                }
+                .onSuccess {
+                    // Retain the local hide until Firestore's active-entry listener removes the row.
+                    mutableState.update { old -> old.copy(pendingDeletion = null) }
+                }
+        }
+    }
+
+    fun undoDelete() {
+        val pending = state.value.pendingDeletion ?: return
+        deleteJob?.cancel()
+        deleteJob = null
+        locallyHiddenEntryIds -= pending.entry.id
+        mutableState.update { old ->
+            old.copy(
+                entries = sortItems(old.entries + pending, old.sort),
+                pendingDeletion = null,
+                deletionError = false,
+            )
+        }
+    }
+
     private fun startAfterFailure(id: String) {
         observeJob?.cancel()
         observeJob = null
-        start(id)
+        actorId?.let { start(id, it) }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -158,6 +226,7 @@ class EntryListViewModel @Inject constructor(
         entries: List<LedgerEntry>,
         taxonomy: TaxonomySnapshot,
         members: List<Member>,
+        actorId: String,
         sort: EntryListSort,
     ): List<EntryListItem> {
         val categories = taxonomy.categories.associateBy { it.id }
@@ -173,8 +242,17 @@ class EntryListViewModel @Inject constructor(
                         ?.name
                 },
                 authorName = authors[entry.authorId].authorLabel(entry.authorId),
+                canManage = entry.authorId == actorId || authors[actorId]?.role == MemberRole.OWNER,
             )
         }
+    }
+
+    override fun onCleared() {
+        // A queued delete is deliberately not committed after this UI owner disappears. The original
+        // Firestore document remains active, so a recreated list deterministically shows it again.
+        deleteJob?.cancel()
+        locallyHiddenEntryIds.clear()
+        super.onCleared()
     }
 }
 

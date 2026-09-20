@@ -56,6 +56,9 @@ fun EntryFormScreen(
     val today = LocalDate.now()
     val editable = !state.saving && !state.saved
     val selectedCategory = state.categories.firstOrNull { it.category.id == state.categoryId }
+    val visibleCategories = state.categories.filter { category ->
+        !category.category.archived || category.category.id == state.categoryId
+    }
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
@@ -64,7 +67,7 @@ fun EntryFormScreen(
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             Text(
-                text = stringResource(R.string.entry_add_title),
+                text = stringResource(if (state.editingEntryId == null) R.string.entry_add_title else R.string.entry_edit_title),
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.weight(1f).semantics { heading() },
             )
@@ -122,14 +125,14 @@ fun EntryFormScreen(
             },
         )
         Text(stringResource(R.string.entry_category), style = MaterialTheme.typography.titleSmall)
-        if (state.categories.isEmpty()) {
+        if (visibleCategories.isEmpty()) {
             Text(stringResource(R.string.entry_no_active_categories))
         } else {
-            state.categories.forEach { category ->
+            visibleCategories.forEach { category ->
                 FilterChip(
                     modifier = Modifier.testTag("entry-category-${category.category.id}"),
                     selected = state.categoryId == category.category.id,
-                    enabled = editable,
+                    enabled = editable && !category.category.archived,
                     onClick = { onCategorySelected(category.category.id) },
                     label = { Text(category.category.name) },
                 )
@@ -148,11 +151,13 @@ fun EntryFormScreen(
                     onClick = { onSubcategorySelected(null) },
                     label = { Text(stringResource(R.string.entry_subcategory_none)) },
                 )
-                category.subcategories.forEach { subcategory ->
+                category.subcategories.filter { subcategory ->
+                    !subcategory.archived || subcategory.id == state.subcategoryId
+                }.forEach { subcategory ->
                     FilterChip(
                         modifier = Modifier.testTag("entry-subcategory-${subcategory.id}"),
                         selected = state.subcategoryId == subcategory.id,
-                        enabled = editable,
+                        enabled = editable && !subcategory.archived,
                         onClick = { onSubcategorySelected(subcategory.id) },
                         label = { Text(subcategory.name) },
                     )
@@ -182,7 +187,9 @@ fun EntryFormScreen(
             onClick = onSave,
             enabled = editable,
         ) {
-            if (state.saving) CircularProgressIndicator() else Text(stringResource(R.string.entry_save))
+            if (state.saving) CircularProgressIndicator() else Text(
+                stringResource(if (state.editingEntryId == null) R.string.entry_save else R.string.entry_save_changes),
+            )
         }
         if (state.saved) Text(stringResource(if (state.queuedOffline) R.string.entry_queued else R.string.entry_saved))
         Spacer(Modifier.height(8.dp))

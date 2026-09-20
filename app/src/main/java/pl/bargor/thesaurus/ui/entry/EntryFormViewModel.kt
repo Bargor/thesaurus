@@ -3,6 +3,7 @@ package pl.bargor.thesaurus.ui.entry
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.math.BigInteger
 import java.time.LocalDate
 import java.util.Locale
 import java.util.UUID
@@ -47,6 +48,8 @@ data class EntryFormUiState(
     val saved: Boolean = false,
     /** The entry is in Firestore's local queue and will be sent when connectivity returns. */
     val queuedOffline: Boolean = false,
+    /** Null for creation; an existing id means this form updates that immutable record. */
+    val editingEntryId: String? = null,
 )
 
 sealed interface EntryFormError {
@@ -114,28 +117,58 @@ class EntryFormViewModel @Inject constructor(
     private val mutableState = MutableStateFlow(EntryFormUiState())
     val state: StateFlow<EntryFormUiState> = mutableState.asStateFlow()
 
-    private var context: Pair<String, String>? = null
+    private var context: Triple<String, String, String?>? = null
     private var pendingEntryId: String? = null
+    private var editingEntry: LedgerEntry? = null
+
+    fun start(householdId: String, actorId: String, today: LocalDate) =
+        start(householdId, actorId, entryId = null, today = today)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun start(householdId: String, actorId: String, today: LocalDate = LocalDate.now()) {
-        if (context == householdId to actorId) return
-        context = householdId to actorId
-        mutableState.value = EntryFormUiState(date = today)
+    fun start(
+        householdId: String,
+        actorId: String,
+        entryId: String? = null,
+        today: LocalDate = LocalDate.now(),
+    ) {
+        if (context == Triple(householdId, actorId, entryId)) return
+        context = Triple(householdId, actorId, entryId)
+        editingEntry = null
+        mutableState.value = EntryFormUiState(date = today, editingEntryId = entryId)
         viewModelScope.launch {
             ledgerRepository.observeEntries(householdId).collect { observation ->
+                val stored = entryId?.let { requestedId ->
+                    observation.value.orEmpty().firstOrNull { it.id == requestedId }
+                }
                 val pendingId = pendingEntryId
                 val pendingVisible = pendingId?.let { id -> observation.value.orEmpty().any { it.id == id } } == true
                 mutableState.update { old ->
+                    val becameUnavailable = entryId != null && editingEntry != null && stored == null && observation.error == null
+                    if (becameUnavailable) editingEntry = null
+                    val loaded = stored?.takeIf { editingEntry?.id != it.id }
+                    if (loaded != null) {
+                        editingEntry = loaded
+                    }
+                    val populated = if (loaded != null) {
+                        old.copy(
+                            amount = magnitudeForForm(loaded.amountGrosze),
+                            date = loaded.date,
+                            title = loaded.normalizedTitle.orEmpty(),
+                            tags = loaded.normalizedTags.joinToString(", "),
+                            categoryId = loaded.categoryId,
+                            subcategoryId = loaded.subcategoryId,
+                            type = loaded.type,
+                        )
+                    } else old
                     when {
                         observation.error != null && pendingId != null -> {
                             pendingEntryId = null
-                            old.copy(saving = false, saved = false, queuedOffline = false, error = EntryFormError.SaveFailed)
+                            populated.copy(saving = false, saved = false, queuedOffline = false, error = EntryFormError.SaveFailed)
                         }
                         pendingVisible -> {
                             val queued = observation.state != SyncState.SYNCED
                             if (!queued) pendingEntryId = null
-                            old.copy(
+                            populated.copy(
                                 saving = false,
                                 saved = true,
                                 queuedOffline = queued,
@@ -143,7 +176,10 @@ class EntryFormViewModel @Inject constructor(
                                 error = null,
                             )
                         }
-                        else -> old.copy(syncState = observation.state)
+                        else -> populated.copy(
+                            syncState = observation.state,
+                            error = if (becameUnavailable) EntryFormError.SaveFailed else populated.error,
+                        )
                     }
                 }
             }
@@ -174,16 +210,19 @@ class EntryFormViewModel @Inject constructor(
                 }
                 .collect { snapshot ->
                     mutableState.update { old ->
-                        val active = snapshot.categories.filterNot(Category::archived)
-                        val selected = old.categoryId?.let { id -> active.firstOrNull { it.id == id } }
+                        // Retain archived values in state so an entry loaded after this taxonomy emission
+                        // can still preserve its historical selection. The screen only exposes active values
+                        // plus the current historical selection.
+                        val available = snapshot.categories
+                        val selected = old.categoryId?.let { id -> available.firstOrNull { it.id == id } }
                         val categoryId = selected?.id
                         val validSubcategory = categoryId?.let { id ->
-                            snapshot.subcategories[id].orEmpty().any { it.id == old.subcategoryId && !it.archived }
+                            snapshot.subcategories[id].orEmpty().any { it.id == old.subcategoryId }
                         } == true
                         old.copy(
                             isLoading = false,
-                            categories = active.map { category ->
-                                EntryCategory(category, snapshot.subcategories[category.id].orEmpty().filterNot(Subcategory::archived))
+                            categories = available.map { category ->
+                                EntryCategory(category, snapshot.subcategories[category.id].orEmpty())
                             },
                             categoryId = categoryId,
                             subcategoryId = old.subcategoryId.takeIf { validSubcategory },
@@ -202,7 +241,7 @@ class EntryFormViewModel @Inject constructor(
     fun updateType(value: EntryType) = update { copy(type = value, error = null, saved = false, queuedOffline = false) }
 
     fun selectCategory(categoryId: String) {
-        val category = state.value.categories.firstOrNull { it.category.id == categoryId } ?: return
+        val category = state.value.categories.firstOrNull { it.category.id == categoryId && !it.category.archived } ?: return
         update {
             copy(
                 categoryId = categoryId,
@@ -217,12 +256,18 @@ class EntryFormViewModel @Inject constructor(
 
     fun selectSubcategory(subcategoryId: String?) {
         val selectedCategory = state.value.categories.firstOrNull { it.category.id == state.value.categoryId }
-        if (subcategoryId != null && selectedCategory?.subcategories?.none { it.id == subcategoryId } == true) return
+        if (subcategoryId != null && selectedCategory?.subcategories?.none { it.id == subcategoryId && !it.archived } == true) return
         update { copy(subcategoryId = subcategoryId, error = null, saved = false, queuedOffline = false) }
     }
 
     fun save(today: LocalDate = LocalDate.now()) {
         val (householdId, actorId) = context ?: return
+        // An edit route is never a create route. In particular, a stale local edit must not turn a
+        // remotely tombstoned/missing document into a new active entry under a different id.
+        if (state.value.editingEntryId != null && editingEntry == null) {
+            update { copy(error = EntryFormError.SaveFailed) }
+            return
+        }
         val current = state.value
         if (current.saving || current.saved) return
         val magnitude = EntryFormValidation.parseMagnitudeGrosze(current.amount)
@@ -243,8 +288,9 @@ class EntryFormViewModel @Inject constructor(
         }
         viewModelScope.launch {
             update { copy(saving = true, error = null) }
+            val existing = editingEntry
             val entry = LedgerEntry(
-                id = UUID.randomUUID().toString(),
+                id = existing?.id ?: UUID.randomUUID().toString(),
                 householdId = householdId,
                 amountGrosze = EntryFormValidation.signedAmount(magnitude!!, current.type),
                 date = current.date,
@@ -252,8 +298,9 @@ class EntryFormViewModel @Inject constructor(
                 categoryId = current.categoryId!!,
                 subcategoryId = current.subcategoryId,
                 tags = EntryFormValidation.normalizedTags(current.tags).orEmpty(),
-                authorId = actorId,
+                authorId = existing?.authorId ?: actorId,
                 updatedById = actorId,
+                createdAt = existing?.createdAt,
             )
             pendingEntryId = entry.id
             // Firestore's task intentionally remains unfinished while offline. The entry listener above
@@ -272,6 +319,17 @@ class EntryFormViewModel @Inject constructor(
 
     private fun update(transform: EntryFormUiState.() -> EntryFormUiState) {
         mutableState.update(transform)
+    }
+}
+
+/** Absolute value avoids exposing a persisted sign as editable input. */
+private fun magnitudeForForm(amountGrosze: Long): String {
+    val magnitude = BigInteger.valueOf(amountGrosze).abs()
+    val (whole, fraction) = magnitude.divideAndRemainder(BigInteger.valueOf(100))
+    return if (fraction == BigInteger.ZERO) {
+        whole.toString()
+    } else {
+        "%d,%02d".format(Locale.ROOT, whole, fraction)
     }
 }
 
