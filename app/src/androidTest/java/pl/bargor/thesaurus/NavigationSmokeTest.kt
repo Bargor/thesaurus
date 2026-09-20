@@ -8,8 +8,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
+import java.time.YearMonth
 import org.junit.Rule
 import org.junit.Test
+import pl.bargor.thesaurus.ui.summary.SummaryScreen
+import pl.bargor.thesaurus.ui.summary.SummaryUiState
 
 class NavigationSmokeTest {
     @get:Rule
@@ -19,13 +22,21 @@ class NavigationSmokeTest {
     fun bottomNavigationShowsEveryDestination() {
         composeTestRule.setContent {
             ThesaurusTheme {
-                HouseholdApp(entriesContent = { _, _, _, _ -> Text(stringResource(R.string.empty_entries)) })
+                HouseholdApp(
+                    entriesContent = { _, _, _, _ -> Text(stringResource(R.string.empty_entries)) },
+                    summaryContent = {
+                        SummaryScreen(
+                            state = SummaryUiState(month = YearMonth.of(2026, 9), isLoading = false),
+                            onPreviousMonth = {}, onNextMonth = {}, onRetry = {},
+                        )
+                    },
+                )
             }
         }
         composeTestRule.onNodeWithText("Nie ma jeszcze żadnych wpisów.").assertIsDisplayed()
         composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsSelected()
         composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).performClick()
-        composeTestRule.onNodeWithText("Podsumowanie pojawi się po dodaniu wpisów.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Brak wpisów w wybranym miesiącu.").assertIsDisplayed()
         composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).assertIsSelected()
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).performClick()
         composeTestRule.onNodeWithText("Raporty będą dostępne wkrótce.").assertIsDisplayed()

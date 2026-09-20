@@ -4,7 +4,15 @@
     <string name="navigation_summary">Podsumowanie</string>
     <string name="navigation_reports">Raporty</string>
     <string name="empty_entries">Nie ma jeszcze żadnych wpisów.</string>
-    <string name="empty_summary">Podsumowanie pojawi się po dodaniu wpisów.</string>
+    <string name="empty_summary">Brak wpisów w wybranym miesiącu.</string>
+    <string name="summary_previous_month">Poprzedni miesiąc</string>
+    <string name="summary_next_month">Następny miesiąc</string>
+    <string name="summary_income">Przychody</string>
+    <string name="summary_expense">Wydatki</string>
+    <string name="summary_net">Bilans</string>
+    <string name="summary_load_error">Nie udało się wczytać podsumowania. Spróbuj ponownie po odzyskaniu połączenia.</string>
+    <string name="summary_sync_pending">Zmiany oczekują na synchronizację. Kwoty uwzględniają lokalne wpisy.</string>
+    <string name="summary_offline">Tryb offline — podsumowanie może nie zawierać wszystkich wpisów.</string>
     <string name="empty_reports">Raporty będą dostępne wkrótce.</string>
     <string name="screen_description">Ekran: %1$s</string>
     <string name="auth_title">Thesaurus</string>

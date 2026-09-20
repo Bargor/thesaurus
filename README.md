@@ -1,9 +1,13 @@
 # Thesaurus
 
-An Android application bootstrap for a Polish-language family expense tracker.
-It currently contains a Material 3 navigation shell with **Wpisy**,
-**Podsumowanie**, and **Raporty** destinations and intentionally uses
-placeholder empty states.
+A Polish-language Android app for tracking household income and expenses.
+The **Wpisy** tab supports shared entries, **Podsumowanie** shows monthly totals,
+and **Raporty** remains a placeholder for future work.
+
+The monthly summary starts at the current month and can navigate to other months.
+It shows income, absolute expenses, and the signed balance. Totals update from
+Firestore's local cache, including pending writes; the screen indicates when
+cached data may be incomplete or a write is waiting for synchronization.
 
 ## Prerequisites
 

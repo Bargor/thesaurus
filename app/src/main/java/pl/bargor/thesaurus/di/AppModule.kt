@@ -7,6 +7,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import java.time.Clock
 import pl.bargor.thesaurus.data.auth.AuthRepository
 import pl.bargor.thesaurus.data.auth.FirebaseGoogleAuthRepository
 import pl.bargor.thesaurus.data.firebase.FirebaseAuthFactory
@@ -24,6 +25,9 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object FirebaseModule {
+    @Provides
+    fun provideClock(): Clock = Clock.systemDefaultZone()
+
     @Provides
     @Singleton
     fun provideFirestore(): FirebaseFirestore = FirebaseFirestoreFactory.create()
