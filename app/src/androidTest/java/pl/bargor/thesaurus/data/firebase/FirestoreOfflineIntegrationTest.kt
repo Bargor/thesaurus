@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -132,6 +133,19 @@ class FirestoreOfflineIntegrationTest {
                 }
             }
             assertTrue(synced.value!!.any { it.id == entry.id && it.amountGrosze == -1_234L })
+
+            repository.tombstone(householdId, entry.id, uid)
+            val afterDeletion = withTimeout(15_000) {
+                repository.observeEntries(householdId).first { observation ->
+                    observation.state == SyncState.SYNCED && observation.value.orEmpty().none { it.id == entry.id }
+                }
+            }
+            assertFalse(afterDeletion.value.orEmpty().any { it.id == entry.id })
+
+            val staleEdit = runCatching {
+                repository.save(entry.copy(title = "Nieaktualna edycja", updatedById = uid))
+            }
+            assertTrue("Tombstone must reject a stale edit", staleEdit.isFailure)
         } finally {
             runCatching { firestore.enableNetwork().await() }
             runCatching { firestore.terminate().await() }

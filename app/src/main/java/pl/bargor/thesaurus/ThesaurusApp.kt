@@ -127,12 +127,15 @@ internal fun HouseholdApp(
         onOpenSettings: () -> Unit,
         onAddEntry: () -> Unit,
         onOpenFamily: () -> Unit,
-    ) -> Unit = { onOpenSettings, onAddEntry, onOpenFamily ->
+        onEditEntry: (String) -> Unit,
+    ) -> Unit = { onOpenSettings, onAddEntry, onOpenFamily, onEditEntry ->
         EntryListRoute(
             householdId = householdId,
+            actorId = actorId,
             onOpenSettings = onOpenSettings,
             onAddEntry = onAddEntry,
             onOpenFamily = onOpenFamily,
+            onEditEntry = onEditEntry,
         )
     },
 ) {
@@ -185,6 +188,7 @@ internal fun HouseholdApp(
                     { navController.navigate("settings") },
                     { navController.navigate("add-entry") },
                     { navController.navigate("family") },
+                    { entryId -> navController.navigate("edit-entry/$entryId") },
                 )
             }
             Destination.entries.filter { it != Destination.Entries }.forEach { destination ->
@@ -217,6 +221,14 @@ internal fun HouseholdApp(
                     onBack = { navController.popBackStack() },
                 )
             }
+            composable("edit-entry/{entryId}") { backStackEntry ->
+                EntryFormRoute(
+                    householdId = householdId,
+                    actorId = actorId,
+                    entryId = backStackEntry.arguments?.getString("entryId"),
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
     }
 }
@@ -224,12 +236,14 @@ internal fun HouseholdApp(
 @Composable
 private fun EntryListRoute(
     householdId: String,
+    actorId: String,
     onOpenSettings: () -> Unit,
     onAddEntry: () -> Unit,
     onOpenFamily: () -> Unit,
+    onEditEntry: (String) -> Unit,
     entryListViewModel: EntryListViewModel = viewModel(),
 ) {
-    LaunchedEffect(householdId) { entryListViewModel.start(householdId) }
+    LaunchedEffect(householdId, actorId) { entryListViewModel.start(householdId, actorId) }
     val state by entryListViewModel.state.collectAsState()
     EntryListScreen(
         state = state,
@@ -239,6 +253,9 @@ private fun EntryListRoute(
         onOpenSettings = onOpenSettings,
         onAddEntry = onAddEntry,
         onOpenFamily = onOpenFamily,
+        onEditEntry = onEditEntry,
+        onConfirmDelete = entryListViewModel::confirmDelete,
+        onUndoDelete = entryListViewModel::undoDelete,
     )
 }
 
@@ -438,10 +455,11 @@ private fun DestinationContent(
 private fun EntryFormRoute(
     householdId: String,
     actorId: String,
+    entryId: String? = null,
     onBack: () -> Unit,
     entryFormViewModel: EntryFormViewModel = viewModel(),
 ) {
-    LaunchedEffect(householdId, actorId) { entryFormViewModel.start(householdId, actorId) }
+    LaunchedEffect(householdId, actorId, entryId) { entryFormViewModel.start(householdId, actorId, entryId) }
     val state by entryFormViewModel.state.collectAsState()
     EntryFormScreen(
         state = state,
