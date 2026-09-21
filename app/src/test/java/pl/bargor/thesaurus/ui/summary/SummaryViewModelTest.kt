@@ -3,6 +3,7 @@ package pl.bargor.thesaurus.ui.summary
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
+import java.time.Year
 import java.time.ZoneOffset
 import java.time.YearMonth
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +63,43 @@ class SummaryViewModelTest {
         advanceUntilIdle()
         assertEquals(SyncState.OFFLINE, vm.state.value.syncState)
         assertEquals(1_250.toBigInteger(), vm.state.value.totals.expenseGrosze)
+    }
+
+    @Test fun yearlyModeUsesCurrentYearAndPreservesTheIndependentMonthSelection() = runTest {
+        val leapYearClock = Clock.fixed(Instant.parse("2028-01-15T12:00:00Z"), ZoneOffset.UTC)
+        val ledger = FakeLedger(SyncObservation(listOf(
+            entry("previous-year", 500, LocalDate.of(2027, 12, 31)),
+            entry("first-day", 25_000, LocalDate.of(2028, 1, 1)),
+            entry("leap-day", -4_500, LocalDate.of(2028, 2, 29)),
+            entry("last-day", -10_500, LocalDate.of(2028, 12, 31)),
+            entry("next-year", -800, LocalDate.of(2029, 1, 1)),
+        ), SyncState.SYNCED))
+        val vm = SummaryViewModel(ledger, leapYearClock)
+
+        assertEquals(YearMonth.of(2028, 1), vm.state.value.month)
+        assertEquals(Year.of(2028), vm.state.value.year)
+        assertEquals(SummaryPeriodMode.MONTH, vm.state.value.mode)
+        vm.start("home")
+        advanceUntilIdle()
+
+        vm.previousMonth()
+        assertEquals(YearMonth.of(2027, 12), vm.state.value.month)
+        assertEquals(500.toBigInteger(), vm.state.value.totals.incomeGrosze)
+
+        vm.selectPeriodMode(SummaryPeriodMode.YEAR)
+        assertEquals(Year.of(2028), vm.state.value.year)
+        assertEquals(25_000.toBigInteger(), vm.state.value.totals.incomeGrosze)
+        assertEquals(15_000.toBigInteger(), vm.state.value.totals.expenseGrosze)
+        assertEquals(10_000.toBigInteger(), vm.state.value.totals.netGrosze)
+        assertEquals(3, vm.state.value.totals.entryCount)
+
+        vm.previousYear()
+        assertEquals(Year.of(2027), vm.state.value.year)
+        assertEquals(500.toBigInteger(), vm.state.value.totals.incomeGrosze)
+        vm.nextYear()
+        vm.selectPeriodMode(SummaryPeriodMode.MONTH)
+        assertEquals(YearMonth.of(2027, 12), vm.state.value.month)
+        assertEquals(500.toBigInteger(), vm.state.value.totals.incomeGrosze)
     }
 
     @Test fun errorWithoutDataAndRetryRecoverToEmptyState() = runTest {

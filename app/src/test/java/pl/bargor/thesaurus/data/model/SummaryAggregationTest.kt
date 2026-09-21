@@ -2,6 +2,7 @@ package pl.bargor.thesaurus.data.model
 
 import java.math.BigInteger
 import java.time.LocalDate
+import java.time.Year
 import java.time.YearMonth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -18,6 +19,24 @@ class SummaryAggregationTest {
             YearMonth.of(2025, 12).plusMonths(1).summaryPeriod(),
         )
         assertEquals(LocalDate.of(2028, 2, 29), YearMonth.of(2028, 2).summaryPeriod().to)
+    }
+
+    @Test fun yearPeriodIncludesCalendarBoundaryAndLeapDay() {
+        assertEquals(
+            SummaryPeriod(LocalDate.of(2028, 1, 1), LocalDate.of(2028, 12, 31)),
+            Year.of(2028).summaryPeriod(),
+        )
+        val totals = aggregateEntries(listOf(
+            entry("previous", 100, LocalDate.of(2027, 12, 31)),
+            entry("first", 2_500, LocalDate.of(2028, 1, 1)),
+            entry("leap-day", -400, LocalDate.of(2028, 2, 29)),
+            entry("last", -600, LocalDate.of(2028, 12, 31)),
+            entry("next", 700, LocalDate.of(2029, 1, 1)),
+        ), Year.of(2028).summaryPeriod())
+        assertEquals(BigInteger.valueOf(2_500), totals.incomeGrosze)
+        assertEquals(BigInteger.valueOf(1_000), totals.expenseGrosze)
+        assertEquals(BigInteger.valueOf(1_500), totals.netGrosze)
+        assertEquals(3, totals.entryCount)
     }
 
     @Test fun signedTotalsExcludeDeletedAndOutOfPeriodEntries() {

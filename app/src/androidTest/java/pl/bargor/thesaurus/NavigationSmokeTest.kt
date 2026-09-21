@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import java.time.YearMonth
+import java.time.Year
 import org.junit.Rule
 import org.junit.Test
 import pl.bargor.thesaurus.ui.summary.SummaryScreen
@@ -26,8 +27,8 @@ class NavigationSmokeTest {
                     entriesContent = { _, _, _, _ -> Text(stringResource(R.string.empty_entries)) },
                     summaryContent = {
                         SummaryScreen(
-                            state = SummaryUiState(month = YearMonth.of(2026, 9), isLoading = false),
-                            onPreviousMonth = {}, onNextMonth = {}, onRetry = {},
+                            state = SummaryUiState(month = YearMonth.of(2026, 9), year = Year.of(2026), isLoading = false),
+                            onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {}, onRetry = {},
                         )
                     },
                 )

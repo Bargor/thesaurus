@@ -5,8 +5,13 @@
     <string name="navigation_reports">Raporty</string>
     <string name="empty_entries">Nie ma jeszcze żadnych wpisów.</string>
     <string name="empty_summary">Brak wpisów w wybranym miesiącu.</string>
+    <string name="empty_summary_year">Brak wpisów w wybranym roku.</string>
     <string name="summary_previous_month">Poprzedni miesiąc</string>
     <string name="summary_next_month">Następny miesiąc</string>
+    <string name="summary_previous_year">Poprzedni rok</string>
+    <string name="summary_next_year">Następny rok</string>
+    <string name="summary_mode_month">Miesiąc</string>
+    <string name="summary_mode_year">Rok</string>
     <string name="summary_income">Przychody</string>
     <string name="summary_expense">Wydatki</string>
     <string name="summary_net">Bilans</string>

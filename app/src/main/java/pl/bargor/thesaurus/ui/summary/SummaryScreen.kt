@@ -12,6 +12,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,8 +38,9 @@ private val monthFormatter = DateTimeFormatter.ofPattern("LLLL uuuu", polishLoca
 @Composable
 fun SummaryScreen(
     state: SummaryUiState,
-    onPreviousMonth: () -> Unit,
-    onNextMonth: () -> Unit,
+    onSelectPeriodMode: (SummaryPeriodMode) -> Unit,
+    onPreviousPeriod: () -> Unit,
+    onNextPeriod: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -49,12 +53,20 @@ fun SummaryScreen(
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.semantics { heading() },
         )
+        SummaryPeriodModeSelector(state.mode, onSelectPeriodMode)
         SummaryPeriodNavigator(
-            label = state.month.format(monthFormatter).replaceFirstChar { it.titlecase(polishLocale) },
-            previousDescription = stringResource(R.string.summary_previous_month),
-            nextDescription = stringResource(R.string.summary_next_month),
-            onPrevious = onPreviousMonth,
-            onNext = onNextMonth,
+            label = when (state.mode) {
+                SummaryPeriodMode.MONTH -> state.month.format(monthFormatter).replaceFirstChar { it.titlecase(polishLocale) }
+                SummaryPeriodMode.YEAR -> state.year.toString()
+            },
+            previousDescription = stringResource(
+                if (state.mode == SummaryPeriodMode.MONTH) R.string.summary_previous_month else R.string.summary_previous_year,
+            ),
+            nextDescription = stringResource(
+                if (state.mode == SummaryPeriodMode.MONTH) R.string.summary_next_month else R.string.summary_next_year,
+            ),
+            onPrevious = onPreviousPeriod,
+            onNext = onNextPeriod,
         )
         if (state.isLoading) {
             CircularProgressIndicator(modifier = Modifier.testTag("summary-loading"))
@@ -83,13 +95,38 @@ fun SummaryScreen(
         }
         if (!state.hasError || !state.totals.isEmpty) {
             if (state.totals.isEmpty) Text(
-                stringResource(R.string.empty_summary),
+                stringResource(
+                    if (state.mode == SummaryPeriodMode.MONTH) R.string.empty_summary else R.string.empty_summary_year,
+                ),
                 modifier = Modifier.testTag("summary-empty"),
             )
             TotalCard(R.string.summary_income, state.totals.incomeGrosze, "summary-income")
             TotalCard(R.string.summary_expense, state.totals.expenseGrosze, "summary-expense")
             TotalCard(R.string.summary_net, state.totals.netGrosze, "summary-net", signed = true)
         }
+    }
+}
+
+@Composable
+private fun SummaryPeriodModeSelector(
+    selectedMode: SummaryPeriodMode,
+    onSelect: (SummaryPeriodMode) -> Unit,
+) {
+    SingleChoiceSegmentedButtonRow {
+        SegmentedButton(
+            selected = selectedMode == SummaryPeriodMode.MONTH,
+            onClick = { onSelect(SummaryPeriodMode.MONTH) },
+            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+            label = { Text(stringResource(R.string.summary_mode_month)) },
+            modifier = Modifier.testTag("summary-mode-month"),
+        )
+        SegmentedButton(
+            selected = selectedMode == SummaryPeriodMode.YEAR,
+            onClick = { onSelect(SummaryPeriodMode.YEAR) },
+            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            label = { Text(stringResource(R.string.summary_mode_year)) },
+            modifier = Modifier.testTag("summary-mode-year"),
+        )
     }
 }
 
