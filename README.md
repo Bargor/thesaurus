@@ -2,7 +2,8 @@
 
 A Polish-language Android app for tracking household income and expenses.
 The **Wpisy** tab supports shared entries, **Podsumowanie** shows monthly and yearly totals,
-and **Raporty** remains a placeholder for future work.
+and **Raporty** provides month, year, and custom-range analysis with signed type filters,
+category shares, trends, and entry drill-down.
 
 The summary starts with the current month. Switch between **Miesiąc** and **Rok** to
 navigate calendar months or years; each mode remembers its selected period.
