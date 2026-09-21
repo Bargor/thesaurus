@@ -2,10 +2,12 @@ package pl.bargor.thesaurus.ui.taxonomy
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -45,6 +47,7 @@ class TaxonomyScreenTest {
         composeRule.onNodeWithText("Jedzenie").assertIsDisplayed()
         composeRule.onNodeWithText("Dawne").assertIsNotDisplayed()
         composeRule.onNodeWithTag("taxonomy-show-archived").performClick()
+        composeRule.onNodeWithTag("taxonomy-list").performScrollToNode(hasText("Dawne"))
         composeRule.onNodeWithText("Dawne").assertIsDisplayed()
 
         composeRule.onNodeWithTag("taxonomy-add-category").performClick()

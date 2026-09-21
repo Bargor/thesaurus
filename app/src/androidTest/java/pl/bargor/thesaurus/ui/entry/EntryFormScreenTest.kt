@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +56,6 @@ class EntryFormScreenTest {
         composeRule.onNodeWithTag("entry-subcategory-salary").performClick()
         composeRule.onNodeWithTag("entry-type-expense").performClick()
 
-        composeRule.onNodeWithText("Tytuł (opcjonalnie)").assertIsDisplayed()
+        composeRule.onNodeWithText("Tytuł (opcjonalnie)").performScrollTo().assertIsDisplayed()
     }
 }

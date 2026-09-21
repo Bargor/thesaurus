@@ -46,8 +46,8 @@ class ReportsScreenTest {
         composeRule.onNodeWithContentDescription("Wykres pierścieniowy kategorii: Jedzenie: 12,50 zł (100%)").assertIsDisplayed()
         composeRule.onNodeWithTag("reports-category-legend").assertTextContains("Jedzenie", substring = true)
         // Expense-only chart uses a positive magnitude even though the total net is negative.
-        composeRule.onNodeWithContentDescription("Trend dzienny: 2 lut: +12,50 zł").assertIsDisplayed()
-        composeRule.onNodeWithTag("reports-net").assertTextContains("-12,50", substring = true)
+        composeRule.onNodeWithContentDescription("Trend dzienny: 2 lut: +12,50 zł").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("reports-net").performScrollTo().assertTextContains("-12,50", substring = true)
         composeRule.onNodeWithTag("report-entry-e1").performScrollTo().performClick()
         assertEquals("e1", opened)
     }
@@ -62,13 +62,13 @@ class ReportsScreenTest {
                 ReportsScreen(state, { state = state.copy(mode = it) }, {}, {}, {}, {}, {}, {}, {}, {})
             }
         }
-        composeRule.onNodeWithTag("reports-offline").assertIsDisplayed()
+        composeRule.onNodeWithTag("reports-offline").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("Podaj daty w formacie RRRR-MM-DD. Data „od” nie może być późniejsza od daty „do”.").assertCountEquals(2)
-        composeRule.onNodeWithTag("reports-mode-month").performClick()
-        composeRule.onNodeWithContentDescription("Poprzedni miesiąc").assertIsDisplayed()
+        composeRule.onNodeWithTag("reports-mode-month").performScrollTo().performClick()
+        composeRule.onNodeWithContentDescription("Poprzedni miesiąc").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Następny miesiąc").assertIsDisplayed()
         composeRule.onNodeWithTag("reports-mode-year").performClick()
-        composeRule.onNodeWithContentDescription("Poprzedni rok").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Poprzedni rok").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Następny rok").assertIsDisplayed()
     }
 

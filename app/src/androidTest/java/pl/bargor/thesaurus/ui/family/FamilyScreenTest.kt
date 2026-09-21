@@ -1,10 +1,12 @@
 package pl.bargor.thesaurus.ui.family
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -44,6 +46,7 @@ class FamilyScreenTest {
         composeRule.onNodeWithTag("family-create-invite").performClick()
         assertEquals("guest@example.test", invitedEmail)
 
+        composeRule.onNodeWithTag("family-list").performScrollToNode(hasTestTag("family-remove-member"))
         composeRule.onNodeWithTag("family-remove-member").performClick()
         composeRule.onNodeWithText("Usunąć członka?").assertIsDisplayed()
         assertEquals(emptyList<String>(), removed)

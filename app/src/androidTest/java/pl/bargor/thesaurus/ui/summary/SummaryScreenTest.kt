@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import java.math.BigInteger
 import java.time.Year
 import java.time.YearMonth
@@ -36,9 +37,9 @@ class SummaryScreenTest {
         composeRule.onNodeWithTag("summary-empty").assertIsDisplayed()
         composeRule.onNodeWithTag("summary-income").assertIsDisplayed()
         composeRule.runOnIdle { state = state.copy(syncState = SyncState.OFFLINE) }
-        composeRule.onNodeWithTag("summary-offline").assertIsDisplayed()
+        composeRule.onNodeWithTag("summary-offline").performScrollTo().assertIsDisplayed()
         composeRule.runOnIdle { state = state.copy(syncState = SyncState.ERROR, hasError = true) }
-        composeRule.onNodeWithTag("summary-error").assertIsDisplayed()
+        composeRule.onNodeWithTag("summary-error").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("summary-empty").assertDoesNotExist()
         composeRule.onNodeWithTag("summary-retry").performClick()
         assertEquals(1, retries)
@@ -48,8 +49,8 @@ class SummaryScreenTest {
                 totals = SummaryTotals(BigInteger.valueOf(1_200), BigInteger.valueOf(500), 2),
             )
         }
-        composeRule.onNodeWithTag("summary-pending").assertIsDisplayed()
-        composeRule.onNodeWithTag("summary-net").assertIsDisplayed()
+        composeRule.onNodeWithTag("summary-pending").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("summary-net").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun modeSelectorAndPeriodControlsNavigate() {
