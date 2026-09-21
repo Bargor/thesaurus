@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">Thesaurus</string>
+    <string name="accessibility_loading">Ładowanie danych</string>
     <string name="navigation_entries">Wpisy</string>
     <string name="navigation_summary">Podsumowanie</string>
     <string name="navigation_reports">Raporty</string>
@@ -15,6 +16,7 @@
     <string name="summary_income">Przychody</string>
     <string name="summary_expense">Wydatki</string>
     <string name="summary_net">Bilans</string>
+    <string name="summary_total_description">%1$s: %2$s</string>
     <string name="summary_load_error">Nie udało się wczytać podsumowania. Spróbuj ponownie po odzyskaniu połączenia.</string>
     <string name="summary_sync_pending">Zmiany oczekują na synchronizację. Kwoty uwzględniają lokalne wpisy.</string>
     <string name="summary_offline">Tryb offline — podsumowanie może nie zawierać wszystkich wpisów.</string>
