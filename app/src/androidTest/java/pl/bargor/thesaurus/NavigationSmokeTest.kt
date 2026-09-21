@@ -7,6 +7,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import java.time.YearMonth
 import java.time.Year
@@ -31,6 +34,7 @@ class NavigationSmokeTest {
                             onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {}, onRetry = {},
                         )
                     },
+                    reportsContent = { Text(stringResource(R.string.empty_reports)) },
                 )
             }
         }
@@ -40,7 +44,30 @@ class NavigationSmokeTest {
         composeTestRule.onNodeWithText("Brak wpisów w wybranym miesiącu.").assertIsDisplayed()
         composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).assertIsSelected()
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).performClick()
-        composeTestRule.onNodeWithText("Raporty będą dostępne wkrótce.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Brak wpisów w wybranym okresie.").assertIsDisplayed()
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).assertIsSelected()
+    }
+
+    @Test
+    fun reportEntryDrillDownNavigatesToTheSelectedEntry() {
+        composeTestRule.setContent {
+            ThesaurusTheme {
+                HouseholdApp(
+                    entriesContent = { _, _, _, _ -> Text(stringResource(R.string.empty_entries)) },
+                    summaryContent = { Text(stringResource(R.string.empty_summary)) },
+                    reportsContent = { onOpenEntry ->
+                        Button(
+                            modifier = Modifier.testTag("open-report-entry"),
+                            onClick = { onOpenEntry("entry-42") },
+                        ) { Text("Otwórz wpis") }
+                    },
+                    entryFormContent = { entryId -> Text("Wybrany wpis: $entryId") },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).performClick()
+        composeTestRule.onNodeWithTag("open-report-entry").performClick()
+        composeTestRule.onNodeWithText("Wybrany wpis: entry-42").assertIsDisplayed()
     }
 }

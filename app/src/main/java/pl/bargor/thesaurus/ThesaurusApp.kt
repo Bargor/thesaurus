@@ -61,6 +61,8 @@ import pl.bargor.thesaurus.ui.taxonomy.TaxonomyViewModel
 import pl.bargor.thesaurus.ui.summary.SummaryScreen
 import pl.bargor.thesaurus.ui.summary.SummaryViewModel
 import pl.bargor.thesaurus.ui.summary.SummaryPeriodMode
+import pl.bargor.thesaurus.ui.reports.ReportsScreen
+import pl.bargor.thesaurus.ui.reports.ReportsViewModel
 
 enum class Destination(
     @param:StringRes val labelRes: Int,
@@ -142,6 +144,10 @@ internal fun HouseholdApp(
         )
     },
     summaryContent: @Composable () -> Unit = { SummaryRoute(householdId) },
+    reportsContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
+        ReportsRoute(householdId, onOpenEntry)
+    },
+    entryFormContent: (@Composable (entryId: String?) -> Unit)? = null,
 ) {
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -196,13 +202,7 @@ internal fun HouseholdApp(
                 )
             }
             composable(Destination.Summary.route) { summaryContent() }
-            composable(Destination.Reports.route) {
-                DestinationContent(
-                    destination = Destination.Reports,
-                    onOpenSettings = { navController.navigate("settings") },
-                    onAddEntry = { navController.navigate("add-entry") },
-                )
-            }
+            composable(Destination.Reports.route) { reportsContent { entryId -> navController.navigate("edit-entry/$entryId") } }
             composable("settings") {
                 TaxonomyRoute(
                     householdId = householdId,
@@ -218,19 +218,24 @@ internal fun HouseholdApp(
                 )
             }
             composable("add-entry") {
-                EntryFormRoute(
-                    householdId = householdId,
-                    actorId = actorId,
-                    onBack = { navController.popBackStack() },
-                )
+                if (entryFormContent != null) entryFormContent(null) else {
+                    EntryFormRoute(
+                        householdId = householdId,
+                        actorId = actorId,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
             composable("edit-entry/{entryId}") { backStackEntry ->
-                EntryFormRoute(
-                    householdId = householdId,
-                    actorId = actorId,
-                    entryId = backStackEntry.arguments?.getString("entryId"),
-                    onBack = { navController.popBackStack() },
-                )
+                val entryId = backStackEntry.arguments?.getString("entryId")
+                if (entryFormContent != null) entryFormContent(entryId) else {
+                    EntryFormRoute(
+                        householdId = householdId,
+                        actorId = actorId,
+                        entryId = entryId,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
         }
     }
@@ -255,6 +260,28 @@ private fun SummaryRoute(
             else summaryViewModel.nextYear()
         },
         onRetry = summaryViewModel::retry,
+    )
+}
+
+@Composable
+private fun ReportsRoute(
+    householdId: String,
+    onOpenEntry: (String) -> Unit,
+    reportsViewModel: ReportsViewModel = viewModel(),
+) {
+    LaunchedEffect(householdId) { reportsViewModel.start(householdId) }
+    val state by reportsViewModel.state.collectAsState()
+    ReportsScreen(
+        state = state,
+        onSelectPeriodMode = reportsViewModel::selectPeriodMode,
+        onPreviousPeriod = reportsViewModel::previousPeriod,
+        onNextPeriod = reportsViewModel::nextPeriod,
+        onSelectType = reportsViewModel::selectType,
+        onCustomFromChange = reportsViewModel::updateCustomFrom,
+        onCustomToChange = reportsViewModel::updateCustomTo,
+        onApplyCustomPeriod = reportsViewModel::applyCustomPeriod,
+        onOpenEntry = onOpenEntry,
+        onRetry = reportsViewModel::retry,
     )
 }
 
