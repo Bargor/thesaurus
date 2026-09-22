@@ -63,7 +63,7 @@ class ReportsScreenTest {
             }
         }
         composeRule.onNodeWithTag("reports-offline").performScrollTo().assertIsDisplayed()
-        composeRule.onAllNodesWithText("Podaj daty w formacie RRRR-MM-DD. Data „od” nie może być późniejsza od daty „do”.").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Podaj daty w formacie RRRR-MM-DD. Data „od” nie może być późniejsza od daty „do”.").assertCountEquals(1)
         composeRule.onNodeWithTag("reports-mode-month").performScrollTo().performClick()
         composeRule.onNodeWithContentDescription("Poprzedni miesiąc").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Następny miesiąc").assertIsDisplayed()

@@ -46,6 +46,7 @@ fun SummaryScreen(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val loadingDescription = stringResource(R.string.accessibility_loading)
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -71,7 +72,11 @@ fun SummaryScreen(
             onNext = onNextPeriod,
         )
         if (state.isLoading) {
-            CircularProgressIndicator(modifier = Modifier.testTag("summary-loading"))
+            CircularProgressIndicator(
+                modifier = Modifier.testTag("summary-loading").semantics {
+                    contentDescription = loadingDescription
+                },
+            )
             return@Column
         }
         if (state.hasError) {
@@ -160,14 +165,19 @@ internal fun SummaryPeriodNavigator(
 
 @Composable
 private fun TotalCard(labelRes: Int, amount: BigInteger, tag: String, signed: Boolean = false) {
+    val label = stringResource(labelRes)
+    val prefix = if (signed && amount.signum() > 0) "+" else ""
+    val formattedAmount = prefix + NumberFormat.getCurrencyInstance(polishLocale).format(BigDecimal(amount, 2))
+    val description = stringResource(R.string.summary_total_description, label, formattedAmount)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(labelRes), style = MaterialTheme.typography.labelLarge)
-            val prefix = if (signed && amount.signum() > 0) "+" else ""
+            Text(label, style = MaterialTheme.typography.labelLarge)
             Text(
-                prefix + NumberFormat.getCurrencyInstance(polishLocale).format(BigDecimal(amount, 2)),
+                formattedAmount,
                 style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.testTag(tag),
+                modifier = Modifier.testTag(tag).semantics {
+                    contentDescription = description
+                },
             )
         }
     }

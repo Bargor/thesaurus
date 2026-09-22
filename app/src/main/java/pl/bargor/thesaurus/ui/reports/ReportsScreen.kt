@@ -196,7 +196,9 @@ private fun CustomPeriodFields(
         onValueChange = onTo,
         label = { Text(stringResource(R.string.reports_to)) },
         isError = state.customDateError,
-        supportingText = { if (state.customDateError) Text(stringResource(R.string.reports_date_error)) },
+        // The group exposes one error message. Repeating it for both inputs makes TalkBack announce
+        // the same Polish validation error twice before the user can correct the range.
+        supportingText = null,
         singleLine = true,
         modifier = Modifier.fillMaxWidth().testTag("reports-custom-to"),
     )

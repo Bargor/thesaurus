@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import java.math.BigInteger
@@ -33,6 +34,7 @@ class SummaryScreenTest {
             }
         }
         composeRule.onNodeWithTag("summary-loading").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Ładowanie danych").assertIsDisplayed()
         composeRule.runOnIdle { state = state.copy(isLoading = false) }
         composeRule.onNodeWithTag("summary-empty").assertIsDisplayed()
         composeRule.onNodeWithTag("summary-income").assertIsDisplayed()
@@ -51,6 +53,8 @@ class SummaryScreenTest {
         }
         composeRule.onNodeWithTag("summary-pending").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("summary-net").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("summary-net").assertTextContains("7,00", substring = true)
+        composeRule.onNodeWithContentDescription("Bilans: +7,00 zł").assertIsDisplayed()
     }
 
     @Test fun modeSelectorAndPeriodControlsNavigate() {

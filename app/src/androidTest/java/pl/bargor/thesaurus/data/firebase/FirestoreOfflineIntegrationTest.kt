@@ -4,7 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
-import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.Source
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -29,7 +29,7 @@ class FirestoreOfflineIntegrationTest {
     val localNetworkPermissionRule = LocalNetworkPermissionRule()
 
     @Test
-    fun offlineWriteIsPendingThenSynchronizesWhenNetworkReturns() = runBlocking {
+    fun householdOnboardingOfflineWriteAndTombstoneSurviveNetworkRecovery() = runBlocking {
         val suffix = UUID.randomUUID().toString()
         val app = FirebaseApp.initializeApp(
             InstrumentationRegistry.getInstrumentation().targetContext,
@@ -48,55 +48,18 @@ class FirestoreOfflineIntegrationTest {
             val email = "offline-$suffix@example.test"
             val uid = auth.createUserWithEmailAndPassword(email, "test-password-123")
                 .await().user!!.uid
-            val householdId = "household-$suffix"
+            val repository = FirestoreRepositories(firestore)
+            val householdId = (repository.createFirstHousehold(
+                OnboardingIdentity(uid, email, "Ala"),
+                "  Dom testowy  ",
+            ) as FirstHouseholdResult.Created).householdId
             val household = firestore.collection(FirestorePaths.HOUSEHOLDS).document(householdId)
-            firestore.runBatch { batch ->
-                batch.set(
-                    firestore.collection(FirestorePaths.USERS).document(uid),
-                    mapOf(
-                        "email" to email,
-                        "displayName" to null,
-                        "householdId" to householdId,
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp(),
-                    ),
-                )
-                batch.set(
-                    household,
-                    mapOf(
-                        "name" to "Dom testowy",
-                        "ownerId" to uid,
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp(),
-                    ),
-                )
-                batch.set(
-                    household.collection(FirestorePaths.MEMBERS).document(uid),
-                    mapOf(
-                        "email" to email,
-                        "displayName" to null,
-                        "role" to "OWNER",
-                        "invitationId" to null,
-                        "joinedAt" to FieldValue.serverTimestamp(),
-                    ),
-                )
-                batch.set(
-                    household.collection(FirestorePaths.CATEGORIES).document("food"),
-                    mapOf(
-                        "householdId" to householdId,
-                        "name" to "Jedzenie",
-                        "color" to null,
-                        "archived" to false,
-                        "defaultEntryType" to EntryType.EXPENSE.name,
-                        "authorId" to uid,
-                        "updatedById" to uid,
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp(),
-                    ),
-                )
-            }.await()
-
-            val repository: LedgerRepository = FirestoreRepositories(firestore)
+            assertEquals("Dom testowy", household.get(Source.SERVER).await().getString("name"))
+            assertEquals(
+                EntryType.EXPENSE.name,
+                household.collection(FirestorePaths.CATEGORIES).document("jedzenie")
+                    .get(Source.SERVER).await().getString("defaultEntryType"),
+            )
             withTimeout(15_000) {
                 repository.observeEntries(householdId).first { it.state == SyncState.SYNCED }
             }
@@ -111,7 +74,7 @@ class FirestoreOfflineIntegrationTest {
                 householdId = householdId,
                 amountGrosze = -1_234,
                 date = LocalDate.of(2026, 9, 14),
-                categoryId = "food",
+                categoryId = "jedzenie",
                 authorId = uid,
                 updatedById = uid,
             )
@@ -133,6 +96,10 @@ class FirestoreOfflineIntegrationTest {
                 }
             }
             assertTrue(synced.value!!.any { it.id == entry.id && it.amountGrosze == -1_234L })
+            val serverEntry = household.collection(FirestorePaths.ENTRIES).document(entry.id)
+            val serverEntryAfterSync = serverEntry.get(Source.SERVER).await()
+            assertEquals(-1_234L, serverEntryAfterSync.getLong("amountGrosze"))
+            assertEquals(false, serverEntryAfterSync.getBoolean("deleted"))
 
             repository.tombstone(householdId, entry.id, uid)
             val afterDeletion = withTimeout(15_000) {
@@ -141,6 +108,7 @@ class FirestoreOfflineIntegrationTest {
                 }
             }
             assertFalse(afterDeletion.value.orEmpty().any { it.id == entry.id })
+            assertEquals(true, serverEntry.get(Source.SERVER).await().getBoolean("deleted"))
 
             val staleEdit = runCatching {
                 repository.save(entry.copy(title = "Nieaktualna edycja", updatedById = uid))
