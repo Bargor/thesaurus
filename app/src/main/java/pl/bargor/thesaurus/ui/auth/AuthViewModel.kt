@@ -52,18 +52,28 @@ class AuthViewModel @Inject constructor(
     fun signIn(activity: Activity) {
         viewModelScope.launch {
             mutableState.value = AuthUiState.SigningIn
-            val result = authRepository.signIn(activity)
-            val identity = result.getOrNull()
-            if (identity != null) {
-                refresh(identity)
+            handleSignIn(authRepository.signIn(activity))
+        }
+    }
+
+    fun signInWithEmail(email: String, password: String) {
+        viewModelScope.launch {
+            mutableState.value = AuthUiState.SigningIn
+            handleSignIn(authRepository.signInWithEmail(email.trim(), password))
+        }
+    }
+
+    private suspend fun handleSignIn(result: Result<OnboardingIdentity>) {
+        val identity = result.getOrNull()
+        if (identity != null) {
+            refresh(identity)
+        } else {
+            mutableState.value = if (result.exceptionOrNull() is GoogleConfigurationMissingException) {
+                AuthUiState.GoogleConfigurationRequired
+            } else if (result.exceptionOrNull() is GetCredentialCancellationException) {
+                AuthUiState.SignedOut
             } else {
-                mutableState.value = if (result.exceptionOrNull() is GoogleConfigurationMissingException) {
-                    AuthUiState.GoogleConfigurationRequired
-                } else if (result.exceptionOrNull() is GetCredentialCancellationException) {
-                    AuthUiState.SignedOut
-                } else {
-                    AuthUiState.Error(identity = null, duringOnboarding = false)
-                }
+                AuthUiState.Error(identity = null, duringOnboarding = false)
             }
         }
     }

@@ -40,7 +40,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -77,7 +77,7 @@ enum class Destination(
 
 @Composable
 fun ThesaurusApp(
-    authViewModel: AuthViewModel = viewModel(),
+    authViewModel: AuthViewModel = hiltViewModel(),
     invitationLink: FamilyInvitationLink? = null,
 ) {
     val authState by authViewModel.state.collectAsState()
@@ -85,7 +85,7 @@ fun ThesaurusApp(
     LaunchedEffect(invitationLink) { pendingInvitation = invitationLink }
     when (val state = authState) {
         is AuthUiState.Ready -> if (pendingInvitation == null) {
-            HouseholdApp(state.identity.uid, state.householdId)
+            HouseholdApp(state.identity.uid, state.householdId, onSignOut = authViewModel::signOut)
         } else if (pendingInvitation?.householdId == state.householdId) {
             InvitationAcceptRoute(
                 link = pendingInvitation!!,
@@ -112,12 +112,14 @@ fun ThesaurusApp(
         } ?: AuthenticationContent(
             state = state,
             onSignIn = authViewModel::signIn,
+            onEmailSignIn = authViewModel::signInWithEmail,
             onCreateHousehold = authViewModel::createHousehold,
             onRetry = authViewModel::retry,
         )
         else -> AuthenticationContent(
             state = state,
             onSignIn = authViewModel::signIn,
+            onEmailSignIn = authViewModel::signInWithEmail,
             onCreateHousehold = authViewModel::createHousehold,
             onRetry = authViewModel::retry,
         )
@@ -148,6 +150,7 @@ internal fun HouseholdApp(
         ReportsRoute(householdId, onOpenEntry)
     },
     entryFormContent: (@Composable (entryId: String?) -> Unit)? = null,
+    onSignOut: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -155,33 +158,36 @@ internal fun HouseholdApp(
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                Destination.entries.forEach { destination ->
-                    val label = stringResource(destination.labelRes)
-                    NavigationBarItem(
-                        modifier = Modifier.testTag(destination.navigationTestTag),
-                        selected = currentRoute == destination.route,
-                        onClick = {
-                            navController.navigate(destination.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+            Column {
+                DeveloperToolsContent(onSignOut)
+                NavigationBar {
+                    Destination.entries.forEach { destination ->
+                        val label = stringResource(destination.labelRes)
+                        NavigationBarItem(
+                            modifier = Modifier.testTag(destination.navigationTestTag),
+                            selected = currentRoute == destination.route,
+                            onClick = {
+                                navController.navigate(destination.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = when (destination) {
-                                    Destination.Entries -> Icons.Default.Description
-                                    Destination.Summary -> Icons.Default.Summarize
-                                    Destination.Reports -> Icons.Default.Assessment
-                                },
-                                contentDescription = null,
-                            )
-                        },
-                        label = { Text(label) },
-                    )
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = when (destination) {
+                                        Destination.Entries -> Icons.Default.Description
+                                        Destination.Summary -> Icons.Default.Summarize
+                                        Destination.Reports -> Icons.Default.Assessment
+                                    },
+                                    contentDescription = null,
+                                )
+                            },
+                            label = { Text(label) },
+                        )
+                    }
                 }
             }
         },
@@ -244,7 +250,7 @@ internal fun HouseholdApp(
 @Composable
 private fun SummaryRoute(
     householdId: String,
-    summaryViewModel: SummaryViewModel = viewModel(),
+    summaryViewModel: SummaryViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(householdId) { summaryViewModel.start(householdId) }
     val state by summaryViewModel.state.collectAsState()
@@ -267,7 +273,7 @@ private fun SummaryRoute(
 private fun ReportsRoute(
     householdId: String,
     onOpenEntry: (String) -> Unit,
-    reportsViewModel: ReportsViewModel = viewModel(),
+    reportsViewModel: ReportsViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(householdId) { reportsViewModel.start(householdId) }
     val state by reportsViewModel.state.collectAsState()
@@ -293,7 +299,7 @@ private fun EntryListRoute(
     onAddEntry: () -> Unit,
     onOpenFamily: () -> Unit,
     onEditEntry: (String) -> Unit,
-    entryListViewModel: EntryListViewModel = viewModel(),
+    entryListViewModel: EntryListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(householdId, actorId) { entryListViewModel.start(householdId, actorId) }
     val state by entryListViewModel.state.collectAsState()
@@ -316,7 +322,7 @@ private fun FamilyRoute(
     householdId: String,
     actorId: String,
     onBack: () -> Unit,
-    familyViewModel: FamilyViewModel = viewModel(),
+    familyViewModel: FamilyViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     val shareChooserTitle = stringResource(R.string.family_share_chooser)
@@ -349,7 +355,7 @@ private fun InvitationAcceptRoute(
     identity: pl.bargor.thesaurus.data.firebase.OnboardingIdentity,
     onSignOut: () -> Unit,
     onAccepted: (pl.bargor.thesaurus.data.firebase.OnboardingIdentity) -> Unit,
-    invitationAcceptViewModel: InvitationAcceptViewModel = viewModel(),
+    invitationAcceptViewModel: InvitationAcceptViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(link, identity) { invitationAcceptViewModel.start(link, identity) }
     val state by invitationAcceptViewModel.state.collectAsState()
@@ -377,6 +383,7 @@ private fun ExistingHouseholdInvitationContent(onContinue: () -> Unit) {
 private fun AuthenticationContent(
     state: AuthUiState,
     onSignIn: (Activity) -> Unit,
+    onEmailSignIn: (String, String) -> Unit,
     onCreateHousehold: (String) -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -407,12 +414,7 @@ private fun AuthenticationContent(
             }
 
             AuthUiState.SignedOut -> {
-                Text(stringResource(R.string.auth_signed_out_description))
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    modifier = Modifier.testTag("google-sign-in"),
-                    onClick = { context.findActivity()?.let(onSignIn) },
-                ) { Text(stringResource(R.string.auth_google_sign_in)) }
+                SignInContent(context, onSignIn, onEmailSignIn)
             }
 
             is AuthUiState.NeedsHousehold -> {
@@ -454,6 +456,16 @@ private fun AuthenticationContent(
             is AuthUiState.Ready -> Unit
         }
     }
+}
+
+@Composable
+internal fun GoogleSignInContent(context: Context, onSignIn: (Activity) -> Unit) {
+    Text(stringResource(R.string.auth_signed_out_description))
+    Spacer(Modifier.height(12.dp))
+    Button(
+        modifier = Modifier.testTag("google-sign-in"),
+        onClick = { context.findActivity()?.let(onSignIn) },
+    ) { Text(stringResource(R.string.auth_google_sign_in)) }
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
@@ -509,7 +521,7 @@ private fun EntryFormRoute(
     actorId: String,
     entryId: String? = null,
     onBack: () -> Unit,
-    entryFormViewModel: EntryFormViewModel = viewModel(),
+    entryFormViewModel: EntryFormViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(householdId, actorId, entryId) { entryFormViewModel.start(householdId, actorId, entryId) }
     val state by entryFormViewModel.state.collectAsState()
@@ -532,7 +544,7 @@ private fun TaxonomyRoute(
     householdId: String,
     actorId: String,
     onBack: () -> Unit,
-    taxonomyViewModel: TaxonomyViewModel = viewModel(),
+    taxonomyViewModel: TaxonomyViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(householdId, actorId) { taxonomyViewModel.start(householdId, actorId) }
     val state by taxonomyViewModel.state.collectAsState()
