@@ -264,14 +264,21 @@ private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
         modifier = Modifier.fillMaxWidth().height(190.dp).testTag("reports-category-chart")
             .semantics { contentDescription = description },
     ) {
+        // The stroke is centered on the arc. Keep its full width inside the Canvas so it
+        // cannot paint into the legend below, including on narrow screens.
+        val outerDiameter = (minOf(size.width, size.height) - 16.dp.toPx()).coerceAtLeast(0f)
+        if (outerDiameter == 0f) return@Canvas
+        val strokeWidth = outerDiameter * .22f
+        val arcDiameter = outerDiameter - strokeWidth
+        val arcOffset = Offset((size.width - arcDiameter) / 2f, (size.height - arcDiameter) / 2f)
         var start = -90f
         categories.forEachIndexed { index, item ->
             val sweep = item.value.amountGrosze.toFloat() / total.toFloat() * 360f
-            drawArc(donutColors[index % donutColors.size], start, sweep, false, Offset(size.width * .2f, 0f), Size(size.height, size.height), style = Stroke(width = size.height * .22f))
+            drawArc(donutColors[index % donutColors.size], start, sweep, false, arcOffset, Size(arcDiameter, arcDiameter), style = Stroke(width = strokeWidth))
             start += sweep
         }
     }
-    Text(legend, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("reports-category-legend"))
+    Text(legend, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().testTag("reports-category-legend"))
 }
 
 /** Shows daily values except in annual mode, where [ReportsViewModel] provides monthly buckets. */
