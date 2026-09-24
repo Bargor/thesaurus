@@ -20,7 +20,16 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // AGP creates local/device test tasks for one build type at a time.
+    // Keep existing CI on debug unless developer-mode tests are explicitly requested.
+    testBuildType = if (providers.gradleProperty("devTest").orNull == "true") "devDebug" else "debug"
+
     buildTypes {
+        create("devDebug") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".dev"
+            matchingFallbacks += listOf("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -64,6 +73,7 @@ dependencies {
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)
     implementation(libs.hilt.android)
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)
@@ -77,4 +87,5 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    add("devDebugImplementation", libs.androidx.compose.ui.test.manifest)
 }

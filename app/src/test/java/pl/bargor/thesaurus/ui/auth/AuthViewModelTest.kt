@@ -79,9 +79,26 @@ class AuthViewModelTest {
         assertTrue(onboarding.createdWith.isEmpty())
     }
 
+    @Test
+    fun `email login trims address and loads the account household`() = runTest(dispatcher) {
+        val auth = FakeAuthRepository()
+        val identity = OnboardingIdentity("dev-user", "member@example.test", null)
+        auth.emailResult = Result.success(identity)
+        val viewModel = AuthViewModel(auth, FakeOnboardingRepository(householdId = "household-1"))
+        advanceUntilIdle()
+
+        viewModel.signInWithEmail("  member@example.test  ", "dev-password-123")
+        advanceUntilIdle()
+
+        assertEquals("member@example.test" to "dev-password-123", auth.emailCredentials)
+        assertEquals(AuthUiState.Ready(identity, "household-1"), viewModel.state.value)
+    }
+
     private class FakeAuthRepository : AuthRepository {
         private val mutableIdentities = MutableStateFlow<OnboardingIdentity?>(null)
         override val identities: Flow<OnboardingIdentity?> = mutableIdentities
+        var emailCredentials: Pair<String, String>? = null
+        var emailResult: Result<OnboardingIdentity> = Result.failure(UnsupportedOperationException())
 
         fun emit(identity: OnboardingIdentity?) {
             mutableIdentities.value = identity
@@ -89,6 +106,11 @@ class AuthViewModelTest {
 
         override suspend fun signIn(activity: Activity): Result<OnboardingIdentity> =
             Result.failure(UnsupportedOperationException())
+
+        override suspend fun signInWithEmail(email: String, password: String): Result<OnboardingIdentity> {
+            emailCredentials = email to password
+            return emailResult
+        }
 
         override suspend fun signOut() = Unit
     }

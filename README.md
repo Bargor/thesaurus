@@ -72,6 +72,42 @@ app/build/outputs/apk/debug/app-debug.apk
 
 The app connects to production by default. Emulator routing is explicitly opt-in in debug/test wiring; do not point a production build at `10.0.2.2`. The checked-in rules and indexes must be reviewed before every production deploy.
 
+## Developer mode on Windows
+
+`devDebug` is a separate installable app, **Thesaurus DEV** (`pl.bargor.thesaurus.dev`). It uses only the `demo-thesaurus` Firebase project and routes Authentication to `10.0.2.2:9099` and Firestore to `10.0.2.2:8080`. Its checked-in `app/src/devDebug/google-services.json` contains fake emulator identifiers. The normal `debug` and `release` builds keep Google login and the production Firebase configuration. **Never enter real credentials or production data in the DEV app.** The DEV app is intended for an Android emulator; `10.0.2.2` will not reach the host from a physical phone.
+
+From PowerShell in the repository root, install dependencies and start Auth and Firestore in one terminal. Leave it running:
+
+```powershell
+npm ci
+npx --no-install firebase emulators:start --project demo-thesaurus --only auth,firestore
+```
+
+Start an Android emulator (API 31 or newer). In a second PowerShell terminal, build and install the DEV app:
+
+```powershell
+.\gradlew.bat :app:assembleDevDebug :app:installDevDebug
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" shell am start -n pl.bargor.thesaurus.dev/pl.bargor.thesaurus.MainActivity
+```
+
+On the Polish login screen, keep the prefilled `owner@example.test` and `dev-password-123`, then tap **Zaloguj do emulatora**. The first login creates that fake account. Create a household to become its owner. Tap **Zmień konto testowe** to sign out; enter `member@example.test` with the same test password to create a second fake account. To test membership, create an invitation for `member@example.test` as the owner, copy its URL, sign in as the member, then open the URL explicitly in the DEV app (replace `<invitation-url>` with the copied URL):
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" shell am start -n pl.bargor.thesaurus.dev/pl.bargor.thesaurus.MainActivity -a android.intent.action.VIEW -d "<invitation-url>"
+```
+
+For focused DEV tests, run this command with the Android emulator booted. `-PdevTest=true` selects `devDebug` for Android unit and instrumentation test tasks; without it, existing `testDebugUnitTest` and `connectedDebugAndroidTest` remain the default:
+
+```powershell
+npx --no-install firebase emulators:exec --project demo-thesaurus --only auth,firestore ".\gradlew.bat -PdevTest=true :app:testDevDebugUnitTest :app:connectedDevDebugAndroidTest"
+```
+
+To reset both test accounts and Firestore data, stop `emulators:start` with Ctrl+C and restart it without `--import`; the emulators do not persist data by default. Clear the DEV app's saved Auth session and Firestore cache too:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" shell pm clear pl.bargor.thesaurus.dev
+```
+
 ## Local Firebase emulators and tests
 
 Install the pinned Node dependencies once:

@@ -8,10 +8,6 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import java.time.Clock
-import pl.bargor.thesaurus.data.auth.AuthRepository
-import pl.bargor.thesaurus.data.auth.FirebaseGoogleAuthRepository
-import pl.bargor.thesaurus.data.firebase.FirebaseAuthFactory
-import pl.bargor.thesaurus.data.firebase.FirebaseFirestoreFactory
 import pl.bargor.thesaurus.data.firebase.FirestoreRepositories
 import pl.bargor.thesaurus.data.firebase.HouseholdRepository
 import pl.bargor.thesaurus.data.firebase.InvitationRepository
@@ -30,19 +26,16 @@ object FirebaseModule {
 
     @Provides
     @Singleton
-    fun provideFirestore(): FirebaseFirestore = FirebaseFirestoreFactory.create()
+    fun provideFirestore(backend: FirebaseBackend): FirebaseFirestore = backend.firestore()
 
     @Provides
     @Singleton
-    fun provideFirebaseAuth(): FirebaseAuth = FirebaseAuthFactory.create()
+    fun provideFirebaseAuth(backend: FirebaseBackend): FirebaseAuth = backend.auth()
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
-    @Binds @Singleton
-    abstract fun bindAuthRepository(repository: FirebaseGoogleAuthRepository): AuthRepository
-
     @Binds @Singleton
     abstract fun bindOnboardingRepository(repository: FirestoreRepositories): OnboardingRepository
 

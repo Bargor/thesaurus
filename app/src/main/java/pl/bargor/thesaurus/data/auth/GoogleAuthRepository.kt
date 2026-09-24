@@ -24,6 +24,8 @@ import javax.inject.Singleton
 interface AuthRepository {
     val identities: Flow<OnboardingIdentity?>
     suspend fun signIn(activity: Activity): Result<OnboardingIdentity>
+    suspend fun signInWithEmail(email: String, password: String): Result<OnboardingIdentity> =
+        Result.failure(UnsupportedOperationException("Email login is only available in devDebug"))
     suspend fun signOut()
 }
 

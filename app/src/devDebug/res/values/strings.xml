@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Thesaurus DEV</string>
+    <string name="auth_title">Thesaurus DEV</string>
+    <string name="dev_login_description">Tryb deweloperski — lokalne emulatory Firebase. Użyj owner@example.test lub member@example.test.</string>
+    <string name="dev_email">Testowy adres e-mail</string>
+    <string name="dev_password">Testowe hasło</string>
+    <string name="dev_sign_in">Zaloguj do emulatora</string>
+    <string name="dev_sign_out">Zmień konto testowe</string>
+    <string name="invitation_sign_out">Zmień konto testowe</string>
+    <string name="invitation_wrong_email">To zaproszenie jest przypisane do innego adresu e-mail. Zmień konto testowe.</string>
+</resources>
