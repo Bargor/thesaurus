@@ -191,7 +191,9 @@ fun EntryFormScreen(
                 stringResource(if (state.editingEntryId == null) R.string.entry_save else R.string.entry_save_changes),
             )
         }
-        if (state.saved) Text(stringResource(if (state.queuedOffline) R.string.entry_queued else R.string.entry_saved))
+        if (state.saved && state.editingEntryId != null) {
+            Text(stringResource(if (state.queuedOffline) R.string.entry_queued else R.string.entry_saved))
+        }
         Spacer(Modifier.height(8.dp))
     }
 }

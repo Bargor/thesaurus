@@ -75,6 +75,7 @@ class EntryFormViewModelTest {
         assertEquals(listOf("dom", "zakupy"), saved.tags)
         assertEquals("income", saved.categoryId)
         assertTrue(viewModel.state.value.saved)
+        assertNull(viewModel.state.value.editingEntryId)
     }
 
     @Test
@@ -114,6 +115,7 @@ class EntryFormViewModelTest {
         advanceUntilIdle()
         assertEquals(EntryFormError.SaveFailed, viewModel.state.value.error)
         assertFalse(viewModel.state.value.saving)
+        assertFalse(viewModel.state.value.saved)
     }
 
     @Test
@@ -134,6 +136,10 @@ class EntryFormViewModelTest {
         assertTrue(viewModel.state.value.saved)
         assertTrue(viewModel.state.value.queuedOffline)
         assertFalse(viewModel.state.value.saving)
+        assertNull(viewModel.state.value.editingEntryId)
+        viewModel.save(today)
+        advanceUntilIdle()
+        assertEquals(1, ledger.saved.size)
     }
 
     @Test
@@ -174,6 +180,7 @@ class EntryFormViewModelTest {
         assertEquals("author", saved.authorId)
         assertEquals("owner", saved.updatedById)
         assertEquals(createdAt, saved.createdAt)
+        assertEquals("existing", viewModel.state.value.editingEntryId)
     }
 }
 

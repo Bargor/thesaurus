@@ -58,4 +58,28 @@ class EntryFormScreenTest {
 
         composeRule.onNodeWithText("Tytuł (opcjonalnie)").performScrollTo().assertIsDisplayed()
     }
+
+    @Test
+    fun creationHasNoSuccessMessageButEditingKeepsItAndFailureRemainsActionable() {
+        var state by mutableStateOf(EntryFormUiState(isLoading = false, saved = true))
+        composeRule.setContent {
+            ThesaurusTheme {
+                EntryFormScreen(
+                    state = state,
+                    onAmountChange = {}, onTitleChange = {}, onTagsChange = {}, onDateChange = {},
+                    onTypeChange = {}, onCategorySelected = {}, onSubcategorySelected = {},
+                    onSave = {}, onBack = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Wpis zapisany.").assertDoesNotExist()
+        composeRule.runOnIdle { state = state.copy(queuedOffline = true) }
+        composeRule.onNodeWithText("Wpis zapisany lokalnie i oczekuje na synchronizację.").assertDoesNotExist()
+        composeRule.runOnIdle { state = state.copy(editingEntryId = "existing", queuedOffline = false) }
+        composeRule.onNodeWithText("Wpis zapisany.").performScrollTo().assertIsDisplayed()
+        composeRule.runOnIdle { state = state.copy(saved = false, error = EntryFormError.SaveFailed) }
+        composeRule.onNodeWithText("Nie udało się zapisać wpisu. Spróbuj ponownie po odzyskaniu połączenia.")
+            .performScrollTo().assertIsDisplayed()
+    }
 }
