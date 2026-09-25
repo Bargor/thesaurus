@@ -49,6 +49,7 @@ import androidx.navigation.compose.rememberNavController
 import pl.bargor.thesaurus.ui.auth.AuthUiState
 import pl.bargor.thesaurus.ui.auth.AuthViewModel
 import pl.bargor.thesaurus.ui.entry.EntryFormScreen
+import pl.bargor.thesaurus.ui.entry.EntryFormUiState
 import pl.bargor.thesaurus.ui.entry.EntryFormViewModel
 import pl.bargor.thesaurus.ui.entries.EntryListScreen
 import pl.bargor.thesaurus.ui.entries.EntryListViewModel
@@ -149,7 +150,7 @@ internal fun HouseholdApp(
     reportsContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
         ReportsRoute(householdId, onOpenEntry)
     },
-    entryFormContent: (@Composable (entryId: String?) -> Unit)? = null,
+    entryFormContent: (@Composable (entryId: String?, onCreated: () -> Unit) -> Unit)? = null,
     onSignOut: () -> Unit = {},
 ) {
     val navController = rememberNavController()
@@ -224,17 +225,25 @@ internal fun HouseholdApp(
                 )
             }
             composable("add-entry") {
-                if (entryFormContent != null) entryFormContent(null) else {
+                val onCreated = {
+                    navController.navigate(Destination.Entries.route) {
+                        popUpTo(Destination.Entries.route)
+                        launchSingleTop = true
+                    }
+                    Unit
+                }
+                if (entryFormContent != null) entryFormContent(null, onCreated) else {
                     EntryFormRoute(
                         householdId = householdId,
                         actorId = actorId,
                         onBack = { navController.popBackStack() },
+                        onCreated = onCreated,
                     )
                 }
             }
             composable("edit-entry/{entryId}") { backStackEntry ->
                 val entryId = backStackEntry.arguments?.getString("entryId")
-                if (entryFormContent != null) entryFormContent(entryId) else {
+                if (entryFormContent != null) entryFormContent(entryId, {}) else {
                     EntryFormRoute(
                         householdId = householdId,
                         actorId = actorId,
@@ -521,10 +530,12 @@ private fun EntryFormRoute(
     actorId: String,
     entryId: String? = null,
     onBack: () -> Unit,
+    onCreated: () -> Unit = {},
     entryFormViewModel: EntryFormViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(householdId, actorId, entryId) { entryFormViewModel.start(householdId, actorId, entryId) }
     val state by entryFormViewModel.state.collectAsState()
+    EntryFormCompletion(state, onCreated)
     EntryFormScreen(
         state = state,
         onAmountChange = entryFormViewModel::updateAmount,
@@ -537,6 +548,13 @@ private fun EntryFormRoute(
         onSave = entryFormViewModel::save,
         onBack = onBack,
     )
+}
+
+@Composable
+internal fun EntryFormCompletion(state: EntryFormUiState, onCreated: () -> Unit) {
+    LaunchedEffect(state.saved, state.editingEntryId) {
+        if (state.saved && state.editingEntryId == null) onCreated()
+    }
 }
 
 @Composable

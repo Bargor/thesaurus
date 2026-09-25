@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -17,6 +18,8 @@ import org.junit.Rule
 import org.junit.Test
 import pl.bargor.thesaurus.ui.summary.SummaryScreen
 import pl.bargor.thesaurus.ui.summary.SummaryUiState
+import pl.bargor.thesaurus.ui.entry.EntryFormError
+import pl.bargor.thesaurus.ui.entry.EntryFormUiState
 
 class NavigationSmokeTest {
     @get:Rule
@@ -61,7 +64,7 @@ class NavigationSmokeTest {
                             onClick = { onOpenEntry("entry-42") },
                         ) { Text("Otwórz wpis") }
                     },
-                    entryFormContent = { entryId -> Text("Wybrany wpis: $entryId") },
+                    entryFormContent = { entryId, _ -> Text("Wybrany wpis: $entryId") },
                 )
             }
         }
@@ -69,5 +72,78 @@ class NavigationSmokeTest {
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).performClick()
         composeTestRule.onNodeWithTag("open-report-entry").performClick()
         composeTestRule.onNodeWithText("Wybrany wpis: entry-42").assertIsDisplayed()
+    }
+
+    @Test
+    fun successfulCreationReturnsToEntriesOnceEvenAfterRecomposition() = verifyCreationReturn(queuedOffline = false)
+
+    @Test
+    fun pendingOfflineCreationReturnsToEntriesOnce() = verifyCreationReturn(queuedOffline = true)
+
+    private fun verifyCreationReturn(queuedOffline: Boolean) {
+        val formState = mutableStateOf(EntryFormUiState(isLoading = false))
+        val recomposition = mutableStateOf(0)
+        var navigationCount = 0
+        composeTestRule.setContent {
+            recomposition.value
+            ThesaurusTheme {
+                HouseholdApp(
+                    entriesContent = { _, onAddEntry, _, _ ->
+                        Button(modifier = Modifier.testTag("add-entry"), onClick = onAddEntry) { Text("Dodaj wpis") }
+                    },
+                    summaryContent = {},
+                    reportsContent = {},
+                    entryFormContent = { entryId, onCreated ->
+                        EntryFormCompletion(formState.value) {
+                            navigationCount++
+                            onCreated()
+                        }
+                        Text("Formularz: $entryId")
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("add-entry").performClick()
+        composeTestRule.onNodeWithText("Formularz: null").assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            formState.value = EntryFormUiState(isLoading = false, saved = true, queuedOffline = queuedOffline)
+        }
+        composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsSelected()
+        composeTestRule.onNodeWithText("Formularz: null").assertDoesNotExist()
+        composeTestRule.runOnIdle { recomposition.value++ }
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnIdle { org.junit.Assert.assertEquals(1, navigationCount) }
+    }
+
+    @Test
+    fun failedCreationStaysOnForm() {
+        val formState = mutableStateOf(EntryFormUiState(isLoading = false))
+        var navigationCount = 0
+        composeTestRule.setContent {
+            ThesaurusTheme {
+                HouseholdApp(
+                    entriesContent = { _, onAddEntry, _, _ ->
+                        Button(modifier = Modifier.testTag("add-entry"), onClick = onAddEntry) { Text("Dodaj wpis") }
+                    },
+                    summaryContent = {},
+                    reportsContent = {},
+                    entryFormContent = { _, onCreated ->
+                        EntryFormCompletion(formState.value) {
+                            navigationCount++
+                            onCreated()
+                        }
+                        Text("Formularz")
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("add-entry").performClick()
+        composeTestRule.runOnIdle {
+            formState.value = EntryFormUiState(isLoading = false, error = EntryFormError.SaveFailed)
+        }
+        composeTestRule.onNodeWithText("Formularz").assertIsDisplayed()
+        composeTestRule.runOnIdle { org.junit.Assert.assertEquals(0, navigationCount) }
     }
 }
