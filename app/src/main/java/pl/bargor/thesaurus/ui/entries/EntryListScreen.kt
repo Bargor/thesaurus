@@ -8,9 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.clickable
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
 import java.math.BigDecimal
@@ -60,6 +61,7 @@ fun EntryListScreen(
     modifier: Modifier = Modifier,
 ) {
     var deleteCandidate by remember { mutableStateOf<EntryListItem?>(null) }
+    var actionCandidate by remember { mutableStateOf<EntryListItem?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val deletedLabel = stringResource(R.string.entries_deleted)
     val unnamedDeletedItem = stringResource(R.string.entries_deleted_item)
@@ -109,7 +111,7 @@ fun EntryListScreen(
                 ) {
                     if (state.error != null) item { ErrorContent(onRetry) }
                     items(state.visibleEntries, key = { it.entry.id }) { item ->
-                        EntryCard(item, onEditEntry, { deleteCandidate = item })
+                        EntryCard(item, onEditEntry, { actionCandidate = item })
                     }
                     if (state.hasMore) item {
                         Button(
@@ -129,6 +131,41 @@ fun EntryListScreen(
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
+    actionCandidate?.let { item ->
+        AlertDialog(
+            onDismissRequest = { actionCandidate = null },
+            title = { Text(stringResource(R.string.entries_actions_title)) },
+            text = {
+                Text(
+                    item.entry.normalizedTitle ?: item.categoryName ?: stringResource(R.string.entries_unknown_category),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            confirmButton = {
+                Column {
+                    TextButton(
+                        modifier = Modifier.fillMaxWidth().testTag("entry-action-edit"),
+                        onClick = {
+                            actionCandidate = null
+                            onEditEntry(item.entry.id)
+                        },
+                    ) { Text(stringResource(R.string.entries_edit)) }
+                    TextButton(
+                        modifier = Modifier.fillMaxWidth().testTag("entry-action-delete"),
+                        onClick = {
+                            actionCandidate = null
+                            deleteCandidate = item
+                        },
+                    ) { Text(stringResource(R.string.entries_delete)) }
+                    TextButton(
+                        modifier = Modifier.fillMaxWidth().testTag("entry-action-dismiss"),
+                        onClick = { actionCandidate = null },
+                    ) { Text(stringResource(R.string.entries_actions_dismiss)) }
+                }
+            },
         )
     }
     deleteCandidate?.let { item ->
@@ -204,22 +241,29 @@ private fun ErrorContent(onRetry: () -> Unit) {
 private fun EntryCard(
     item: EntryListItem,
     onEditEntry: (String) -> Unit,
-    onDeleteEntry: () -> Unit,
+    onOpenActions: () -> Unit,
 ) {
     val entry = item.entry
     val amountColor = if (entry.amountGrosze > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
     val taxonomy = listOfNotNull(item.categoryName ?: stringResource(R.string.entries_unknown_category), item.subcategoryName)
         .joinToString(" › ")
+    val editLabel = stringResource(R.string.entries_edit)
+    val actionsLabel = stringResource(R.string.entries_actions_long_press)
     val cardModifier = Modifier
         .fillMaxWidth()
         .testTag("entry-${entry.id}")
         .let { base ->
-            if (item.canManage) base.clickable { onEditEntry(entry.id) } else base
+            if (item.canManage) base.combinedClickable(
+                onClickLabel = editLabel,
+                onLongClickLabel = actionsLabel,
+                onLongClick = onOpenActions,
+                onClick = { onEditEntry(entry.id) },
+            ) else base
         }
     Card(
         modifier = cardModifier,
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(text = taxonomy, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                 Text(
@@ -232,18 +276,6 @@ private fun EntryCard(
             entry.normalizedTitle?.let { Text(it) }
             Text(stringResource(R.string.entries_author_and_date, item.authorName, entry.date.format(PolishDateFormatter)))
             if (entry.normalizedTags.isNotEmpty()) Text(entry.normalizedTags.joinToString(" ") { "#$it" })
-            if (item.canManage) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        modifier = Modifier.testTag("entry-edit-${entry.id}"),
-                        onClick = { onEditEntry(entry.id) },
-                    ) { Text(stringResource(R.string.entries_edit)) }
-                    TextButton(
-                        modifier = Modifier.testTag("entry-delete-${entry.id}"),
-                        onClick = onDeleteEntry,
-                    ) { Text(stringResource(R.string.entries_delete)) }
-                }
-            }
         }
     }
 }

@@ -147,6 +147,9 @@
     <string name="entry_save_error">Nie udało się zapisać wpisu. Spróbuj ponownie po odzyskaniu połączenia.</string>
     <string name="entries_edit">Edytuj wpis</string>
     <string name="entries_delete">Usuń wpis</string>
+    <string name="entries_actions_title">Działania dla wpisu</string>
+    <string name="entries_actions_long_press">Pokaż działania dla wpisu</string>
+    <string name="entries_actions_dismiss">Zamknij</string>
     <string name="entries_delete_title">Usunąć wpis?</string>
     <string name="entries_delete_message">Wpis zostanie usunięty po krótkim czasie. Możesz go jeszcze cofnąć.</string>
     <string name="entries_delete_confirm">Usuń</string>
