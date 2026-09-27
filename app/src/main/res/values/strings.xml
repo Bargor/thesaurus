@@ -131,9 +131,12 @@
     <string name="entry_date_change">Zmień</string>
     <string name="entry_future_date_error">Data nie może być z przyszłości.</string>
     <string name="entry_category">Kategoria</string>
+    <string name="entry_category_selected_expanded">Wybrana, rozwinięta</string>
+    <string name="entry_category_unselected_collapsed">Niewybrana, zwinięta</string>
     <string name="entry_category_error">Wybierz aktywną kategorię.</string>
     <string name="entry_no_active_categories">Brak aktywnych kategorii. Dodaj lub przywróć kategorię w ustawieniach.</string>
     <string name="entry_subcategory">Podkategoria</string>
+    <string name="entry_subcategory_optional">Podkategoria (opcjonalnie)</string>
     <string name="entry_subcategory_none">Bez podkategorii</string>
     <string name="entry_optional_title">Tytuł (opcjonalnie)</string>
     <string name="entry_title_error">Tytuł może mieć najwyżej 160 znaków.</string>

@@ -2,6 +2,7 @@ package pl.bargor.thesaurus.ui.entry
 
 import android.app.DatePickerDialog
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,12 +15,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -27,6 +32,9 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
@@ -55,7 +63,6 @@ fun EntryFormScreen(
     val context = LocalContext.current
     val today = LocalDate.now()
     val editable = !state.saving && !state.saved
-    val selectedCategory = state.categories.firstOrNull { it.category.id == state.categoryId }
     val visibleCategories = state.categories.filter { category ->
         !category.category.archived || category.category.id == state.categoryId
     }
@@ -129,40 +136,61 @@ fun EntryFormScreen(
             Text(stringResource(R.string.entry_no_active_categories))
         } else {
             visibleCategories.forEach { category ->
-                FilterChip(
-                    modifier = Modifier.testTag("entry-category-${category.category.id}"),
-                    selected = state.categoryId == category.category.id,
-                    enabled = editable && !category.category.archived,
-                    onClick = { onCategorySelected(category.category.id) },
-                    label = { Text(category.category.name) },
+                val selected = state.categoryId == category.category.id
+                val activeSubcategories = category.subcategories.filter { !it.archived || it.id == state.subcategoryId }
+                val selectionState = stringResource(
+                    if (selected) R.string.entry_category_selected_expanded else R.string.entry_category_unselected_collapsed,
                 )
+                Surface(
+                    modifier = Modifier.fillMaxWidth()
+                        .testTag("entry-category-${category.category.id}")
+                        .semantics {
+                            this.selected = selected
+                            stateDescription = selectionState
+                        },
+                    onClick = { onCategorySelected(category.category.id) },
+                    enabled = editable && !category.category.archived,
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline),
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                        Text(category.category.name, modifier = Modifier.weight(1f))
+                        Icon(
+                            imageVector = if (selected) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                        )
+                    }
+                }
+                if (selected) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(start = 24.dp)) {
+                        if (activeSubcategories.isEmpty()) {
+                            Text(stringResource(R.string.taxonomy_no_active_subcategories))
+                        } else {
+                            Text(stringResource(R.string.entry_subcategory_optional), style = MaterialTheme.typography.titleSmall)
+                            FilterChip(
+                                modifier = Modifier.testTag("entry-subcategory-none"),
+                                selected = state.subcategoryId == null,
+                                enabled = editable,
+                                onClick = { onSubcategorySelected(null) },
+                                label = { Text(stringResource(R.string.entry_subcategory_none)) },
+                            )
+                            activeSubcategories.forEach { subcategory ->
+                                FilterChip(
+                                    modifier = Modifier.testTag("entry-subcategory-${subcategory.id}"),
+                                    selected = state.subcategoryId == subcategory.id,
+                                    enabled = editable && !subcategory.archived,
+                                    onClick = { onSubcategorySelected(subcategory.id) },
+                                    label = { Text(subcategory.name) },
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
         if (state.error == EntryFormError.CategoryRequired || state.error == EntryFormError.InactiveTaxonomy) {
             Text(stringResource(R.string.entry_category_error), color = MaterialTheme.colorScheme.error)
-        }
-        selectedCategory?.let { category ->
-            if (category.subcategories.isNotEmpty()) {
-                Text(stringResource(R.string.entry_subcategory), style = MaterialTheme.typography.titleSmall)
-                FilterChip(
-                    modifier = Modifier.testTag("entry-subcategory-none"),
-                    selected = state.subcategoryId == null,
-                    enabled = editable,
-                    onClick = { onSubcategorySelected(null) },
-                    label = { Text(stringResource(R.string.entry_subcategory_none)) },
-                )
-                category.subcategories.filter { subcategory ->
-                    !subcategory.archived || subcategory.id == state.subcategoryId
-                }.forEach { subcategory ->
-                    FilterChip(
-                        modifier = Modifier.testTag("entry-subcategory-${subcategory.id}"),
-                        selected = state.subcategoryId == subcategory.id,
-                        enabled = editable && !subcategory.archived,
-                        onClick = { onSubcategorySelected(subcategory.id) },
-                        label = { Text(subcategory.name) },
-                    )
-                }
-            }
         }
         OutlinedTextField(
             modifier = Modifier.fillMaxWidth().testTag("entry-title"),
