@@ -79,6 +79,74 @@ class EntryFormViewModelTest {
     }
 
     @Test
+    fun `category change clears subcategory and applies default while same category preserves override`() = runTest {
+        val ledger = FakeLedgerRepository()
+        val taxonomy = FakeTaxonomyRepository(
+            categories = listOf(
+                Category("food", "home", "Jedzenie", authorId = "actor", updatedById = "actor"),
+                Category("income", "home", "Wpływy", defaultEntryType = EntryType.INCOME, authorId = "actor", updatedById = "actor"),
+                Category("other", "home", "Inne", authorId = "actor", updatedById = "actor"),
+            ),
+            subcategories = mapOf(
+                "food" to listOf(Subcategory("groceries", "home", "food", "Zakupy", authorId = "actor", updatedById = "actor")),
+                "income" to listOf(Subcategory("salary", "home", "income", "Wypłata", authorId = "actor", updatedById = "actor")),
+            ),
+        )
+        val viewModel = EntryFormViewModel(ledger, taxonomy)
+        val today = LocalDate.of(2026, 9, 16)
+        viewModel.start("home", "actor", today)
+        advanceUntilIdle()
+
+        viewModel.selectCategory("food")
+        viewModel.selectSubcategory("groceries")
+        viewModel.updateType(EntryType.INCOME)
+        viewModel.selectCategory("food")
+        assertEquals("groceries", viewModel.state.value.subcategoryId)
+        assertEquals(EntryType.INCOME, viewModel.state.value.type)
+
+        viewModel.selectCategory("income")
+        assertNull(viewModel.state.value.subcategoryId)
+        assertEquals(EntryType.INCOME, viewModel.state.value.type)
+        viewModel.selectSubcategory("groceries")
+        assertNull(viewModel.state.value.subcategoryId)
+        viewModel.selectSubcategory("salary")
+        viewModel.selectSubcategory(null)
+        assertNull(viewModel.state.value.subcategoryId)
+
+        viewModel.updateType(EntryType.EXPENSE)
+        viewModel.selectCategory("other")
+        assertEquals(EntryType.EXPENSE, viewModel.state.value.type)
+        viewModel.updateAmount("4")
+        viewModel.save(today)
+        advanceUntilIdle()
+        assertEquals("other", ledger.saved.single().categoryId)
+        assertNull(ledger.saved.single().subcategoryId)
+    }
+
+    @Test
+    fun `editing restores category and optional subcategory selection`() = runTest {
+        val entry = LedgerEntry(
+            id = "existing", householdId = "home", amountGrosze = 500,
+            date = LocalDate.of(2026, 9, 15), categoryId = "income", subcategoryId = "salary",
+            authorId = "actor", updatedById = "actor",
+        )
+        val viewModel = EntryFormViewModel(
+            FakeLedgerRepository(initialEntries = listOf(entry)),
+            FakeTaxonomyRepository(
+                categories = listOf(Category("income", "home", "Wpływy", defaultEntryType = EntryType.INCOME, authorId = "actor", updatedById = "actor")),
+                subcategories = mapOf("income" to listOf(Subcategory("salary", "home", "income", "Wypłata", authorId = "actor", updatedById = "actor"))),
+            ),
+        )
+        viewModel.start("home", "actor", entryId = "existing", today = LocalDate.of(2026, 9, 16))
+        advanceUntilIdle()
+        assertEquals("income", viewModel.state.value.categoryId)
+        assertEquals("salary", viewModel.state.value.subcategoryId)
+        assertEquals(EntryType.INCOME, viewModel.state.value.type)
+        viewModel.start("home", "actor", entryId = "existing", today = LocalDate.of(2026, 9, 16))
+        assertEquals("salary", viewModel.state.value.subcategoryId)
+    }
+
+    @Test
     fun `future date invalid amount and inactive category do not queue writes`() = runTest {
         val ledger = FakeLedgerRepository()
         val viewModel = EntryFormViewModel(
@@ -202,11 +270,14 @@ private class FakeLedgerRepository(
     override suspend fun tombstone(householdId: String, entryId: String, actorId: String) = Unit
 }
 
-private class FakeTaxonomyRepository(categories: List<Category>) : TaxonomyRepository {
+private class FakeTaxonomyRepository(
+    categories: List<Category>,
+    private val subcategories: Map<String, List<Subcategory>> = emptyMap(),
+) : TaxonomyRepository {
     private val state = MutableStateFlow(SyncObservation(categories, SyncState.SYNCED))
     override fun observeCategories(householdId: String): Flow<SyncObservation<List<Category>>> = state
     override fun observeSubcategories(householdId: String, categoryId: String): Flow<SyncObservation<List<Subcategory>>> =
-        flowOf(SyncObservation(emptyList(), SyncState.SYNCED))
+        flowOf(SyncObservation(subcategories[categoryId].orEmpty(), SyncState.SYNCED))
     override suspend fun save(category: Category) = Unit
     override suspend fun save(subcategory: Subcategory) = Unit
 }

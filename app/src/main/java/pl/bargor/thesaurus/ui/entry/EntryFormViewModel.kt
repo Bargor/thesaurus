@@ -242,6 +242,7 @@ class EntryFormViewModel @Inject constructor(
 
     fun selectCategory(categoryId: String) {
         val category = state.value.categories.firstOrNull { it.category.id == categoryId && !it.category.archived } ?: return
+        if (state.value.categoryId == categoryId) return
         update {
             copy(
                 categoryId = categoryId,
@@ -256,7 +257,8 @@ class EntryFormViewModel @Inject constructor(
 
     fun selectSubcategory(subcategoryId: String?) {
         val selectedCategory = state.value.categories.firstOrNull { it.category.id == state.value.categoryId }
-        if (subcategoryId != null && selectedCategory?.subcategories?.none { it.id == subcategoryId && !it.archived } == true) return
+        if (selectedCategory == null) return
+        if (subcategoryId != null && selectedCategory.subcategories.none { it.id == subcategoryId && !it.archived }) return
         update { copy(subcategoryId = subcategoryId, error = null, saved = false, queuedOffline = false) }
     }
 

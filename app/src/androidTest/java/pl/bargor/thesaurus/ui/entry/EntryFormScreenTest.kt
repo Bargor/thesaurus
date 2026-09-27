@@ -1,6 +1,7 @@
 package pl.bargor.thesaurus.ui.entry
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -57,6 +58,83 @@ class EntryFormScreenTest {
         composeRule.onNodeWithTag("entry-type-expense").performClick()
 
         composeRule.onNodeWithText("Tytuł (opcjonalnie)").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun categoriesExpandInlineWithOptionalActiveSubcategoriesAndRestoreSelection() {
+        val food = Category("food", "home", "Jedzenie", authorId = "actor", updatedById = "actor")
+        val other = Category("other", "home", "Inne", authorId = "actor", updatedById = "actor")
+        val archived = Category("old", "home", "Dawna", archived = true, authorId = "actor", updatedById = "actor")
+        var state by mutableStateOf(
+            EntryFormUiState(
+                isLoading = false,
+                categories = listOf(
+                    EntryCategory(food, listOf(
+                        Subcategory("groceries", "home", "food", "Zakupy", authorId = "actor", updatedById = "actor"),
+                        Subcategory("old-sub", "home", "food", "Dawne zakupy", archived = true, authorId = "actor", updatedById = "actor"),
+                    )),
+                    EntryCategory(other, emptyList()),
+                    EntryCategory(archived, emptyList()),
+                ),
+            ),
+        )
+        composeRule.setContent {
+            ThesaurusTheme {
+                EntryFormScreen(
+                    state = state,
+                    onAmountChange = {}, onTitleChange = {}, onTagsChange = {}, onDateChange = {},
+                    onTypeChange = { state = state.copy(type = it) },
+                    onCategorySelected = { id ->
+                        state = state.copy(categoryId = id, subcategoryId = null,
+                            type = state.categories.first { it.category.id == id }.category.defaultEntryType)
+                    },
+                    onSubcategorySelected = { state = state.copy(subcategoryId = it) },
+                    onSave = {}, onBack = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("entry-category-food").assertIsDisplayed()
+        composeRule.onNodeWithTag("entry-category-other").assertIsDisplayed()
+        composeRule.onNodeWithTag("entry-category-old").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-groceries").assertDoesNotExist()
+
+        composeRule.onNodeWithTag("entry-category-food").performClick().assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-none").assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-groceries").performClick().assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-old-sub").assertDoesNotExist()
+        composeRule.runOnIdle { state = state.copy() }
+        composeRule.onNodeWithTag("entry-category-food").assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-groceries").assertIsSelected()
+
+        composeRule.onNodeWithTag("entry-category-other").performScrollTo().performClick().assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-groceries").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-none").assertDoesNotExist()
+        composeRule.onNodeWithText("Brak aktywnych podkategorii").assertIsDisplayed()
+    }
+
+    @Test
+    fun editSelectionIsExpandedWhenFormIsRestored() {
+        val category = Category("income", "home", "Wpływy", defaultEntryType = EntryType.INCOME,
+            authorId = "actor", updatedById = "actor")
+        composeRule.setContent {
+            ThesaurusTheme {
+                EntryFormScreen(
+                    state = EntryFormUiState(
+                        isLoading = false, editingEntryId = "existing", categoryId = "income", subcategoryId = "salary",
+                        type = EntryType.INCOME,
+                        categories = listOf(EntryCategory(category, listOf(
+                            Subcategory("salary", "home", "income", "Wypłata", authorId = "actor", updatedById = "actor"),
+                        ))),
+                    ),
+                    onAmountChange = {}, onTitleChange = {}, onTagsChange = {}, onDateChange = {},
+                    onTypeChange = {}, onCategorySelected = {}, onSubcategorySelected = {},
+                    onSave = {}, onBack = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("entry-category-income").assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-salary").assertIsSelected()
     }
 
     @Test
