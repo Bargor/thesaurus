@@ -38,6 +38,7 @@ data class EntryListItem(
     val subcategoryName: String?,
     val authorName: String,
     val canManage: Boolean = false,
+    val categoryColor: String? = null,
 )
 
 data class EntryListUiState(
@@ -243,6 +244,7 @@ class EntryListViewModel @Inject constructor(
                 },
                 authorName = authors[entry.authorId].authorLabel(entry.authorId),
                 canManage = entry.authorId == actorId || authors[actorId]?.role == MemberRole.OWNER,
+                categoryColor = categories[entry.categoryId]?.color,
             )
         }
     }

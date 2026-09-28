@@ -28,7 +28,11 @@ import pl.bargor.thesaurus.data.model.filterReportEntries
 
 enum class ReportPeriodMode { MONTH, YEAR, CUSTOM }
 
-data class ReportEntryItem(val entry: LedgerEntry, val categoryName: String)
+data class ReportEntryItem(
+    val entry: LedgerEntry,
+    val categoryName: String,
+    val categoryColor: String? = null,
+)
 
 data class ReportsUiState(
     val today: LocalDate,
@@ -159,12 +163,18 @@ class ReportsViewModel @Inject constructor(
         val aggregation = if (typeFilter == ReportTypeFilter.EXPENSE) rawAggregation.copy(
             trend = rawAggregation.trend.map { it.copy(amountGrosze = it.amountGrosze.abs()) },
         ) else rawAggregation
-        val names = categories.associate { it.id to it.name }
+        val taxonomy = categories.associateBy { it.id }
         return copy(
             aggregation = aggregation,
             entries = filterReportEntries(entries, period, typeFilter)
                 .sortedWith(compareByDescending<LedgerEntry> { it.date }.thenBy { it.id })
-                .map { ReportEntryItem(it, names[it.categoryId] ?: it.categoryId) },
+                .map { entry ->
+                    ReportEntryItem(
+                        entry = entry,
+                        categoryName = taxonomy[entry.categoryId]?.name ?: entry.categoryId,
+                        categoryColor = taxonomy[entry.categoryId]?.color,
+                    )
+                },
             isLoading = isLoading,
             syncState = syncState,
             hasError = hasError,

@@ -53,6 +53,7 @@ class ReportsViewModelTest {
         vm.applyCustomPeriod()
         assertFalse(vm.state.value.customDateError)
         assertEquals(LocalDate.of(2026, 2, 15), vm.state.value.period().to)
+        assertEquals("rose", vm.state.value.entries.single().categoryColor)
         vm.selectType(ReportTypeFilter.EXPENSE)
         assertEquals(500.toBigInteger(), vm.state.value.aggregation.trend.single().amountGrosze)
         assertEquals((-500).toBigInteger(), vm.state.value.aggregation.totals.netGrosze)
@@ -82,7 +83,7 @@ class ReportsViewModelTest {
     }
 
     private class FakeTaxonomy : TaxonomyRepository {
-        private val categories = MutableStateFlow(SyncObservation(listOf(Category("food", "home", "Jedzenie", defaultEntryType = EntryType.EXPENSE, authorId = "anna", updatedById = "anna")), SyncState.SYNCED))
+        private val categories = MutableStateFlow(SyncObservation(listOf(Category("food", "home", "Jedzenie", color = "rose", defaultEntryType = EntryType.EXPENSE, authorId = "anna", updatedById = "anna")), SyncState.SYNCED))
         override fun observeCategories(householdId: String): Flow<SyncObservation<List<Category>>> = categories
         override fun observeSubcategories(householdId: String, categoryId: String): Flow<SyncObservation<List<Subcategory>>> = MutableStateFlow(SyncObservation(emptyList(), SyncState.SYNCED))
         override suspend fun save(category: Category) = Unit

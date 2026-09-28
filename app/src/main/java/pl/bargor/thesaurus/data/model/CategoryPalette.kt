@@ -56,9 +56,11 @@ object CategoryPalette {
     fun normalizedToken(value: String?): String? = value?.takeIf(::isToken)
 
     /** Missing or obsolete color fields retain a stable appearance without a Firestore migration. */
-    fun forCategory(category: Category): CategorySwatch = byToken[category.color]
-        ?: starterTokens[category.id]?.let(byToken::getValue)
-        ?: swatches[Math.floorMod(category.id.hashCode(), swatches.size)]
+    fun forCategory(id: String, color: String?): CategorySwatch = byToken[color]
+        ?: starterTokens[id]?.let(byToken::getValue)
+        ?: swatches[Math.floorMod(id.hashCode(), swatches.size)]
+
+    fun forCategory(category: Category): CategorySwatch = forCategory(category.id, category.color)
 
     fun byToken(token: String): CategorySwatch = requireNotNull(byToken[token])
 }

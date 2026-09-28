@@ -13,6 +13,9 @@ fun CategorySwatch.asColor(): Color = Color((0xFF000000L or hex).toInt())
 
 fun Category.accentColor(): Color = CategoryPalette.forCategory(this).asColor()
 
+fun categoryAccentColor(categoryId: String, colorToken: String?): Color =
+    CategoryPalette.forCategory(categoryId, colorToken).asColor()
+
 /** Tinted containers keep category text readable in both theme modes. */
 fun Color.categoryContainer(surface: Color, selected: Boolean, dark: Boolean): Color =
     copy(alpha = if (selected) { if (dark) 0.42f else 0.25f } else { if (dark) 0.20f else 0.11f })
