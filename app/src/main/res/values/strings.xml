@@ -21,6 +21,8 @@
     <string name="summary_sync_pending">Zmiany oczekują na synchronizację. Kwoty uwzględniają lokalne wpisy.</string>
     <string name="summary_offline">Tryb offline — podsumowanie może nie zawierać wszystkich wpisów.</string>
     <string name="summary_entries_count">Wpisy w okresie: %1$d</string>
+    <string name="summary_filtered_result">Wynik filtrowania</string>
+    <string name="summary_filtered_income">Wpływy</string>
     <string name="summary_filter_category">Kategoria</string>
     <string name="summary_filter_subcategory">Podkategoria</string>
     <string name="summary_filter_tag">Tag</string>

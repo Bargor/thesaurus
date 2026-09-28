@@ -195,6 +195,56 @@ class SummaryScreenTest {
         composeRule.onNodeWithTag("summary-filter-subcategory").assertIsNotEnabled()
     }
 
+    @Test fun filteredResultShowsSignedTotalsAndDisappearsAfterReset() {
+        var state by mutableStateOf(SummaryUiState(
+            month = YearMonth.of(2026, 9), year = Year.of(2026), isLoading = false,
+            totals = SummaryTotals(BigInteger.valueOf(30_000), BigInteger.valueOf(10_000), 3),
+            filteredTotals = SummaryTotals(BigInteger.valueOf(10_000), BigInteger.valueOf(5_000), 2),
+            selectedTag = "dom", tags = listOf("dom"),
+        ))
+        composeRule.setContent {
+            ThesaurusTheme {
+                SummaryScreen(
+                    state = state,
+                    onSelectPeriodMode = { state = state.copy(mode = it) },
+                    onPreviousPeriod = {}, onNextPeriod = {}, onRetry = {},
+                    onToggleSortDirection = { state = state.copy(direction = SummarySortDirection.ASCENDING) },
+                    onClearControls = { state = state.copy(
+                        selectedCategoryId = null, selectedSubcategoryId = null, selectedTag = null,
+                        sort = SummaryEntrySort.DATE, direction = SummarySortDirection.DESCENDING,
+                    ) },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("summary-income").assertTextContains("300,00", substring = true)
+        composeRule.onNodeWithTag("summary-expense").assertTextContains("100,00", substring = true)
+        composeRule.onNodeWithTag("summary-net").assertTextContains("200,00", substring = true)
+        composeRule.onNodeWithTag("summary-filtered-heading").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("summary-filtered-income").performScrollTo()
+            .assertContentDescriptionEquals("Wpływy: 100,00 zł")
+        composeRule.onNodeWithTag("summary-filtered-expense").performScrollTo()
+            .assertContentDescriptionEquals("Wydatki: 50,00 zł")
+        composeRule.onNodeWithTag("summary-filtered-net").performScrollTo()
+            .assertContentDescriptionEquals("Bilans: +50,00 zł")
+
+        composeRule.runOnIdle { state = state.copy(filteredTotals = SummaryTotals()) }
+        composeRule.onNodeWithTag("summary-filtered-income").performScrollTo()
+            .assertContentDescriptionEquals("Wpływy: 0,00 zł")
+        composeRule.onNodeWithTag("summary-filtered-expense").performScrollTo()
+            .assertContentDescriptionEquals("Wydatki: 0,00 zł")
+        composeRule.onNodeWithTag("summary-filtered-net").performScrollTo()
+            .assertContentDescriptionEquals("Bilans: 0,00 zł")
+
+        composeRule.onNodeWithTag("summary-mode-year").performScrollTo().performClick()
+        composeRule.onNodeWithTag("summary-filtered-result").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("summary-sort-direction").performScrollTo().performClick()
+        composeRule.onNodeWithTag("summary-filtered-net").performScrollTo()
+            .assertContentDescriptionEquals("Bilans: 0,00 zł")
+        composeRule.onNodeWithTag("summary-clear-controls").performScrollTo().performClick()
+        composeRule.onNodeWithTag("summary-filtered-result").assertDoesNotExist()
+        composeRule.onNodeWithTag("summary-income").assertTextContains("300,00", substring = true)
+    }
+
     @Test fun sortAndResetIconsShareRowHaveAccessibleTargetsAndResetDefaults() {
         var state by mutableStateOf(SummaryUiState(
             month = YearMonth.of(2026, 9), year = Year.of(2026), isLoading = false,

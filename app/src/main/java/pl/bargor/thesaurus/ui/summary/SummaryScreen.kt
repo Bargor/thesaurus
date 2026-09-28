@@ -50,6 +50,7 @@ import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import pl.bargor.thesaurus.R
+import pl.bargor.thesaurus.data.model.SummaryTotals
 import pl.bargor.thesaurus.data.model.SyncState
 
 private val polishLocale = Locale.forLanguageTag("pl-PL")
@@ -226,6 +227,7 @@ private fun SummaryEntries(
             Icon(Icons.Filled.RestartAlt, contentDescription = null)
         }
     }
+    if (state.hasActiveFilters) SummaryFilteredTotals(state.filteredTotals)
     if (state.entries.isEmpty() && !state.totals.isEmpty) {
         Text(stringResource(R.string.summary_no_matching_entries), modifier = Modifier.testTag("summary-no-matches"))
     }
@@ -252,6 +254,38 @@ private fun SummaryEntries(
                 if (entry.normalizedTags.isNotEmpty()) Text(entry.normalizedTags.joinToString(" ") { "#$it" })
             }
         }
+    }
+}
+
+@Composable
+private fun SummaryFilteredTotals(totals: SummaryTotals) {
+    Card(modifier = Modifier.fillMaxWidth().testTag("summary-filtered-result")) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                stringResource(R.string.summary_filtered_result),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.testTag("summary-filtered-heading").semantics { heading() },
+            )
+            FilteredTotalRow(R.string.summary_filtered_income, totals.incomeGrosze, "summary-filtered-income")
+            FilteredTotalRow(R.string.summary_expense, totals.expenseGrosze, "summary-filtered-expense")
+            FilteredTotalRow(R.string.summary_net, totals.netGrosze, "summary-filtered-net", signed = true)
+        }
+    }
+}
+
+@Composable
+private fun FilteredTotalRow(labelRes: Int, amount: BigInteger, tag: String, signed: Boolean = false) {
+    val label = stringResource(labelRes)
+    val formattedAmount = formatSummaryAmount(amount, signed)
+    val description = stringResource(R.string.summary_total_description, label, formattedAmount)
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag(tag).semantics(mergeDescendants = true) {
+            contentDescription = description
+        },
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Text(formattedAmount, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -372,8 +406,7 @@ internal fun SummaryPeriodNavigator(
 @Composable
 private fun TotalCard(labelRes: Int, amount: BigInteger, tag: String, signed: Boolean = false) {
     val label = stringResource(labelRes)
-    val prefix = if (signed && amount.signum() > 0) "+" else ""
-    val formattedAmount = prefix + NumberFormat.getCurrencyInstance(polishLocale).format(BigDecimal(amount, 2))
+    val formattedAmount = formatSummaryAmount(amount, signed)
     val description = stringResource(R.string.summary_total_description, label, formattedAmount)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -387,4 +420,9 @@ private fun TotalCard(labelRes: Int, amount: BigInteger, tag: String, signed: Bo
             )
         }
     }
+}
+
+private fun formatSummaryAmount(amount: BigInteger, signed: Boolean): String {
+    val prefix = if (signed && amount.signum() > 0) "+" else ""
+    return prefix + NumberFormat.getCurrencyInstance(polishLocale).format(BigDecimal(amount, 2))
 }

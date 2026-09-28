@@ -36,6 +36,7 @@ data class SummaryUiState(
     val year: Year,
     val mode: SummaryPeriodMode = SummaryPeriodMode.MONTH,
     val totals: SummaryTotals = SummaryTotals(),
+    val filteredTotals: SummaryTotals = SummaryTotals(),
     val entries: List<SummaryEntryItem> = emptyList(),
     val categories: List<Category> = emptyList(),
     val subcategories: List<Subcategory> = emptyList(),
@@ -48,7 +49,10 @@ data class SummaryUiState(
     val isLoading: Boolean = true,
     val syncState: SyncState = SyncState.SYNCED,
     val hasError: Boolean = false,
-)
+) {
+    val hasActiveFilters: Boolean get() =
+        selectedCategoryId != null || selectedSubcategoryId != null || selectedTag != null
+}
 
 @HiltViewModel
 class SummaryViewModel @Inject constructor(
@@ -75,7 +79,10 @@ class SummaryViewModel @Inject constructor(
         latestEntries = null
         latestCategories = emptyList()
         latestSubcategories = emptyMap()
-        mutableState.update { it.copy(totals = SummaryTotals(), entries = emptyList(), isLoading = true, hasError = false) }
+        mutableState.update { it.copy(
+            totals = SummaryTotals(), filteredTotals = SummaryTotals(), entries = emptyList(),
+            isLoading = true, hasError = false,
+        ) }
         observationJob = viewModelScope.launch {
             combine(
                 ledgerRepository.observeEntries(householdId),
@@ -167,12 +174,14 @@ class SummaryViewModel @Inject constructor(
         val period = summaryPeriod()
         val periodEntries = latestEntries.orEmpty().filter { !it.deleted &&
             !it.date.isBefore(period.from) && !it.date.isAfter(period.to) }
+        val selectedEntries = selectSummaryEntries(
+            latestEntries.orEmpty(), period, latestCategories, latestSubcategories,
+            selectedCategoryId, selectedSubcategoryId, selectedTag, sort, direction,
+        )
         return copy(
             totals = aggregateEntries(latestEntries.orEmpty(), period),
-            entries = selectSummaryEntries(
-                latestEntries.orEmpty(), period, latestCategories, latestSubcategories,
-                selectedCategoryId, selectedSubcategoryId, selectedTag, sort, direction,
-            ),
+            filteredTotals = aggregateEntries(selectedEntries.map { it.entry }, period),
+            entries = selectedEntries,
             categories = latestCategories.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }),
             subcategories = selectedCategoryId?.let { latestSubcategories[it].orEmpty() }
                 .orEmpty().sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }),

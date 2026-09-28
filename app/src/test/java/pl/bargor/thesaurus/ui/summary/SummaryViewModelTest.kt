@@ -145,25 +145,78 @@ class SummaryViewModelTest {
         vm.start("home")
         advanceUntilIdle()
         assertEquals(listOf("new", "car", "old"), vm.state.value.entries.map { it.entry.id })
+        assertFalse(vm.state.value.hasActiveFilters)
+        assertEquals(vm.state.value.totals, vm.state.value.filteredTotals)
         vm.selectCategory("food")
+        assertTrue(vm.state.value.hasActiveFilters)
+        assertEquals(100.toBigInteger(), vm.state.value.filteredTotals.incomeGrosze)
+        assertEquals(200.toBigInteger(), vm.state.value.filteredTotals.expenseGrosze)
+        assertEquals((-100).toBigInteger(), vm.state.value.filteredTotals.netGrosze)
         assertEquals(listOf("cafe", "shop"), vm.state.value.subcategories.map { it.id })
         vm.selectSubcategory("shop")
         vm.selectTag(" PILNE ")
         assertEquals(listOf("old"), vm.state.value.entries.map { it.entry.id })
         assertEquals(3, vm.state.value.totals.entryCount)
+        assertEquals(1, vm.state.value.filteredTotals.entryCount)
+        assertEquals(100.toBigInteger(), vm.state.value.filteredTotals.incomeGrosze)
+        assertEquals(0.toBigInteger(), vm.state.value.filteredTotals.expenseGrosze)
+        assertEquals(100.toBigInteger(), vm.state.value.filteredTotals.netGrosze)
         vm.selectCategory("car")
         assertEquals(null, vm.state.value.selectedSubcategoryId)
         assertEquals(listOf("fuel"), vm.state.value.subcategories.map { it.id })
         vm.selectSubcategory("shop")
         assertEquals(null, vm.state.value.selectedSubcategoryId)
+        assertTrue(vm.state.value.entries.isEmpty())
+        assertEquals(0, vm.state.value.filteredTotals.entryCount)
+        assertEquals(0.toBigInteger(), vm.state.value.filteredTotals.netGrosze)
         vm.selectSort(SummaryEntrySort.AMOUNT)
         vm.toggleSortDirection()
+        assertEquals(0.toBigInteger(), vm.state.value.filteredTotals.netGrosze)
         vm.clearControls()
+        assertFalse(vm.state.value.hasActiveFilters)
         assertEquals(SummaryEntrySort.DATE, vm.state.value.sort)
         assertEquals(SummarySortDirection.DESCENDING, vm.state.value.direction)
         assertEquals(null, vm.state.value.selectedCategoryId)
         assertEquals(null, vm.state.value.selectedTag)
         assertEquals(listOf("new", "car", "old"), vm.state.value.entries.map { it.entry.id })
+        assertEquals(vm.state.value.totals, vm.state.value.filteredTotals)
+    }
+
+    @Test fun filteredTotalsFollowMonthlyAndYearlyPeriodsWithoutChangingPeriodTotals() = runTest {
+        val leapYearClock = Clock.fixed(Instant.parse("2028-01-15T12:00:00Z"), ZoneOffset.UTC)
+        val ledger = FakeLedger(SyncObservation(listOf(
+            entry("jan", 10_000, LocalDate.of(2028, 1, 1)).copy(tags = listOf("shared")),
+            entry("feb", -4_000, LocalDate.of(2028, 2, 29)).copy(tags = listOf("shared")),
+            entry("other", -2_000, LocalDate.of(2028, 12, 31)),
+            entry("deleted", 9_000, LocalDate.of(2028, 1, 10)).copy(
+                tags = listOf("shared"), deleted = true, deletedById = "anna",
+            ),
+            entry("previous", 5_000, LocalDate.of(2027, 12, 31)).copy(tags = listOf("shared")),
+        ), SyncState.SYNCED))
+        val vm = SummaryViewModel(ledger, FakeTaxonomy(), leapYearClock)
+        vm.start("home")
+        advanceUntilIdle()
+
+        vm.selectTag("shared")
+        assertEquals(10_000.toBigInteger(), vm.state.value.filteredTotals.incomeGrosze)
+        assertEquals(0.toBigInteger(), vm.state.value.filteredTotals.expenseGrosze)
+        vm.selectPeriodMode(SummaryPeriodMode.YEAR)
+        assertEquals(10_000.toBigInteger(), vm.state.value.totals.incomeGrosze)
+        assertEquals(6_000.toBigInteger(), vm.state.value.totals.expenseGrosze)
+        assertEquals(10_000.toBigInteger(), vm.state.value.filteredTotals.incomeGrosze)
+        assertEquals(4_000.toBigInteger(), vm.state.value.filteredTotals.expenseGrosze)
+        assertEquals(6_000.toBigInteger(), vm.state.value.filteredTotals.netGrosze)
+        vm.selectSort(SummaryEntrySort.AMOUNT)
+        vm.toggleSortDirection()
+        assertEquals(6_000.toBigInteger(), vm.state.value.filteredTotals.netGrosze)
+        vm.previousYear()
+        assertEquals(5_000.toBigInteger(), vm.state.value.filteredTotals.incomeGrosze)
+        vm.nextYear()
+        vm.selectPeriodMode(SummaryPeriodMode.MONTH)
+        vm.nextMonth()
+        assertEquals(0.toBigInteger(), vm.state.value.filteredTotals.incomeGrosze)
+        assertEquals(4_000.toBigInteger(), vm.state.value.filteredTotals.expenseGrosze)
+        assertEquals((-4_000).toBigInteger(), vm.state.value.filteredTotals.netGrosze)
     }
 
     @Test fun deletedAndOutOfPeriodRowsAreAbsentFromTotalsAndList() = runTest {
