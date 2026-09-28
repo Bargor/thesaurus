@@ -146,7 +146,9 @@ internal fun HouseholdApp(
             onEditEntry = onEditEntry,
         )
     },
-    summaryContent: @Composable () -> Unit = { SummaryRoute(householdId) },
+    summaryContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
+        SummaryRoute(householdId, onOpenEntry)
+    },
     reportsContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
         ReportsRoute(householdId, onOpenEntry)
     },
@@ -208,7 +210,7 @@ internal fun HouseholdApp(
                     { entryId -> navController.navigate("edit-entry/$entryId") },
                 )
             }
-            composable(Destination.Summary.route) { summaryContent() }
+            composable(Destination.Summary.route) { summaryContent { entryId -> navController.navigate("edit-entry/$entryId") } }
             composable(Destination.Reports.route) { reportsContent { entryId -> navController.navigate("edit-entry/$entryId") } }
             composable("settings") {
                 TaxonomyRoute(
@@ -259,6 +261,7 @@ internal fun HouseholdApp(
 @Composable
 private fun SummaryRoute(
     householdId: String,
+    onOpenEntry: (String) -> Unit,
     summaryViewModel: SummaryViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(householdId) { summaryViewModel.start(householdId) }
@@ -275,6 +278,13 @@ private fun SummaryRoute(
             else summaryViewModel.nextYear()
         },
         onRetry = summaryViewModel::retry,
+        onSelectCategory = summaryViewModel::selectCategory,
+        onSelectSubcategory = summaryViewModel::selectSubcategory,
+        onSelectTag = summaryViewModel::selectTag,
+        onSelectSort = summaryViewModel::selectSort,
+        onToggleSortDirection = summaryViewModel::toggleSortDirection,
+        onClearControls = summaryViewModel::clearControls,
+        onOpenEntry = onOpenEntry,
     )
 }
 
