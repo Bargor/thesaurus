@@ -1,6 +1,7 @@
 package pl.bargor.thesaurus.data.onboarding
 
 import pl.bargor.thesaurus.data.model.EntryType
+import pl.bargor.thesaurus.data.model.CategoryPalette
 
 /**
  * Stable document ids make retrying initial setup harmless: every approved starter item has one
@@ -9,6 +10,7 @@ import pl.bargor.thesaurus.data.model.EntryType
 data class StarterCategory(
     val id: String,
     val name: String,
+    val color: String = CategoryPalette.starterToken(id),
     val defaultEntryType: EntryType = EntryType.EXPENSE,
     val subcategories: List<StarterSubcategory> = emptyList(),
 )

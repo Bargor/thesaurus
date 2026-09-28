@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import pl.bargor.thesaurus.data.model.Category
+import pl.bargor.thesaurus.data.model.CategoryPalette
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Household
 import pl.bargor.thesaurus.data.model.Invitation
@@ -266,7 +267,7 @@ private fun DocumentSnapshot.toLedgerEntry(): LedgerEntry? = data?.let { fields 
 private fun Category.toDocument() = buildMap<String, Any?> {
     put("householdId", householdId)
     put("name", name.trim())
-    put("color", color?.trim())
+    put("color", CategoryPalette.forCategory(this@toDocument).token)
     put("archived", archived)
     put("defaultEntryType", defaultEntryType.name)
     put("authorId", authorId)
@@ -284,7 +285,7 @@ private fun DocumentSnapshot.toCategory(): Category? {
         id = id,
         householdId = fields["householdId"].string() ?: return null,
         name = fields["name"].string() ?: return null,
-        color = fields["color"].string(),
+        color = CategoryPalette.normalizedToken(fields["color"].string()),
         archived = fields["archived"].boolean(),
         defaultEntryType = defaultEntryType,
         authorId = fields["authorId"].string() ?: return null,
@@ -615,7 +616,7 @@ class FirestoreRepositories @Inject constructor(private val firestore: FirebaseF
                         mapOf(
                             "householdId" to household.id,
                             "name" to category.name,
-                            "color" to null,
+                            "color" to category.color,
                             "archived" to false,
                             "defaultEntryType" to category.defaultEntryType.name,
                             "authorId" to identity.uid,

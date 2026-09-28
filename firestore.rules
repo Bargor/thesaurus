@@ -121,7 +121,12 @@ service cloud.firestore {
           'authorId', 'updatedById', 'createdAt', 'updatedAt'
         ]) &&
         data.householdId == householdId && validText(data.name, 60) &&
-        validOptionalText(data.color, 16) && data.archived is bool &&
+        data.color in [
+          'amber', 'blue', 'violet', 'pink', 'cyan', 'slate', 'teal', 'green',
+          'red', 'gray', 'orange', 'yellow', 'lime', 'emerald', 'sky', 'indigo',
+          'purple', 'rose', 'brown', 'mint', 'navy', 'lavender', 'coral', 'peach',
+          'gold', 'olive', 'forest', 'ocean', 'plum', 'wine', 'steel', 'sand'
+        ] && data.archived is bool &&
         (data.defaultEntryType == 'EXPENSE' || data.defaultEntryType == 'INCOME') &&
         validText(data.authorId, 128) && data.updatedById == request.auth.uid &&
         data.createdAt is timestamp && data.updatedAt is timestamp;

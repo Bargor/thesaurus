@@ -1,6 +1,12 @@
 package pl.bargor.thesaurus.ui.taxonomy
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -23,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,12 +45,18 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.Category
+import pl.bargor.thesaurus.data.model.CategoryPalette
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.ui.accentColor
+import pl.bargor.thesaurus.ui.asColor
+import pl.bargor.thesaurus.ui.contrastingContent
+import pl.bargor.thesaurus.ui.nameRes
 
 private sealed interface TaxonomyDialog {
     data object AddCategory : TaxonomyDialog
@@ -131,9 +145,10 @@ fun TaxonomyScreen(
             initialName = "",
             initialType = EntryType.EXPENSE,
             showDirection = true,
+            initialColor = CategoryPalette.defaultToken,
             onDismiss = { dialog = null },
-            onConfirm = { name, type ->
-                onMutation(TaxonomyMutation.AddCategory(name, type))
+            onConfirm = { name, type, color ->
+                onMutation(TaxonomyMutation.AddCategory(name, type, color))
                 dialog = null
             },
         )
@@ -142,9 +157,10 @@ fun TaxonomyScreen(
             initialName = current.category.name,
             initialType = current.category.defaultEntryType,
             showDirection = true,
+            initialColor = CategoryPalette.forCategory(current.category).token,
             onDismiss = { dialog = null },
-            onConfirm = { name, type ->
-                onMutation(TaxonomyMutation.EditCategory(current.category, name, type))
+            onConfirm = { name, type, color ->
+                onMutation(TaxonomyMutation.EditCategory(current.category, name, type, color))
                 dialog = null
             },
         )
@@ -154,7 +170,7 @@ fun TaxonomyScreen(
             initialType = EntryType.EXPENSE,
             showDirection = false,
             onDismiss = { dialog = null },
-            onConfirm = { name, _ ->
+            onConfirm = { name, _, _ ->
                 onMutation(TaxonomyMutation.AddSubcategory(current.category, name))
                 dialog = null
             },
@@ -165,7 +181,7 @@ fun TaxonomyScreen(
             initialType = EntryType.EXPENSE,
             showDirection = false,
             onDismiss = { dialog = null },
-            onConfirm = { name, _ ->
+            onConfirm = { name, _, _ ->
                 onMutation(TaxonomyMutation.EditSubcategory(current.subcategory, name))
                 dialog = null
             },
@@ -178,6 +194,7 @@ fun TaxonomyScreen(
 private fun SyncMessage(state: TaxonomyUiState) {
     val text = when {
         state.error == TaxonomyError.InvalidName -> stringResource(R.string.taxonomy_name_error)
+        state.error == TaxonomyError.InvalidColor -> stringResource(R.string.taxonomy_color_error)
         state.error == TaxonomyError.ArchivedParent -> stringResource(R.string.taxonomy_archived_parent_error)
         state.error == TaxonomyError.SaveFailed -> stringResource(R.string.taxonomy_save_error)
         state.saving || state.syncState == SyncState.PENDING -> stringResource(R.string.taxonomy_sync_pending)
@@ -239,7 +256,10 @@ private fun CategoryCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(category.name, style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(shape = CircleShape, color = category.accentColor(), modifier = Modifier.size(16.dp)) {}
+                        Text(category.name, style = MaterialTheme.typography.titleMedium)
+                    }
                     Text(
                         stringResource(
                             if (category.defaultEntryType == EntryType.INCOME) R.string.taxonomy_default_income
@@ -345,17 +365,19 @@ private fun TaxonomyEditorDialog(
     initialName: String,
     initialType: EntryType,
     showDirection: Boolean,
+    initialColor: String = CategoryPalette.defaultToken,
     onDismiss: () -> Unit,
-    onConfirm: (String, EntryType) -> Unit,
+    onConfirm: (String, EntryType, String) -> Unit,
 ) {
     var name by remember(title, initialName) { mutableStateOf(initialName) }
     var type by remember(title, initialType) { mutableStateOf(initialType) }
+    var color by remember(title, initialColor) { mutableStateOf(initialColor) }
     val valid = TaxonomyValidation.nameOrNull(name) != null
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            Column(modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     modifier = Modifier.fillMaxWidth().testTag("taxonomy-name"),
                     value = name,
@@ -381,6 +403,8 @@ private fun TaxonomyEditorDialog(
                             label = { Text(stringResource(R.string.taxonomy_income)) },
                         )
                     }
+                    Text(stringResource(R.string.taxonomy_color), modifier = Modifier.padding(top = 12.dp))
+                    CategoryColorSelector(color, onSelected = { color = it })
                 }
             }
         },
@@ -389,8 +413,52 @@ private fun TaxonomyEditorDialog(
             Button(
                 modifier = Modifier.testTag("taxonomy-save"),
                 enabled = valid,
-                onClick = { onConfirm(name, type) },
+                onClick = { onConfirm(name, type, color) },
             ) { Text(stringResource(R.string.taxonomy_save)) }
         },
     )
+}
+
+@Composable
+private fun CategoryColorSelector(selectedToken: String, onSelected: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        CategoryPalette.swatches.chunked(5).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { swatch ->
+                    val selected = selectedToken == swatch.token
+                    val swatchColor = swatch.asColor()
+                    val description = stringResource(
+                        R.string.taxonomy_color_option,
+                        stringResource(swatch.nameRes()),
+                    )
+                    val selection = stringResource(
+                        if (selected) R.string.taxonomy_color_selected else R.string.taxonomy_color_unselected,
+                    )
+                    Surface(
+                        onClick = { onSelected(swatch.token) },
+                        modifier = Modifier.size(48.dp)
+                            .testTag("taxonomy-color-${swatch.token}")
+                            .semantics {
+                                contentDescription = description
+                                stateDescription = selection
+                                this.selected = selected
+                            },
+                        shape = CircleShape,
+                        color = swatchColor,
+                        border = BorderStroke(if (selected) 3.dp else 1.dp, MaterialTheme.colorScheme.onSurface),
+                    ) {
+                        if (selected) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = swatchColor.contrastingContent(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

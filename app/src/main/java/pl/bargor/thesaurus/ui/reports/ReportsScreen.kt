@@ -1,19 +1,25 @@
 package pl.bargor.thesaurus.ui.reports
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -28,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
@@ -47,12 +54,12 @@ import pl.bargor.thesaurus.data.model.ReportCategoryValue
 import pl.bargor.thesaurus.data.model.ReportTrendValue
 import pl.bargor.thesaurus.data.model.ReportTypeFilter
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.ui.categoryAccentColor
+import pl.bargor.thesaurus.ui.categoryContainer
 
 private val reportsLocale = Locale.forLanguageTag("pl-PL")
 private val reportsMonthFormatter = DateTimeFormatter.ofPattern("LLLL uuuu", reportsLocale)
 private val reportsDateFormatter = DateTimeFormatter.ofPattern("d MMM", reportsLocale)
-private val donutColors = listOf(Color(0xFF1565C0), Color(0xFF00897B), Color(0xFFFF8F00), Color(0xFF8E24AA), Color(0xFFC62828))
-
 @Composable
 fun ReportsScreen(
     state: ReportsUiState,
@@ -112,6 +119,7 @@ fun ReportsScreen(
             NamedCategoryValue(
                 state.entries.firstOrNull { it.entry.categoryId == value.categoryId }?.categoryName
                     ?: stringResource(R.string.reports_unknown_category),
+                state.entries.firstOrNull { it.entry.categoryId == value.categoryId }?.categoryColor,
                 value,
             )
         }
@@ -250,7 +258,11 @@ private fun ReportTotalCard(label: Int, value: BigInteger, tag: String, modifier
     }
 }
 
-private data class NamedCategoryValue(val name: String, val value: ReportCategoryValue)
+private data class NamedCategoryValue(
+    val name: String,
+    val colorToken: String?,
+    val value: ReportCategoryValue,
+)
 
 /** Canvas is paired with a visible Polish legend and a semantic description for screen readers. */
 @Composable
@@ -274,9 +286,17 @@ private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
         val arcDiameter = outerDiameter - strokeWidth
         val arcOffset = Offset((size.width - arcDiameter) / 2f, (size.height - arcDiameter) / 2f)
         var start = -90f
-        categories.forEachIndexed { index, item ->
+        categories.forEach { item ->
             val sweep = item.value.amountGrosze.toFloat() / total.toFloat() * 360f
-            drawArc(donutColors[index % donutColors.size], start, sweep, false, arcOffset, Size(arcDiameter, arcDiameter), style = Stroke(width = strokeWidth))
+            drawArc(
+                categoryAccentColor(item.value.categoryId, item.colorToken),
+                start,
+                sweep,
+                false,
+                arcOffset,
+                Size(arcDiameter, arcDiameter),
+                style = Stroke(width = strokeWidth),
+            )
             start += sweep
         }
     }
@@ -325,14 +345,27 @@ private fun ReportEntryCard(item: ReportEntryItem, onOpen: (String) -> Unit) {
     val entry = item.entry
     val label = listOfNotNull(item.categoryName, entry.normalizedTitle, entry.amountGrosze.signedCurrency()).joinToString(", ")
     val openDescription = stringResource(R.string.reports_open_entry, label)
+    val accent = categoryAccentColor(entry.categoryId, item.categoryColor)
+    val surface = MaterialTheme.colorScheme.surface
+    val dark = surface.luminance() < 0.5f
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onOpen(entry.id) }
             .testTag("report-entry-${entry.id}").semantics { contentDescription = openDescription },
+        colors = CardDefaults.cardColors(
+            containerColor = accent.categoryContainer(surface, selected = false, dark = dark),
+        ),
+        border = BorderStroke(1.dp, accent),
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Text(item.categoryName, style = MaterialTheme.typography.labelLarge)
-            entry.normalizedTitle?.let { Text(it) }
-            Text("${entry.date.format(reportsDateFormatter)} · ${entry.amountGrosze.signedCurrency()}")
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            androidx.compose.foundation.layout.Box(
+                Modifier.width(6.dp).fillMaxHeight().background(accent)
+                    .testTag("report-entry-category-color-${entry.id}"),
+            )
+            Column(Modifier.padding(12.dp).weight(1f)) {
+                Text(item.categoryName, style = MaterialTheme.typography.labelLarge)
+                entry.normalizedTitle?.let { Text(it) }
+                Text("${entry.date.format(reportsDateFormatter)} · ${entry.amountGrosze.signedCurrency()}")
+            }
         }
     }
 }

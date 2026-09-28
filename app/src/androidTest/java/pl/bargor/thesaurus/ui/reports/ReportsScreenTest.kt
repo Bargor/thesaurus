@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextContains
@@ -62,6 +63,32 @@ class ReportsScreenTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("report-entry-e1").performScrollTo().performClick()
         assertEquals("e1", opened)
+    }
+
+    @Test fun reportEntryUsesItsPersistedCategoryColor() {
+        val entry = testEntry("colored", -1_250)
+        val state = ReportsUiState(
+            today = LocalDate.of(2026, 2, 15),
+            month = YearMonth.of(2026, 2),
+            year = Year.of(2026),
+            isLoading = false,
+            aggregation = ReportAggregation(
+                ReportTotals(BigInteger.ZERO, BigInteger.valueOf(1_250), 1),
+                listOf(ReportCategoryValue("food", BigInteger.valueOf(1_250))),
+                emptyList(),
+            ),
+            entries = listOf(ReportEntryItem(entry, "Jedzenie", "rose")),
+            typeFilter = ReportTypeFilter.EXPENSE,
+        )
+        composeRule.setContent { ThesaurusTheme { ReportsScreen(state, {}, {}, {}, {}, {}, {}, {}, {}, {}) } }
+
+        val image = composeRule.onNodeWithTag(
+            "report-entry-category-color-colored",
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .captureToImage()
+        assertEquals(Color(0xFFF43F5E), image.toPixelMap()[image.width / 2, image.height / 2])
     }
 
     @Test fun yearlyReportKeepsMonthlyTrendAndCustomRangeHasNoTrend() {

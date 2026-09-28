@@ -135,7 +135,7 @@ class EntryListViewModelTest {
         val households = FakeHouseholds()
         val viewModel = EntryListViewModel(ledger, taxonomy, households, FakePreference())
         taxonomy.categories.value = SyncObservation(
-            listOf(Category("food", "home", "Jedzenie", authorId = "author", updatedById = "author")),
+            listOf(Category("food", "home", "Jedzenie", color = "rose", authorId = "author", updatedById = "author")),
             SyncState.PENDING,
         )
         taxonomy.subcategories["food"] = MutableStateFlow(SyncObservation(
@@ -150,6 +150,7 @@ class EntryListViewModelTest {
         advanceUntilIdle()
 
         assertEquals("Jedzenie", viewModel.state.value.entries.single().categoryName)
+        assertEquals("rose", viewModel.state.value.entries.single().categoryColor)
         assertEquals("Sklep", viewModel.state.value.entries.single().subcategoryName)
         assertEquals("Anna", viewModel.state.value.entries.single().authorName)
         assertEquals(SyncState.PENDING, viewModel.state.value.syncState)

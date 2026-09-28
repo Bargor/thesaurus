@@ -5,9 +5,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -48,6 +51,24 @@ class EntryListScreenTest {
         composeRule.onNodeWithTag("entry-income-income").assertIsDisplayed()
         composeRule.onNodeWithTag("entry-expense-expense").assertIsDisplayed()
         composeRule.onNodeWithText("null").assertDoesNotExist()
+    }
+
+    @Test
+    fun rowUsesItsPersistedCategoryColor() {
+        composeRule.setContent {
+            ThesaurusTheme {
+                EntryListScreen(
+                    state = EntryListUiState(
+                        isLoading = false,
+                        entries = listOf(item("colored", -500, categoryColor = "rose")),
+                    ),
+                    onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
+                )
+            }
+        }
+
+        val image = composeRule.onNodeWithTag("entry-category-color-colored").captureToImage()
+        assertEquals(Color(0xFFF43F5E), image.toPixelMap()[image.width / 2, image.height / 2])
     }
 
     @Test
@@ -188,11 +209,17 @@ class EntryListScreenTest {
         composeRule.onNodeWithTag("entry-action-dismiss").assertIsDisplayed()
     }
 
-    private fun item(id: String, amount: Long, title: String? = null, tags: List<String> = emptyList()) = EntryListItem(
+    private fun item(
+        id: String,
+        amount: Long,
+        title: String? = null,
+        tags: List<String> = emptyList(),
+        categoryColor: String? = null,
+    ) = EntryListItem(
         entry = LedgerEntry(
             id = id, householdId = "home", amountGrosze = amount, date = LocalDate.of(2026, 9, 16), title = title,
             categoryId = "food", subcategoryId = "shop", tags = tags, authorId = "anna", updatedById = "anna",
         ),
-        categoryName = "Jedzenie", subcategoryName = "Sklep", authorName = "Anna",
+        categoryName = "Jedzenie", subcategoryName = "Sklep", authorName = "Anna", categoryColor = categoryColor,
     )
 }

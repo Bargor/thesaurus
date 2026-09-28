@@ -81,7 +81,7 @@ const entry = (authorId, overrides = {}) => ({
 const category = (authorId, overrides = {}) => ({
   householdId,
   name: 'Jedzenie',
-  color: null,
+  color: 'amber',
   archived: false,
   defaultEntryType: 'EXPENSE',
   authorId,
@@ -144,7 +144,7 @@ before(async () => {
     await setDoc(categoryRef(admin, 'food'), {
       householdId,
       name: 'Jedzenie',
-      color: null,
+      color: 'amber',
       archived: false,
       defaultEntryType: 'EXPENSE',
       authorId: 'alice',
@@ -378,6 +378,14 @@ test('taxonomy allows archival and restoration without changing stable ids', asy
   assert.equal(saved.data().categoryId, 'archiveable');
 });
 
+test('taxonomy accepts only category color palette tokens', async () => {
+  const bob = db('bob');
+  await assertSucceeds(setDoc(categoryRef(bob, 'valid-color'), category('bob', { color: 'ocean' })));
+  await assertFails(setDoc(categoryRef(bob, 'raw-hex'), category('bob', { color: '#0891B2' })));
+  await assertFails(setDoc(categoryRef(bob, 'unknown-color'), category('bob', { color: 'ultraviolet' })));
+  await assertFails(setDoc(categoryRef(bob, 'missing-color'), category('bob', { color: null })));
+});
+
 test('users can access only their own validated profile', async () => {
   const alice = db('profile-alice');
   const user = userRef(alice, 'profile-alice');
@@ -403,7 +411,7 @@ test('initial onboarding atomically creates one owner household and starter cate
   batch.set(doc(newcomer, 'households', 'newcomer-house', 'categories', 'jedzenie'), {
     householdId: 'newcomer-house',
     name: 'Jedzenie',
-    color: null,
+    color: 'amber',
     archived: false,
     defaultEntryType: 'EXPENSE',
     authorId: 'newcomer',

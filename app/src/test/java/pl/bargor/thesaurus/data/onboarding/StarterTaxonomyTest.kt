@@ -46,4 +46,12 @@ class StarterTaxonomyTest {
             )
         }
     }
+
+    @Test
+    fun `starter categories persist their approved palette tokens`() {
+        assertEquals(
+            listOf("amber", "blue", "violet", "pink", "cyan", "slate", "teal", "green", "red", "gray"),
+            StarterTaxonomy.categories.map { it.color },
+        )
+    }
 }
