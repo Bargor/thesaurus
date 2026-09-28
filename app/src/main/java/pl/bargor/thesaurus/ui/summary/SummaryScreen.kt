@@ -2,18 +2,26 @@ package pl.bargor.thesaurus.ui.summary
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -34,6 +42,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -159,6 +168,7 @@ private fun SummaryEntries(
             ?: stringResource(R.string.summary_all_categories),
         options = listOf(null to stringResource(R.string.summary_all_categories)) + state.categories.map { it.id to it.name },
         tag = "summary-filter-category",
+        inline = true,
         onSelect = onSelectCategory,
     )
     SummaryChoice(
@@ -168,6 +178,7 @@ private fun SummaryEntries(
         options = listOf(null to stringResource(R.string.summary_all_subcategories)) +
             state.subcategories.map { it.id to it.name },
         tag = "summary-filter-subcategory",
+        inline = true,
         enabled = state.selectedCategoryId != null,
         onSelect = onSelectSubcategory,
     )
@@ -176,25 +187,43 @@ private fun SummaryEntries(
         selected = state.selectedTag?.let { "#$it" } ?: stringResource(R.string.summary_all_tags),
         options = listOf(null to stringResource(R.string.summary_all_tags)) + state.tags.map { it to "#$it" },
         tag = "summary-filter-tag",
+        inline = true,
         onSelect = onSelectTag,
     )
-    SummaryChoice(
-        label = stringResource(R.string.summary_sort),
-        selected = summarySortLabel(state.sort),
-        options = SummaryEntrySort.entries.map { it.name to summarySortLabel(it) },
-        tag = "summary-sort",
-        onSelect = { selected -> selected?.let { onSelectSort(SummaryEntrySort.valueOf(it)) } },
-    )
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(
-            modifier = Modifier.testTag("summary-sort-direction"),
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        SummaryChoice(
+            label = stringResource(R.string.summary_sort),
+            selected = summarySortLabel(state.sort),
+            options = SummaryEntrySort.entries.map { it.name to summarySortLabel(it) },
+            tag = "summary-sort",
+            modifier = Modifier.weight(1f),
+            buttonModifier = Modifier.fillMaxWidth(),
+            onSelect = { selected -> selected?.let { onSelectSort(SummaryEntrySort.valueOf(it)) } },
+        )
+        val directionDescription = stringResource(if (state.direction == SummarySortDirection.DESCENDING)
+            R.string.summary_sort_descending else R.string.summary_sort_ascending)
+        IconButton(
             onClick = onToggleSortDirection,
+            modifier = Modifier.size(48.dp).testTag("summary-sort-direction")
+                .semantics { contentDescription = directionDescription },
         ) {
-            Text(stringResource(if (state.direction == SummarySortDirection.DESCENDING)
-                R.string.summary_sort_descending else R.string.summary_sort_ascending))
+            Icon(
+                imageVector = if (state.direction == SummarySortDirection.DESCENDING)
+                    Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
+                contentDescription = null,
+            )
         }
-        TextButton(onClick = onClearControls, modifier = Modifier.testTag("summary-clear-controls")) {
-            Text(stringResource(R.string.summary_clear_controls))
+        val clearDescription = stringResource(R.string.summary_clear_controls)
+        IconButton(
+            onClick = onClearControls,
+            modifier = Modifier.size(48.dp).testTag("summary-clear-controls")
+                .semantics { contentDescription = clearDescription },
+        ) {
+            Icon(Icons.Filled.RestartAlt, contentDescription = null)
         }
     }
     if (state.entries.isEmpty() && !state.totals.isEmpty) {
@@ -232,7 +261,6 @@ private fun summarySortLabel(sort: SummaryEntrySort): String = stringResource(wh
     SummaryEntrySort.AMOUNT -> R.string.summary_sort_amount
     SummaryEntrySort.CATEGORY -> R.string.summary_sort_category
     SummaryEntrySort.SUBCATEGORY -> R.string.summary_sort_subcategory
-    SummaryEntrySort.TAGS -> R.string.summary_sort_tags
 })
 
 @Composable
@@ -241,16 +269,45 @@ private fun SummaryChoice(
     selected: String,
     options: List<Pair<String?, String>>,
     tag: String,
+    modifier: Modifier = Modifier,
+    buttonModifier: Modifier = Modifier,
+    inline: Boolean = false,
     enabled: Boolean = true,
     onSelect: (String?) -> Unit,
 ) {
+    if (inline) {
+        Row(
+            modifier = modifier.fillMaxWidth().testTag("$tag-row"),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.testTag("$tag-label"))
+            SummaryChoicePicker(label, selected, options, tag, enabled, onSelect, Modifier.weight(1f))
+        }
+    } else {
+        Column(modifier = modifier) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            SummaryChoicePicker(label, selected, options, tag, enabled, onSelect, buttonModifier)
+        }
+    }
+}
+
+@Composable
+private fun SummaryChoicePicker(
+    label: String,
+    selected: String,
+    options: List<Pair<String?, String>>,
+    tag: String,
+    enabled: Boolean,
+    onSelect: (String?) -> Unit,
+    modifier: Modifier,
+) {
     var expanded by remember { mutableStateOf(false) }
-    Column {
-        Text(label, style = MaterialTheme.typography.labelLarge)
+    Box(modifier = modifier) {
         OutlinedButton(
             onClick = { expanded = true }, enabled = enabled,
-            modifier = Modifier.testTag(tag).semantics { contentDescription = "$label: $selected" },
-        ) { Text(selected) }
+            modifier = Modifier.fillMaxWidth().testTag(tag).semantics { contentDescription = "$label: $selected" },
+        ) { Text(selected, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (value, name) ->
                 DropdownMenuItem(

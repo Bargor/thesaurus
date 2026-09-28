@@ -38,12 +38,15 @@ class SummaryEntriesTest {
     }
 
     @Test fun everySortFieldSupportsBothDirections() {
+        assertEquals(
+            listOf(SummaryEntrySort.DATE, SummaryEntrySort.AMOUNT, SummaryEntrySort.CATEGORY, SummaryEntrySort.SUBCATEGORY),
+            SummaryEntrySort.entries,
+        )
         val expectedAscending = mapOf(
             SummaryEntrySort.DATE to listOf("first", "second", "bare", "third"),
             SummaryEntrySort.AMOUNT to listOf("second", "bare", "third", "first"),
             SummaryEntrySort.CATEGORY to listOf("bare", "first", "third", "second"),
             SummaryEntrySort.SUBCATEGORY to listOf("third", "second", "first", "bare"),
-            SummaryEntrySort.TAGS to listOf("bare", "second", "third", "first"),
         )
         expectedAscending.forEach { (sort, expected) ->
             assertEquals("$sort ascending", expected, selected(sort = sort, direction = SummarySortDirection.ASCENDING).map { it.entry.id })

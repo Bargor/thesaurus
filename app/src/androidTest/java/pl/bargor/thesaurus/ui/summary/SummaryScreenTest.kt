@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -18,8 +20,10 @@ import java.time.LocalDate
 import java.time.Year
 import java.time.YearMonth
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import androidx.test.platform.app.InstrumentationRegistry
 import pl.bargor.thesaurus.ThesaurusTheme
 import pl.bargor.thesaurus.data.model.SummaryTotals
 import pl.bargor.thesaurus.data.model.SyncState
@@ -153,12 +157,94 @@ class SummaryScreenTest {
         composeRule.onNodeWithTag("summary-filter-tag-dom").performClick()
         assertEquals("dom", tag)
         composeRule.onNodeWithTag("summary-sort").performScrollTo().performClick()
+        composeRule.onNodeWithTag("summary-sort-TAGS").assertDoesNotExist()
         composeRule.onNodeWithTag("summary-sort-AMOUNT").performClick()
         assertEquals(SummaryEntrySort.AMOUNT, sort)
         composeRule.onNodeWithTag("summary-sort-direction").performScrollTo().performClick()
         composeRule.onNodeWithTag("summary-clear-controls").performScrollTo().performClick()
         assertEquals(1, toggles)
         assertEquals(1, clears)
+    }
+
+    @Test fun categorySubcategoryAndTagFiltersAreCompactHorizontalRows() {
+        composeRule.setContent {
+            ThesaurusTheme {
+                SummaryScreen(
+                    state = SummaryUiState(month = YearMonth.of(2026, 9), year = Year.of(2026), isLoading = false),
+                    onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {}, onRetry = {},
+                )
+            }
+        }
+        val density = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
+        listOf(
+            Triple("summary-filter-category", "Kategoria", "Kategoria: Wszystkie kategorie"),
+            Triple("summary-filter-subcategory", "Podkategoria", "Podkategoria: Wszystkie podkategorie"),
+            Triple("summary-filter-tag", "Tag", "Tag: Wszystkie tagi"),
+        ).forEach { (tag, _, description) ->
+            val row = composeRule.onNodeWithTag("$tag-row").performScrollTo()
+            val label = composeRule.onNodeWithTag("$tag-label")
+            val button = composeRule.onNodeWithTag(tag).assertContentDescriptionEquals(description)
+            val rowBounds = row.fetchSemanticsNode().boundsInRoot
+            val labelBounds = label.fetchSemanticsNode().boundsInRoot
+            val buttonBounds = button.fetchSemanticsNode().boundsInRoot
+            assertTrue("$tag label must be left of its dropdown", labelBounds.right < buttonBounds.left)
+            assertTrue("$tag label and dropdown must share a row",
+                labelBounds.top < buttonBounds.bottom && buttonBounds.top < labelBounds.bottom)
+            assertTrue("$tag row must be compact: $rowBounds", rowBounds.height <= 56f * density + 1f)
+        }
+        composeRule.onNodeWithTag("summary-filter-subcategory").assertIsNotEnabled()
+    }
+
+    @Test fun sortAndResetIconsShareRowHaveAccessibleTargetsAndResetDefaults() {
+        var state by mutableStateOf(SummaryUiState(
+            month = YearMonth.of(2026, 9), year = Year.of(2026), isLoading = false,
+            categories = listOf(Category("food", "home", "Żywność", authorId = "anna", updatedById = "anna")),
+            tags = listOf("dom"), selectedCategoryId = "food", selectedTag = "dom",
+            sort = SummaryEntrySort.AMOUNT, direction = SummarySortDirection.ASCENDING,
+        ))
+        composeRule.setContent {
+            ThesaurusTheme {
+                SummaryScreen(
+                    state = state,
+                    onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {}, onRetry = {},
+                    onToggleSortDirection = { state = state.copy(direction = SummarySortDirection.DESCENDING) },
+                    onClearControls = { state = state.copy(
+                        selectedCategoryId = null, selectedSubcategoryId = null, selectedTag = null,
+                        sort = SummaryEntrySort.DATE, direction = SummarySortDirection.DESCENDING,
+                    ) },
+                )
+            }
+        }
+
+        val sort = composeRule.onNodeWithTag("summary-sort").performScrollTo()
+        val direction = composeRule.onNodeWithTag("summary-sort-direction")
+        val clear = composeRule.onNodeWithTag("summary-clear-controls").performScrollTo()
+        sort.assertContentDescriptionEquals("Sortuj według: Kwota")
+        direction.assertHasClickAction()
+            .assertContentDescriptionEquals("Sortowanie rosnące. Zmień na malejące")
+        clear.assertHasClickAction().assertContentDescriptionEquals("Wyczyść filtry i sortowanie")
+        val sortBounds = sort.fetchSemanticsNode().boundsInRoot
+        val directionBounds = direction.fetchSemanticsNode().boundsInRoot
+        val clearBounds = clear.fetchSemanticsNode().boundsInRoot
+        val density = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
+        assertTrue(sortBounds.right <= directionBounds.left)
+        assertTrue(directionBounds.right <= clearBounds.left)
+        assertTrue(sortBounds.top < directionBounds.bottom && directionBounds.top < sortBounds.bottom)
+        assertTrue(directionBounds.top < clearBounds.bottom && clearBounds.top < directionBounds.bottom)
+        assertTrue(directionBounds.width >= 48f * density - 1f)
+        assertTrue(directionBounds.height >= 48f * density - 1f)
+        assertTrue(clearBounds.width >= 48f * density - 1f)
+        assertTrue(clearBounds.height >= 48f * density - 1f)
+
+        direction.performClick()
+        direction.assertContentDescriptionEquals("Sortowanie malejące. Zmień na rosnące")
+        clear.performClick()
+        composeRule.onNodeWithTag("summary-filter-category")
+            .assertContentDescriptionEquals("Kategoria: Wszystkie kategorie")
+        composeRule.onNodeWithTag("summary-filter-tag")
+            .assertContentDescriptionEquals("Tag: Wszystkie tagi")
+        sort.assertContentDescriptionEquals("Sortuj według: Data księgowania")
+        direction.assertContentDescriptionEquals("Sortowanie malejące. Zmień na rosnące")
     }
 
     @Test fun periodAndModeStateReplaceTotalsAndVisibleEntriesTogether() {

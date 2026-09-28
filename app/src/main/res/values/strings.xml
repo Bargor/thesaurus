@@ -32,9 +32,8 @@
     <string name="summary_sort_amount">Kwota</string>
     <string name="summary_sort_category">Kategoria</string>
     <string name="summary_sort_subcategory">Podkategoria</string>
-    <string name="summary_sort_tags">Tagi</string>
-    <string name="summary_sort_ascending">Rosnąco</string>
-    <string name="summary_sort_descending">Malejąco</string>
+    <string name="summary_sort_ascending">Sortowanie rosnące. Zmień na malejące</string>
+    <string name="summary_sort_descending">Sortowanie malejące. Zmień na rosnące</string>
     <string name="summary_clear_controls">Wyczyść filtry i sortowanie</string>
     <string name="summary_no_matching_entries">Brak wpisów pasujących do filtrów.</string>
     <string name="empty_reports">Brak wpisów w wybranym okresie.</string>

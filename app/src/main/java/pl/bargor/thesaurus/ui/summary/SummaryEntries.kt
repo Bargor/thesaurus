@@ -6,7 +6,7 @@ import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SummaryPeriod
 
-enum class SummaryEntrySort { DATE, AMOUNT, CATEGORY, SUBCATEGORY, TAGS }
+enum class SummaryEntrySort { DATE, AMOUNT, CATEGORY, SUBCATEGORY }
 enum class SummarySortDirection { ASCENDING, DESCENDING }
 
 data class SummaryEntryItem(
@@ -48,7 +48,6 @@ internal fun selectSummaryEntries(
         SummaryEntrySort.AMOUNT -> compareBy { it.entry.amountGrosze }
         SummaryEntrySort.CATEGORY -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.categoryName }
         SummaryEntrySort.SUBCATEGORY -> compareBy(nullsLast(String.CASE_INSENSITIVE_ORDER)) { it.subcategoryName }
-        SummaryEntrySort.TAGS -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.entry.normalizedTags.joinToString(", ") }
     }
     // Id is a stable tie-breaker in either direction, independent of listener order.
     val ordered = filtered.sortedWith(comparator.thenBy { it.entry.id })
