@@ -94,7 +94,7 @@ data class Category(
         id.requiredId("Id kategorii")
         householdId.requiredId("Id gospodarstwa")
         require(name.trim().isNotEmpty() && name.trim().length <= 60)
-        require(color?.trim()?.length ?: 0 <= 16) { "Kolor jest zbyt długi." }
+        require(color == null || CategoryPalette.isToken(color)) { "Kolor kategorii jest nieprawidłowy." }
         authorId.requiredId("Autor")
         updatedById.requiredId("Aktualizujący")
     }

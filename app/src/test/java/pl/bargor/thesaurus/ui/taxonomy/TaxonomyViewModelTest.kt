@@ -18,6 +18,7 @@ import org.junit.Before
 import org.junit.Test
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
+import pl.bargor.thesaurus.data.model.CategoryPalette
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncObservation
@@ -51,6 +52,7 @@ class TaxonomyViewModelTest {
         assertEquals("house", saved.householdId)
         assertEquals("Zwierzęta", saved.name)
         assertEquals(EntryType.EXPENSE, saved.defaultEntryType)
+        assertEquals(CategoryPalette.defaultToken, saved.color)
         assertEquals("actor", saved.authorId)
         assertEquals("actor", saved.updatedById)
         assertTrue(saved.id.isNotBlank())
@@ -66,8 +68,8 @@ class TaxonomyViewModelTest {
         viewModel.start("house", "owner")
         advanceUntilIdle()
 
-        viewModel.mutate(TaxonomyMutation.EditCategory(original, "Nowa", EntryType.INCOME))
-        viewModel.mutate(TaxonomyMutation.SetCategoryArchived(original, archived = true))
+        viewModel.mutate(TaxonomyMutation.EditCategory(original, "Nowa", EntryType.INCOME, "ocean"))
+        viewModel.mutate(TaxonomyMutation.SetCategoryArchived(original.copy(color = "violet"), archived = true))
         advanceUntilIdle()
 
         val renamed = repository.savedCategories[0]
@@ -77,8 +79,10 @@ class TaxonomyViewModelTest {
         assertEquals("owner", renamed.updatedById)
         assertEquals("Nowa", renamed.name)
         assertEquals(EntryType.INCOME, renamed.defaultEntryType)
+        assertEquals("ocean", renamed.color)
         assertEquals("stable-id", archived.id)
         assertTrue(archived.archived)
+        assertEquals("violet", archived.color)
     }
 
     @Test
@@ -94,6 +98,8 @@ class TaxonomyViewModelTest {
 
         viewModel.mutate(TaxonomyMutation.AddCategory(" "))
         assertEquals(TaxonomyError.InvalidName, viewModel.state.value.error)
+        viewModel.mutate(TaxonomyMutation.AddCategory("Kolor", color = "#FFFFFF"))
+        assertEquals(TaxonomyError.InvalidColor, viewModel.state.value.error)
         viewModel.mutate(TaxonomyMutation.AddSubcategory(archived, "Dziecko"))
         assertEquals(TaxonomyError.ArchivedParent, viewModel.state.value.error)
         assertTrue(repository.savedCategories.isEmpty())

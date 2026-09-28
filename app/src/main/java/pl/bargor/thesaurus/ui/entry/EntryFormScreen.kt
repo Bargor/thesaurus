@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -32,6 +33,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -42,6 +44,8 @@ import java.util.Locale
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.ui.accentColor
+import pl.bargor.thesaurus.ui.categoryContainer
 
 private val PolishDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.forLanguageTag("pl-PL"))
@@ -137,6 +141,16 @@ fun EntryFormScreen(
         } else {
             visibleCategories.forEach { category ->
                 val selected = state.categoryId == category.category.id
+                val accent = category.category.accentColor()
+                val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                val subcategoryColors = FilterChipDefaults.filterChipColors(
+                    containerColor = accent.categoryContainer(
+                        MaterialTheme.colorScheme.surface, selected = false, dark = dark,
+                    ),
+                    selectedContainerColor = accent.categoryContainer(
+                        MaterialTheme.colorScheme.surface, selected = true, dark = dark,
+                    ),
+                )
                 val activeSubcategories = category.subcategories.filter { !it.archived || it.id == state.subcategoryId }
                 val selectionState = stringResource(
                     if (selected) R.string.entry_category_selected_expanded else R.string.entry_category_unselected_collapsed,
@@ -151,11 +165,12 @@ fun EntryFormScreen(
                     onClick = { onCategorySelected(category.category.id) },
                     enabled = editable && !category.category.archived,
                     shape = MaterialTheme.shapes.medium,
-                    color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline),
+                    color = accent.categoryContainer(MaterialTheme.colorScheme.surface, selected, dark),
+                    border = BorderStroke(if (selected) 2.dp else 1.dp, accent),
                 ) {
                     Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                         Text(category.category.name, modifier = Modifier.weight(1f))
+                        if (selected) Text(stringResource(R.string.entry_category_selected_marker), modifier = Modifier.padding(end = 8.dp))
                         Icon(
                             imageVector = if (selected) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
@@ -173,6 +188,7 @@ fun EntryFormScreen(
                                 selected = state.subcategoryId == null,
                                 enabled = editable,
                                 onClick = { onSubcategorySelected(null) },
+                                colors = subcategoryColors,
                                 label = { Text(stringResource(R.string.entry_subcategory_none)) },
                             )
                             activeSubcategories.forEach { subcategory ->
@@ -181,6 +197,7 @@ fun EntryFormScreen(
                                     selected = state.subcategoryId == subcategory.id,
                                     enabled = editable && !subcategory.archived,
                                     onClick = { onSubcategorySelected(subcategory.id) },
+                                    colors = subcategoryColors,
                                     label = { Text(subcategory.name) },
                                 )
                             }

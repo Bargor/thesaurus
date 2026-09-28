@@ -138,6 +138,35 @@ class EntryFormScreenTest {
     }
 
     @Test
+    fun categorySelectionKeepsNonColorMarkerInLightTheme() = assertColoredCategorySelection(false)
+
+    @Test
+    fun categorySelectionKeepsNonColorMarkerInDarkTheme() = assertColoredCategorySelection(true)
+
+    private fun assertColoredCategorySelection(darkTheme: Boolean) {
+        val category = Category(
+            "dom", "home", "Dom", color = "blue", authorId = "actor", updatedById = "actor",
+        )
+        composeRule.setContent {
+            ThesaurusTheme(darkTheme = darkTheme) {
+                EntryFormScreen(
+                    state = EntryFormUiState(
+                        isLoading = false,
+                        categoryId = "dom",
+                        categories = listOf(EntryCategory(category, emptyList())),
+                    ),
+                    onAmountChange = {}, onTitleChange = {}, onTagsChange = {}, onDateChange = {},
+                    onTypeChange = {}, onCategorySelected = {}, onSubcategorySelected = {},
+                    onSave = {}, onBack = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("entry-category-dom").assertIsSelected()
+        composeRule.onNodeWithText("Wybrana").assertIsDisplayed()
+    }
+
+    @Test
     fun creationHasNoSuccessMessageButEditingKeepsItAndFailureRemainsActionable() {
         var state by mutableStateOf(EntryFormUiState(isLoading = false, saved = true))
         composeRule.setContent {

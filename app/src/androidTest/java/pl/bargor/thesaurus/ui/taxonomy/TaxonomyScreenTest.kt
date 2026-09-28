@@ -2,6 +2,7 @@ package pl.bargor.thesaurus.ui.taxonomy
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHasNoClickAction
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -58,12 +60,39 @@ class TaxonomyScreenTest {
 
         composeRule.onNodeWithTag("taxonomy-add-category").performClick()
         composeRule.onNodeWithTag("taxonomy-name").performTextInput(" Zwierzęta ")
+        composeRule.onNodeWithTag("taxonomy-color-blue").performScrollTo().performClick().assertIsSelected()
         composeRule.onNodeWithTag("taxonomy-save").performClick()
 
         assertEquals(
-            TaxonomyMutation.AddCategory(" Zwierzęta ", EntryType.EXPENSE),
+            TaxonomyMutation.AddCategory(" Zwierzęta ", EntryType.EXPENSE, "blue"),
             mutations.single(),
         )
+    }
+
+    @Test
+    fun editDialogRestoresLegacyStarterColorAndChangesItInDarkTheme() {
+        val mutations = mutableListOf<TaxonomyMutation>()
+        val home = Category("dom", "house", "Dom", authorId = "user", updatedById = "user")
+        composeRule.setContent {
+            ThesaurusTheme(darkTheme = true) {
+                TaxonomyScreen(
+                    state = TaxonomyUiState(
+                        isLoading = false,
+                        categories = listOf(CategoryWithSubcategories(home, emptyList())),
+                    ),
+                    onMutation = mutations::add,
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("taxonomy-edit-category-dom").performClick()
+        composeRule.onNodeWithTag("taxonomy-color-blue").performScrollTo()
+            .assertContentDescriptionEquals("Kolor: Niebieski")
+            .assertIsSelected()
+        composeRule.onNodeWithTag("taxonomy-color-plum").performScrollTo().performClick().assertIsSelected()
+        composeRule.onNodeWithTag("taxonomy-save").performClick()
+
+        assertEquals(TaxonomyMutation.EditCategory(home, "Dom", EntryType.EXPENSE, "plum"), mutations.single())
     }
 
     @Test

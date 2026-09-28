@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
+import pl.bargor.thesaurus.data.model.CategoryPalette
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncState
@@ -30,6 +31,7 @@ data class TaxonomyUiState(
 
 sealed interface TaxonomyError {
     data object InvalidName : TaxonomyError
+    data object InvalidColor : TaxonomyError
     data object ArchivedParent : TaxonomyError
     data object SaveFailed : TaxonomyError
 }
@@ -40,8 +42,8 @@ data class CategoryWithSubcategories(
 )
 
 sealed interface TaxonomyMutation {
-    data class AddCategory(val name: String, val defaultEntryType: EntryType = EntryType.EXPENSE) : TaxonomyMutation
-    data class EditCategory(val category: Category, val name: String, val defaultEntryType: EntryType) : TaxonomyMutation
+    data class AddCategory(val name: String, val defaultEntryType: EntryType = EntryType.EXPENSE, val color: String = CategoryPalette.defaultToken) : TaxonomyMutation
+    data class EditCategory(val category: Category, val name: String, val defaultEntryType: EntryType, val color: String = CategoryPalette.forCategory(category).token) : TaxonomyMutation
     data class AddSubcategory(val category: Category, val name: String) : TaxonomyMutation
     data class EditSubcategory(val subcategory: Subcategory, val name: String) : TaxonomyMutation
     data class SetCategoryArchived(val category: Category, val archived: Boolean) : TaxonomyMutation
@@ -125,6 +127,11 @@ class TaxonomyViewModel @Inject constructor(
             mutableState.update { it.copy(error = TaxonomyError.InvalidName) }
             return
         }
+        if ((mutation is TaxonomyMutation.AddCategory && !CategoryPalette.isToken(mutation.color)) ||
+            (mutation is TaxonomyMutation.EditCategory && !CategoryPalette.isToken(mutation.color))) {
+            mutableState.update { it.copy(error = TaxonomyError.InvalidColor) }
+            return
+        }
         if (mutation is TaxonomyMutation.AddSubcategory && mutation.category.archived) {
             mutableState.update { it.copy(error = TaxonomyError.ArchivedParent) }
             return
@@ -138,6 +145,7 @@ class TaxonomyViewModel @Inject constructor(
                             id = UUID.randomUUID().toString(),
                             householdId = householdId,
                             name = name,
+                            color = mutation.color,
                             defaultEntryType = mutation.defaultEntryType,
                             authorId = actorId,
                             updatedById = actorId,
@@ -146,6 +154,7 @@ class TaxonomyViewModel @Inject constructor(
                     is TaxonomyMutation.EditCategory -> repository.save(
                         mutation.category.copy(
                             name = name,
+                            color = mutation.color,
                             defaultEntryType = mutation.defaultEntryType,
                             updatedById = actorId,
                         ),

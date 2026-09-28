@@ -65,7 +65,7 @@ class TaxonomyRepositoryIntegrationTest {
             val repository: TaxonomyRepository = FirestoreRepositories(firestore)
             val category = Category(
                 id = "category-$suffix", householdId = householdId, name = "  Zwierzęta  ",
-                defaultEntryType = EntryType.INCOME, authorId = uid, updatedById = uid,
+                color = "rose", defaultEntryType = EntryType.INCOME, authorId = uid, updatedById = uid,
             )
             repository.save(category)
             val savedCategory = withTimeout(15_000) {
@@ -75,6 +75,7 @@ class TaxonomyRepositoryIntegrationTest {
             }
             assertEquals("Zwierzęta", savedCategory.name)
             assertEquals(EntryType.INCOME, savedCategory.defaultEntryType)
+            assertEquals("rose", savedCategory.color)
 
             val child = Subcategory(
                 id = "subcategory-$suffix", householdId = householdId, categoryId = category.id,
@@ -97,6 +98,7 @@ class TaxonomyRepositoryIntegrationTest {
             assertFalse(savedSubcategory.archived)
             assertEquals(category.id, archivedCategory.id)
             assertEquals("Zwierzęta domowe", archivedCategory.name)
+            assertEquals("rose", archivedCategory.color)
         } finally {
             runCatching { firestore.terminate().await() }
             app.delete()

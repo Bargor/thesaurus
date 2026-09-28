@@ -55,7 +55,7 @@ class EntryCreationIntegrationTest {
                     "joinedAt" to FieldValue.serverTimestamp(),
                 ))
                 batch.set(household.collection(FirestorePaths.CATEGORIES).document("income"), mapOf(
-                    "householdId" to householdId, "name" to "Wpływy", "color" to null, "archived" to false,
+                    "householdId" to householdId, "name" to "Wpływy", "color" to "green", "archived" to false,
                     "defaultEntryType" to EntryType.INCOME.name, "authorId" to uid, "updatedById" to uid,
                     "createdAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp(),
                 ))
