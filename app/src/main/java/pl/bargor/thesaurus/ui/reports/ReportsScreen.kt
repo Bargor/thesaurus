@@ -116,7 +116,9 @@ fun ReportsScreen(
             )
         }
         CategoryDonutChart(categories)
-        TrendChart(state.aggregation.trend, state.mode == ReportPeriodMode.YEAR, state.typeFilter)
+        if (state.mode == ReportPeriodMode.YEAR) {
+            TrendChart(state.aggregation.trend, state.typeFilter)
+        }
         Text(
             stringResource(R.string.reports_entries_heading),
             style = MaterialTheme.typography.titleLarge,
@@ -281,16 +283,16 @@ private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
     Text(legend, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().testTag("reports-category-legend"))
 }
 
-/** Shows daily values except in annual mode, where [ReportsViewModel] provides monthly buckets. */
+/** Shows the monthly buckets provided by [ReportsViewModel] for annual reports. */
 @Composable
-private fun TrendChart(values: List<ReportTrendValue>, yearly: Boolean, type: ReportTypeFilter) {
+private fun TrendChart(values: List<ReportTrendValue>, type: ReportTypeFilter) {
     val displayValues = if (type == ReportTypeFilter.EXPENSE) {
         values.map { it.copy(amountGrosze = it.amountGrosze.abs()) }
     } else values
-    val formatter = if (yearly) DateTimeFormatter.ofPattern("LLL", reportsLocale) else reportsDateFormatter
+    val formatter = DateTimeFormatter.ofPattern("LLL", reportsLocale)
     val summary = displayValues.joinToString("; ") { "${it.date.format(formatter)}: ${it.amountGrosze.signedCurrency()}" }
-    val description = stringResource(R.string.reports_trend_chart_description, if (yearly) stringResource(R.string.reports_trend_monthly) else stringResource(R.string.reports_trend_daily), summary)
-    Text(stringResource(if (yearly) R.string.reports_trend_monthly else R.string.reports_trend_daily), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+    val description = stringResource(R.string.reports_trend_chart_description, stringResource(R.string.reports_trend_monthly), summary)
+    Text(stringResource(R.string.reports_trend_monthly), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
     Canvas(
         modifier = Modifier.fillMaxWidth().height(160.dp).testTag("reports-trend-chart")
             .semantics { contentDescription = description },

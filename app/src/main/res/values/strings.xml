@@ -41,7 +41,6 @@
     <string name="reports_offline">Tryb offline — raport może nie zawierać wszystkich wpisów.</string>
     <string name="reports_category_chart">Kategorie</string>
     <string name="reports_category_chart_description">Wykres pierścieniowy kategorii: %1$s</string>
-    <string name="reports_trend_daily">Trend dzienny</string>
     <string name="reports_trend_monthly">Trend miesięczny</string>
     <string name="reports_trend_chart_description">%1$s: %2$s</string>
     <string name="reports_entries_heading">Wpisy w raporcie</string>
