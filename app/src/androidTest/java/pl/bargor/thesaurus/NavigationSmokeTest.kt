@@ -75,6 +75,28 @@ class NavigationSmokeTest {
     }
 
     @Test
+    fun summaryEntryDrillDownNavigatesToTheSelectedEntry() {
+        composeTestRule.setContent {
+            ThesaurusTheme {
+                HouseholdApp(
+                    entriesContent = { _, _, _, _ -> Text(stringResource(R.string.empty_entries)) },
+                    summaryContent = { onOpenEntry ->
+                        Button(
+                            modifier = Modifier.testTag("open-summary-entry"),
+                            onClick = { onOpenEntry("summary-42") },
+                        ) { Text("Otwórz wpis") }
+                    },
+                    reportsContent = { Text(stringResource(R.string.empty_reports)) },
+                    entryFormContent = { entryId, _ -> Text("Wybrany wpis: $entryId") },
+                )
+            }
+        }
+        composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).performClick()
+        composeTestRule.onNodeWithTag("open-summary-entry").performClick()
+        composeTestRule.onNodeWithText("Wybrany wpis: summary-42").assertIsDisplayed()
+    }
+
+    @Test
     fun successfulCreationReturnsToEntriesOnceEvenAfterRecomposition() = verifyCreationReturn(queuedOffline = false)
 
     @Test
