@@ -40,7 +40,7 @@ import pl.bargor.thesaurus.data.model.SyncState
 class ReportsScreenTest {
     @get:Rule val composeRule = createComposeRule()
 
-    @Test fun chartsExposePolishDescriptionsVisibleLegendAndEntryDrillDown() {
+    @Test fun monthlyReportExposesCategoryLegendAndEntryDrillDownWithoutTrend() {
         var opened: String? = null
         val entry = testEntry("e1", -1_250)
         val state = ReportsUiState(
@@ -55,11 +55,40 @@ class ReportsScreenTest {
         composeRule.setContent { ThesaurusTheme { ReportsScreen(state, {}, {}, {}, {}, {}, {}, {}, { opened = it }, {}) } }
         composeRule.onNodeWithContentDescription("Wykres pierścieniowy kategorii: Jedzenie: 12,50 zł (100%)").assertIsDisplayed()
         composeRule.onNodeWithTag("reports-category-legend").assertTextContains("Jedzenie", substring = true)
-        // Expense-only chart uses a positive magnitude even though the total net is negative.
-        composeRule.onNodeWithContentDescription("Trend dzienny: 2 lut: +12,50 zł").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("reports-net").performScrollTo().assertTextContains("-12,50", substring = true)
+        composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
+        composeRule.onNodeWithTag("reports-trend-summary").assertDoesNotExist()
+        composeRule.onAllNodesWithText("Trend dzienny").assertCountEquals(0)
+        composeRule.onNodeWithTag("reports-net").assertTextContains("-12,50", substring = true)
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("report-entry-e1").performScrollTo().performClick()
         assertEquals("e1", opened)
+    }
+
+    @Test fun yearlyReportKeepsMonthlyTrendAndCustomRangeHasNoTrend() {
+        var state by mutableStateOf(ReportsUiState(
+            today = LocalDate.of(2026, 2, 15), month = YearMonth.of(2026, 2), year = Year.of(2026), isLoading = false,
+            aggregation = ReportAggregation(
+                ReportTotals(BigInteger.ZERO, BigInteger.valueOf(1_250), 1),
+                listOf(ReportCategoryValue("food", BigInteger.valueOf(1_250))),
+                listOf(ReportTrendValue(LocalDate.of(2026, 2, 1), BigInteger.valueOf(-1_250))),
+            ),
+            entries = listOf(ReportEntryItem(testEntry("e1", -1_250), "Jedzenie")),
+            typeFilter = ReportTypeFilter.EXPENSE,
+        ))
+        composeRule.setContent {
+            ThesaurusTheme {
+                ReportsScreen(state, { state = state.copy(mode = it) }, {}, {}, {}, {}, {}, {}, {}, {})
+            }
+        }
+
+        composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
+        composeRule.onNodeWithTag("reports-mode-year").performClick()
+        composeRule.onAllNodesWithText("Trend miesięczny").assertCountEquals(1)
+        composeRule.onNodeWithContentDescription("Trend miesięczny: lut: +12,50 zł").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("reports-trend-summary").assertTextContains("lut: +12,50", substring = true)
+        composeRule.onNodeWithTag("reports-mode-custom").performScrollTo().performClick()
+        composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
+        composeRule.onNodeWithTag("reports-trend-summary").assertDoesNotExist()
     }
 
     @Test fun dateErrorSyncStatesAndPolishPeriodArrowDescriptionsAreExposed() {
