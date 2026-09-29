@@ -4,10 +4,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
@@ -30,6 +32,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
 import pl.bargor.thesaurus.ThesaurusTheme
 import pl.bargor.thesaurus.data.model.ReportAggregation
 import pl.bargor.thesaurus.data.model.ReportCategoryValue
@@ -40,6 +43,41 @@ import pl.bargor.thesaurus.data.model.SyncState
 
 class ReportsScreenTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun reportControlsStartAtTheTopAtLargeFontScale() {
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.8f)) {
+                ThesaurusTheme {
+                    Box(Modifier.width(320.dp).fillMaxHeight()) {
+                        ReportsScreen(
+                            state = ReportsUiState(
+                                today = LocalDate.of(2026, 9, 30), month = YearMonth.of(2026, 9),
+                                year = Year.of(2026), isLoading = false,
+                            ),
+                            onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {},
+                            onSelectType = {}, onCustomFromChange = {}, onCustomToChange = {},
+                            onApplyCustomPeriod = {}, onOpenEntry = {}, onRetry = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onAllNodesWithText("Raporty").assertCountEquals(0)
+        val month = composeRule.onNodeWithTag("reports-mode-month").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val custom = composeRule.onNodeWithTag("reports-mode-custom").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val period = composeRule.onNodeWithTag("reports-period").assertIsDisplayed().getUnclippedBoundsInRoot()
+        // The semantic bounds of Material segmented buttons can differ slightly between
+        // hardware-rendered and headless emulators. Keep the limit well below the space
+        // a headline row would occupy while allowing that platform variation.
+        assertTrue(
+            "Report mode must start without title-sized empty space: ${month.top}",
+            month.top <= 40.dp,
+        )
+        assertTrue("Period modes must fit on a compact screen", month.left >= 0.dp && custom.right <= 320.dp)
+        assertTrue("Period navigation must follow the mode selector", period.top >= month.bottom)
+    }
 
     @Test fun monthlyReportExposesCategoryLegendAndEntryDrillDownWithoutTrend() {
         var opened: String? = null

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -39,8 +40,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -88,12 +87,10 @@ fun EntryListScreen(
     }
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text(
-                    modifier = Modifier.weight(1f).semantics { heading() },
-                    text = stringResource(R.string.navigation_entries),
-                    style = MaterialTheme.typography.headlineSmall,
-                )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
                 TextButton(onClick = onOpenSettings, modifier = Modifier.testTag("open-taxonomy-settings")) {
                     Text(stringResource(R.string.open_taxonomy_settings))
                 }
@@ -198,7 +195,7 @@ fun EntryListScreen(
 
 @Composable
 private fun SortSelector(selected: EntryListSort, onChangeSort: (EntryListSort) -> Unit) {
-    Row(
+    FlowRow(
         modifier = Modifier.padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

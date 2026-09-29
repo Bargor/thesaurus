@@ -78,11 +78,6 @@ fun SummaryScreen(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(
-            text = stringResource(R.string.navigation_summary),
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.semantics { heading() },
-        )
         SummaryPeriodModeSelector(state.mode, onSelectPeriodMode)
         SummaryPeriodNavigator(
             label = when (state.mode) {
