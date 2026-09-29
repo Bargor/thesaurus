@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -166,6 +167,8 @@ class TaxonomyScreenTest {
         composeRule.onNodeWithTag("taxonomy-category-header-food").performClick()
         composeRule.onNodeWithText("Brak aktywnych podkategorii").assertIsDisplayed()
         composeRule.onNodeWithTag("taxonomy-show-archived").performClick()
+        composeRule.onNodeWithTag("taxonomy-list")
+            .performScrollToNode(hasTestTag("taxonomy-category-old"))
         composeRule.onNodeWithTag("taxonomy-category-old").assertExists()
         composeRule.onNodeWithTag("taxonomy-subcategory-old-market").assertIsDisplayed()
         composeRule.onNodeWithTag("taxonomy-show-archived").performClick()
