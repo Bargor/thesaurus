@@ -580,6 +580,7 @@ private fun TaxonomyRoute(
         state = state,
         onMutation = taxonomyViewModel::mutate,
         onMoveCategory = taxonomyViewModel::moveCategory,
+        onReorderCategories = taxonomyViewModel::reorderCategories,
         onBack = onBack,
     )
 }

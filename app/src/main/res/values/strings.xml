@@ -210,6 +210,7 @@
     <string name="taxonomy_name_error">Podaj nazwę od 1 do 60 znaków.</string>
     <string name="taxonomy_default_type">Domyślny typ wpisu</string>
     <string name="taxonomy_drag_category">Przeciągnij kategorię %1$s, aby zmienić kolejność</string>
+    <string name="taxonomy_dragging">Przenoszona</string>
     <string name="taxonomy_move_up">Przenieś wyżej</string>
     <string name="taxonomy_move_down">Przenieś niżej</string>
     <string name="taxonomy_move_up_named">Przenieś kategorię %1$s wyżej</string>

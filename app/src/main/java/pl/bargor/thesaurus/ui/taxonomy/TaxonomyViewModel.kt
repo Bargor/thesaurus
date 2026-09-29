@@ -122,11 +122,15 @@ class TaxonomyViewModel @Inject constructor(
     }
 
     fun moveCategory(categoryId: String, targetCategoryId: String) {
-        val (householdId, actorId) = startedFor ?: return
         val reordered = state.value.categories.map(CategoryWithSubcategories::category)
             .moveActiveCategory(categoryId, targetCategoryId)
-        val ids = reordered.map(Category::id)
-        if (ids == state.value.categories.map { it.category.id }) return
+        reorderCategories(reordered.map(Category::id))
+    }
+
+    fun reorderCategories(ids: List<String>) {
+        val (householdId, actorId) = startedFor ?: return
+        val currentIds = state.value.categories.map { it.category.id }
+        if (ids == currentIds || ids.size != currentIds.size || ids.toSet() != currentIds.toSet()) return
         val byId = state.value.categories.associateBy { it.category.id }
         pendingOrderIds = ids
         mutableState.update { old ->

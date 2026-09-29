@@ -135,7 +135,7 @@ class TaxonomyViewModelTest {
         viewModel.start("house", "actor")
         advanceUntilIdle()
 
-        viewModel.moveCategory("b", "a")
+        viewModel.reorderCategories(listOf("b", "archived", "a"))
         advanceUntilIdle()
 
         assertEquals(listOf("b", "archived", "a"), viewModel.state.value.categories.map { it.category.id })

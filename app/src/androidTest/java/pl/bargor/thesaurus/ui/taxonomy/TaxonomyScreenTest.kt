@@ -232,13 +232,13 @@ class TaxonomyScreenTest {
 
     @Test
     fun longPressDragMovesAnActiveCategory() {
-        val moves = mutableListOf<Pair<String, String>>()
+        val orders = mutableListOf<List<String>>()
         val food = Category("food", "house", "Jedzenie", authorId = "user", updatedById = "user")
         val home = Category("home", "house", "Dom", authorId = "user", updatedById = "user")
         showCategories(
             CategoryWithSubcategories(food, emptyList()),
             CategoryWithSubcategories(home, emptyList()),
-            onMoveCategory = { from, to -> moves += from to to },
+            onReorderCategories = orders::add,
         )
 
         composeRule.onNodeWithTag("taxonomy-drag-food", useUnmergedTree = true).assertDoesNotExist()
@@ -251,13 +251,14 @@ class TaxonomyScreenTest {
         }
         composeRule.waitForIdle()
 
-        assertEquals(listOf("food" to "home"), moves)
+        assertEquals(listOf(listOf("home", "food")), orders)
     }
 
     private fun showCategories(
         vararg categories: CategoryWithSubcategories,
         onMutation: (TaxonomyMutation) -> Unit = {},
         onMoveCategory: (String, String) -> Unit = { _, _ -> },
+        onReorderCategories: (List<String>) -> Unit = {},
     ) {
         composeRule.setContent {
             ThesaurusTheme {
@@ -265,6 +266,7 @@ class TaxonomyScreenTest {
                     state = TaxonomyUiState(isLoading = false, categories = categories.toList()),
                     onMutation = onMutation,
                     onMoveCategory = onMoveCategory,
+                    onReorderCategories = onReorderCategories,
                 )
             }
         }
