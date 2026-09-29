@@ -1,9 +1,13 @@
 package pl.bargor.thesaurus.ui.entries
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
@@ -31,6 +35,36 @@ import pl.bargor.thesaurus.data.model.SyncState
 
 class EntryListScreenTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test
+    fun actionsAndSortUseTheTopOfTheScreenAtLargeFontScale() {
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.8f)) {
+                ThesaurusTheme {
+                    Box(Modifier.width(320.dp).fillMaxHeight()) {
+                        EntryListScreen(
+                            state = EntryListUiState(isLoading = false),
+                            onChangeSort = {}, onLoadNextPage = {}, onRetry = {},
+                            onOpenSettings = {}, onAddEntry = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Wpisy").assertDoesNotExist()
+        val settings = composeRule.onNodeWithTag("open-taxonomy-settings").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val family = composeRule.onNodeWithTag("open-family").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val sort = composeRule.onNodeWithTag("entries-sort-date").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val createdSort = composeRule.onNodeWithTag("entries-sort-created").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue("Actions should start at the top without an empty title row", settings.top <= 24.dp)
+        assertTrue("Settings must fit on a compact screen", settings.left >= 0.dp && settings.right <= 320.dp)
+        assertTrue("Family action must fit on a compact screen", family.left >= 0.dp && family.right <= 320.dp)
+        assertTrue("Actions must not overlap", settings.bottom <= family.top || settings.right <= family.left)
+        assertTrue("Sort controls must follow the actions", sort.top >= minOf(settings.bottom, family.bottom))
+        assertTrue("Sort controls must fit on a compact screen", sort.right <= 320.dp && createdSort.right <= 320.dp)
+    }
 
     @Test
     fun rowUsesTaxonomyShowsNormalizedTagsAndDerivesAmountStyleFromSign() {

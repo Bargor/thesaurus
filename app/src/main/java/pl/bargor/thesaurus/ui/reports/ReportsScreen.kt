@@ -78,11 +78,6 @@ fun ReportsScreen(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = stringResource(R.string.navigation_reports),
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.semantics { heading() },
-        )
         ReportPeriodSelector(state.mode, onSelectPeriodMode)
         if (state.mode == ReportPeriodMode.CUSTOM) {
             CustomPeriodFields(state, onCustomFromChange, onCustomToChange, onApplyCustomPeriod)

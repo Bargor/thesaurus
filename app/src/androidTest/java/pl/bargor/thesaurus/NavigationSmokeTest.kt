@@ -2,7 +2,10 @@ package pl.bargor.thesaurus
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -14,10 +17,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import java.time.YearMonth
 import java.time.Year
+import java.time.LocalDate
 import org.junit.Rule
 import org.junit.Test
 import pl.bargor.thesaurus.ui.summary.SummaryScreen
 import pl.bargor.thesaurus.ui.summary.SummaryUiState
+import pl.bargor.thesaurus.ui.entries.EntryListScreen
+import pl.bargor.thesaurus.ui.entries.EntryListUiState
+import pl.bargor.thesaurus.ui.reports.ReportsScreen
+import pl.bargor.thesaurus.ui.reports.ReportsUiState
 import pl.bargor.thesaurus.ui.entry.EntryFormError
 import pl.bargor.thesaurus.ui.entry.EntryFormUiState
 
@@ -30,25 +38,50 @@ class NavigationSmokeTest {
         composeTestRule.setContent {
             ThesaurusTheme {
                 HouseholdApp(
-                    entriesContent = { _, _, _, _ -> Text(stringResource(R.string.empty_entries)) },
+                    entriesContent = { onOpenSettings, onAddEntry, onOpenFamily, _ ->
+                        EntryListScreen(
+                            state = EntryListUiState(isLoading = false),
+                            onChangeSort = {}, onLoadNextPage = {}, onRetry = {},
+                            onOpenSettings = onOpenSettings, onAddEntry = onAddEntry, onOpenFamily = onOpenFamily,
+                        )
+                    },
                     summaryContent = {
                         SummaryScreen(
                             state = SummaryUiState(month = YearMonth.of(2026, 9), year = Year.of(2026), isLoading = false),
                             onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {}, onRetry = {},
                         )
                     },
-                    reportsContent = { Text(stringResource(R.string.empty_reports)) },
+                    reportsContent = {
+                        ReportsScreen(
+                            state = ReportsUiState(
+                                today = LocalDate.of(2026, 9, 30), month = YearMonth.of(2026, 9),
+                                year = Year.of(2026), isLoading = false,
+                            ),
+                            onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {},
+                            onSelectType = {}, onCustomFromChange = {}, onCustomToChange = {},
+                            onApplyCustomPeriod = {}, onOpenEntry = {}, onRetry = {},
+                        )
+                    },
                 )
             }
         }
         composeTestRule.onNodeWithText("Nie ma jeszcze żadnych wpisów.").assertIsDisplayed()
         composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsSelected()
+        composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).assertIsNotSelected()
+        composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).assertIsNotSelected()
+        composeTestRule.onAllNodesWithText("Wpisy", useUnmergedTree = true).assertCountEquals(1)
         composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).performClick()
         composeTestRule.onNodeWithText("Brak wpisów w wybranym miesiącu.").assertIsDisplayed()
         composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).assertIsSelected()
+        composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsNotSelected()
+        composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).assertIsNotSelected()
+        composeTestRule.onAllNodesWithText("Podsumowanie", useUnmergedTree = true).assertCountEquals(1)
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).performClick()
         composeTestRule.onNodeWithText("Brak wpisów w wybranym okresie.").assertIsDisplayed()
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).assertIsSelected()
+        composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsNotSelected()
+        composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).assertIsNotSelected()
+        composeTestRule.onAllNodesWithText("Raporty", useUnmergedTree = true).assertCountEquals(1)
     }
 
     @Test

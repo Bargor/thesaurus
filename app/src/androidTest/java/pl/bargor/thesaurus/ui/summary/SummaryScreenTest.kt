@@ -1,8 +1,14 @@
 package pl.bargor.thesaurus.ui.summary
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHasClickAction
@@ -15,6 +21,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import java.math.BigInteger
 import java.time.LocalDate
 import java.time.Year
@@ -32,6 +42,30 @@ import pl.bargor.thesaurus.data.model.LedgerEntry
 
 class SummaryScreenTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun periodControlsStartAtTheTopAtLargeFontScale() {
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.8f)) {
+                ThesaurusTheme {
+                    Box(Modifier.width(320.dp).fillMaxHeight()) {
+                        SummaryScreen(
+                            state = SummaryUiState(month = YearMonth.of(2026, 9), year = Year.of(2026), isLoading = false),
+                            onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {}, onRetry = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Podsumowanie").assertDoesNotExist()
+        val month = composeRule.onNodeWithTag("summary-mode-month").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val year = composeRule.onNodeWithTag("summary-mode-year").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val period = composeRule.onNodeWithTag("summary-period").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue("Period mode must start without title-sized empty space", month.top <= 24.dp)
+        assertTrue("Period modes must fit on a compact screen", month.left >= 0.dp && year.right <= 320.dp)
+        assertTrue("Period navigation must follow the mode selector", period.top >= month.bottom)
+    }
 
     @Test fun loadingEmptyOfflineErrorAndPendingStates() {
         var state by mutableStateOf(SummaryUiState(month = YearMonth.of(2026, 9), year = Year.of(2026)))
