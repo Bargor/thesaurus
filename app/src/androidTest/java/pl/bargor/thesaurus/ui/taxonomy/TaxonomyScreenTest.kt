@@ -109,10 +109,9 @@ class TaxonomyScreenTest {
         composeRule.onNodeWithTag("taxonomy-subcategory-market").assertDoesNotExist()
         composeRule.onNodeWithTag("taxonomy-subcategory-train").assertDoesNotExist()
         val foodHeader = composeRule.onNodeWithTag("taxonomy-category-header-food")
-        foodHeader.assertContentDescriptionEquals(
-            "Rozwiń kategorię Jedzenie",
-            "Przeciągnij kategorię Jedzenie, aby zmienić kolejność",
-        )
+        foodHeader.assertContentDescriptionEquals("Rozwiń kategorię Jedzenie")
+        composeRule.onNodeWithTag("taxonomy-category-food")
+            .assertContentDescriptionEquals("Przeciągnij kategorię Jedzenie, aby zmienić kolejność")
         assertEquals(
             "Zwinięta",
             foodHeader.fetchSemanticsNode().config[SemanticsProperties.StateDescription],
@@ -125,10 +124,7 @@ class TaxonomyScreenTest {
         composeRule.onNodeWithTag("taxonomy-subcategory-market").assertIsDisplayed()
         composeRule.onNodeWithTag("taxonomy-subcategory-train").assertDoesNotExist()
         foodHeader
-            .assertContentDescriptionEquals(
-                "Zwiń kategorię Jedzenie",
-                "Przeciągnij kategorię Jedzenie, aby zmienić kolejność",
-            )
+            .assertContentDescriptionEquals("Zwiń kategorię Jedzenie")
             .performClick()
         assertEquals(
             "Zwinięta",
@@ -185,10 +181,7 @@ class TaxonomyScreenTest {
 
         val density = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
         val header = composeRule.onNodeWithTag("taxonomy-category-header-food")
-        header.assertHasClickAction().assertContentDescriptionEquals(
-            "Rozwiń kategorię Jedzenie",
-            "Przeciągnij kategorię Jedzenie, aby zmienić kolejność",
-        )
+        header.assertHasClickAction().assertContentDescriptionEquals("Rozwiń kategorię Jedzenie")
         assertTrue(header.fetchSemanticsNode().boundsInRoot.height >= 48f * density - 1f)
         composeRule.onNodeWithTag("taxonomy-edit-category-food")
             .assertContentDescriptionEquals("Edytuj kategorię Jedzenie")
@@ -248,7 +241,8 @@ class TaxonomyScreenTest {
             onMoveCategory = { from, to -> moves += from to to },
         )
 
-        composeRule.onNodeWithTag("taxonomy-drag-food", useUnmergedTree = true).performTouchInput {
+        composeRule.onNodeWithTag("taxonomy-drag-food", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("taxonomy-category-food").performTouchInput {
             down(center)
             advanceEventTime(1_000)
             moveBy(Offset(0f, 400f))

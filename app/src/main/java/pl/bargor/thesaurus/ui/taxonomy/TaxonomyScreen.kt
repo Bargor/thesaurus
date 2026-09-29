@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
@@ -301,7 +300,23 @@ private fun CategoryCard(
     val moveUpDescription = stringResource(R.string.taxonomy_move_up_named, category.name)
     val moveDownDescription = stringResource(R.string.taxonomy_move_down_named, category.name)
     Card(
-        modifier = Modifier.fillMaxWidth().testTag("taxonomy-category-${category.id}"),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("taxonomy-category-${category.id}")
+            .semantics {
+                if (!category.archived) contentDescription = dragDescription
+            }
+            .pointerInput(category.id, enabled, category.archived) {
+                if (enabled && !category.archived) detectDragGesturesAfterLongPress(
+                    onDragStart = { onDragStart() },
+                    onDragEnd = onDragEnd,
+                    onDragCancel = onDragCancel,
+                    onDrag = { change, amount ->
+                        change.consume()
+                        onDrag(amount.y)
+                    },
+                )
+            },
         elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 8.dp else 1.dp),
         border = if (dropTarget) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
@@ -326,26 +341,6 @@ private fun CategoryCard(
                     if (category.archived) {
                         Text(stringResource(R.string.taxonomy_archived), style = MaterialTheme.typography.labelMedium)
                     }
-                }
-                if (!category.archived) {
-                    Icon(
-                        imageVector = Icons.Default.DragHandle,
-                        contentDescription = dragDescription,
-                        modifier = Modifier
-                            .testTag("taxonomy-drag-${category.id}")
-                            .pointerInput(category.id, enabled) {
-                                if (enabled) detectDragGesturesAfterLongPress(
-                                    onDragStart = { onDragStart() },
-                                    onDragEnd = onDragEnd,
-                                    onDragCancel = onDragCancel,
-                                    onDrag = { change, amount ->
-                                        change.consume()
-                                        onDrag(amount.y)
-                                    },
-                                )
-                            },
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
                 }
                 Icon(
                     imageVector = if (expanded) Icons.Filled.KeyboardArrowDown
