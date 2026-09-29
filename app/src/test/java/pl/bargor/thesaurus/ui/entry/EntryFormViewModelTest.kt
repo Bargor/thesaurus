@@ -22,6 +22,7 @@ import org.junit.Test
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
+import pl.bargor.thesaurus.data.model.CategoryOrder
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.Subcategory
@@ -76,6 +77,24 @@ class EntryFormViewModelTest {
         assertEquals("income", saved.categoryId)
         assertTrue(viewModel.state.value.saved)
         assertNull(viewModel.state.value.editingEntryId)
+    }
+
+    @Test
+    fun `entry form uses the current users persisted category order`() = runTest {
+        val categories = listOf(
+            Category("food", "home", "Jedzenie", authorId = "actor", updatedById = "actor"),
+            Category("home", "home", "Dom", authorId = "actor", updatedById = "actor"),
+            Category("other", "home", "Inne", authorId = "actor", updatedById = "actor"),
+        )
+        val viewModel = EntryFormViewModel(
+            FakeLedgerRepository(),
+            FakeTaxonomyRepository(categories, orderIds = listOf("other", "food", "home")),
+        )
+
+        viewModel.start("home", "actor", LocalDate.of(2026, 9, 16))
+        advanceUntilIdle()
+
+        assertEquals(listOf("other", "food", "home"), viewModel.state.value.categories.map { it.category.id })
     }
 
     @Test
@@ -273,6 +292,7 @@ private class FakeLedgerRepository(
 private class FakeTaxonomyRepository(
     categories: List<Category>,
     private val subcategories: Map<String, List<Subcategory>> = emptyMap(),
+    private val orderIds: List<String>? = null,
 ) : TaxonomyRepository {
     private val state = MutableStateFlow(SyncObservation(categories, SyncState.SYNCED))
     override fun observeCategories(householdId: String): Flow<SyncObservation<List<Category>>> = state
@@ -280,4 +300,10 @@ private class FakeTaxonomyRepository(
         flowOf(SyncObservation(subcategories[categoryId].orEmpty(), SyncState.SYNCED))
     override suspend fun save(category: Category) = Unit
     override suspend fun save(subcategory: Subcategory) = Unit
+    override fun observeCategoryOrder(
+        householdId: String,
+        userId: String,
+    ): Flow<SyncObservation<CategoryOrder>> = flowOf(
+        SyncObservation(orderIds?.let { CategoryOrder(householdId, userId, it) }, SyncState.SYNCED),
+    )
 }

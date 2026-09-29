@@ -16,8 +16,11 @@ import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.tasks.await
 import pl.bargor.thesaurus.data.model.Category
+import pl.bargor.thesaurus.data.model.CategoryOrder
 import pl.bargor.thesaurus.data.model.CategoryPalette
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Household
@@ -30,6 +33,7 @@ import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.User
+import pl.bargor.thesaurus.data.model.orderedBy
 import pl.bargor.thesaurus.data.onboarding.StarterTaxonomy
 import java.time.Instant
 import java.time.LocalDate
@@ -43,6 +47,7 @@ object FirestorePaths {
     const val MEMBERS = "members"
     const val ENTRIES = "entries"
     const val CATEGORIES = "categories"
+    const val CATEGORY_ORDERS = "categoryOrders"
     const val SUBCATEGORIES = "subcategories"
     const val INVITATIONS = "invitations"
 }
@@ -77,6 +82,36 @@ interface TaxonomyRepository {
     ): Flow<SyncObservation<List<Subcategory>>>
     suspend fun save(category: Category)
     suspend fun save(subcategory: Subcategory)
+
+    /** Defaults keep lightweight test repositories source-compatible until ordering is exercised. */
+    fun observeCategoryOrder(
+        householdId: String,
+        userId: String,
+    ): Flow<SyncObservation<CategoryOrder>> = flowOf(SyncObservation(state = SyncState.SYNCED))
+
+    suspend fun saveCategoryOrder(order: CategoryOrder) {
+        error("Zapisywanie kolejności kategorii nie jest obsługiwane.")
+    }
+}
+
+/** One ordering contract shared by management and entry forms. */
+fun TaxonomyRepository.observeOrderedCategories(
+    householdId: String,
+    userId: String,
+): Flow<SyncObservation<List<Category>>> = combine(
+    observeCategories(householdId),
+    observeCategoryOrder(householdId, userId),
+) { categories, order ->
+    SyncObservation(
+        value = categories.value?.orderedBy(order.value),
+        state = when {
+            categories.state == SyncState.ERROR || order.state == SyncState.ERROR -> SyncState.ERROR
+            categories.state == SyncState.PENDING || order.state == SyncState.PENDING -> SyncState.PENDING
+            categories.state == SyncState.OFFLINE || order.state == SyncState.OFFLINE -> SyncState.OFFLINE
+            else -> SyncState.SYNCED
+        },
+        error = categories.error ?: order.error,
+    )
 }
 
 interface InvitationRepository {
@@ -295,6 +330,23 @@ private fun DocumentSnapshot.toCategory(): Category? {
     )
 }
 
+private fun CategoryOrder.toDocument() = mapOf(
+    "householdId" to householdId,
+    "userId" to userId,
+    "categoryIds" to categoryIds,
+    "updatedAt" to FieldValue.serverTimestamp(),
+)
+
+private fun DocumentSnapshot.toCategoryOrder(): CategoryOrder? {
+    val fields = data ?: return null
+    return CategoryOrder(
+        householdId = fields["householdId"].string() ?: return null,
+        userId = fields["userId"].string() ?: return null,
+        categoryIds = fields["categoryIds"].stringList(),
+        updatedAt = instant("updatedAt"),
+    )
+}
+
 private fun Subcategory.toDocument() = buildMap<String, Any?> {
     put("householdId", householdId)
     put("categoryId", categoryId)
@@ -491,6 +543,25 @@ class FirestoreRepositories @Inject constructor(private val firestore: FirebaseF
             .collection(FirestorePaths.SUBCATEGORIES)
             .document(subcategory.id)
             .set(subcategory.toDocument(), SetOptions.merge())
+            .await()
+    }
+
+    override fun observeCategoryOrder(
+        householdId: String,
+        userId: String,
+    ): Flow<SyncObservation<CategoryOrder>> = firestore
+        .collection(FirestorePaths.USERS)
+        .document(userId)
+        .collection(FirestorePaths.CATEGORY_ORDERS)
+        .document(householdId)
+        .observations(DocumentSnapshot::toCategoryOrder)
+
+    override suspend fun saveCategoryOrder(order: CategoryOrder) {
+        firestore.collection(FirestorePaths.USERS)
+            .document(order.userId)
+            .collection(FirestorePaths.CATEGORY_ORDERS)
+            .document(order.householdId)
+            .set(order.toDocument())
             .await()
     }
 

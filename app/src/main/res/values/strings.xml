@@ -202,8 +202,6 @@
     <string name="taxonomy_empty">Nie ma jeszcze kategorii.</string>
     <string name="taxonomy_sync_pending">Zmiany oczekują na synchronizację.</string>
     <string name="taxonomy_offline">Tryb offline — zmiany zostaną zsynchronizowane po odzyskaniu połączenia.</string>
-    <string name="taxonomy_default_income">Domyślnie: przychód</string>
-    <string name="taxonomy_default_expense">Domyślnie: wydatek</string>
     <string name="taxonomy_archived">Zarchiwizowana</string>
     <string name="taxonomy_edit">Edytuj</string>
     <string name="taxonomy_archive">Archiwizuj</string>
@@ -211,6 +209,12 @@
     <string name="taxonomy_name">Nazwa</string>
     <string name="taxonomy_name_error">Podaj nazwę od 1 do 60 znaków.</string>
     <string name="taxonomy_default_type">Domyślny typ wpisu</string>
+    <string name="taxonomy_drag_category">Przeciągnij kategorię %1$s, aby zmienić kolejność</string>
+    <string name="taxonomy_dragging">Przenoszona</string>
+    <string name="taxonomy_move_up">Przenieś wyżej</string>
+    <string name="taxonomy_move_down">Przenieś niżej</string>
+    <string name="taxonomy_move_up_named">Przenieś kategorię %1$s wyżej</string>
+    <string name="taxonomy_move_down_named">Przenieś kategorię %1$s niżej</string>
     <string name="taxonomy_color">Kolor kategorii</string>
     <string name="taxonomy_color_option">Kolor: %1$s</string>
     <string name="taxonomy_color_selected">Wybrany</string>

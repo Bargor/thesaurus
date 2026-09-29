@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
+import pl.bargor.thesaurus.data.firebase.observeOrderedCategories
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.LedgerEntry
@@ -185,7 +186,7 @@ class EntryFormViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            taxonomyRepository.observeCategories(householdId)
+            taxonomyRepository.observeOrderedCategories(householdId, actorId)
                 .flatMapLatest { categoryObservation ->
                     val categories = categoryObservation.value.orEmpty()
                     val subcategoryObservations = categories.map { category ->

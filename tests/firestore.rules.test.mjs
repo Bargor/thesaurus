@@ -34,6 +34,8 @@ const subcategoryRef = (database, categoryId, id) =>
   doc(database, 'households', householdId, 'categories', categoryId, 'subcategories', id);
 const invitationRef = (database, id) => doc(database, 'households', householdId, 'invitations', id);
 const userRef = (database, uid) => doc(database, 'users', uid);
+const categoryOrderRef = (database, uid, id = householdId) =>
+  doc(database, 'users', uid, 'categoryOrders', id);
 
 const firstHouseholdBatch = (database, { uid, email, id }) => {
   const batch = writeBatch(database);
@@ -384,6 +386,38 @@ test('taxonomy accepts only category color palette tokens', async () => {
   await assertFails(setDoc(categoryRef(bob, 'raw-hex'), category('bob', { color: '#0891B2' })));
   await assertFails(setDoc(categoryRef(bob, 'unknown-color'), category('bob', { color: 'ultraviolet' })));
   await assertFails(setDoc(categoryRef(bob, 'missing-color'), category('bob', { color: null })));
+});
+
+test('category order is a private validated user and household preference', async () => {
+  const alice = db('alice');
+  const reference = categoryOrderRef(alice, 'alice');
+  await assertSucceeds(setDoc(reference, {
+    householdId,
+    userId: 'alice',
+    categoryIds: ['food', 'home', 'other'],
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDoc(reference));
+  await assertFails(getDoc(categoryOrderRef(db('bob'), 'alice')));
+  await assertFails(setDoc(categoryOrderRef(alice, 'bob'), {
+    householdId,
+    userId: 'bob',
+    categoryIds: ['food'],
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(reference, {
+    householdId,
+    userId: 'alice',
+    categoryIds: ['food', 'food'],
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(categoryOrderRef(alice, 'alice', 'other-house'), {
+    householdId: 'other-house',
+    userId: 'alice',
+    categoryIds: ['food'],
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(reference));
 });
 
 test('users can access only their own validated profile', async () => {

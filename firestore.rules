@@ -132,6 +132,14 @@ service cloud.firestore {
         data.createdAt is timestamp && data.updatedAt is timestamp;
     }
 
+    function validCategoryOrder(householdId, uid, data) {
+      return exactKeys(data, ['householdId', 'userId', 'categoryIds', 'updatedAt']) &&
+        data.householdId == householdId && data.userId == uid &&
+        data.categoryIds is list && data.categoryIds.size() <= 200 &&
+        data.categoryIds.toSet().size() == data.categoryIds.size() &&
+        data.updatedAt is timestamp;
+    }
+
     function validSubcategory(householdId, categoryId, data) {
       return exactKeys(data, [
           'householdId', 'categoryId', 'name', 'archived', 'authorId',
@@ -200,6 +208,14 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'updatedAt']) &&
         request.resource.data.updatedAt == request.time;
       allow delete: if false;
+
+      match /categoryOrders/{householdId} {
+        allow read: if signedIn() && uid == request.auth.uid && member(householdId);
+        allow create, update: if signedIn() && uid == request.auth.uid && member(householdId) &&
+          validCategoryOrder(householdId, uid, request.resource.data) &&
+          request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
     }
 
     match /households/{householdId} {

@@ -1,7 +1,10 @@
 package pl.bargor.thesaurus.ui.taxonomy
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -15,16 +18,20 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -39,6 +46,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -47,12 +56,15 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import kotlin.math.abs
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.CategoryPalette
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.data.model.moveActiveCategory
 import pl.bargor.thesaurus.ui.accentColor
 import pl.bargor.thesaurus.ui.asColor
 import pl.bargor.thesaurus.ui.contrastingContent
@@ -69,12 +81,35 @@ private sealed interface TaxonomyDialog {
 fun TaxonomyScreen(
     state: TaxonomyUiState,
     onMutation: (TaxonomyMutation) -> Unit,
+    onMoveCategory: (String, String) -> Unit = { _, _ -> },
+    onReorderCategories: (List<String>) -> Unit = {},
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var showArchived by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<TaxonomyDialog?>(null) }
-    val categories = state.categories.filter { showArchived || !it.category.archived }
+    var previewOrderIds by remember { mutableStateOf<List<String>?>(null) }
+    val nodesById = state.categories.associateBy { it.category.id }
+    val orderedNodes = previewOrderIds?.mapNotNull(nodesById::get) ?: state.categories
+    val categories = orderedNodes.filter { showArchived || !it.category.archived }
+    val activeIds = orderedNodes.filterNot { it.category.archived }.map { it.category.id }
+    val listState = rememberLazyListState()
+    var draggedId by remember { mutableStateOf<String?>(null) }
+    var targetId by remember { mutableStateOf<String?>(null) }
+    var dragDistance by remember { mutableStateOf(0f) }
+
+    fun endDrag(commit: Boolean) {
+        val dragged = draggedId
+        val preview = previewOrderIds
+        val currentIds = state.categories.map { it.category.id }
+        if (commit && dragged != null && preview != null && preview != currentIds) {
+            onReorderCategories(preview)
+        }
+        previewOrderIds = null
+        draggedId = null
+        targetId = null
+        dragDistance = 0f
+    }
 
     Column(modifier = modifier.padding(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -116,14 +151,59 @@ fun TaxonomyScreen(
                 modifier = Modifier.padding(top = 24.dp),
             )
             else -> LazyColumn(
+                state = listState,
                 modifier = Modifier.padding(top = 12.dp).testTag("taxonomy-list"),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(categories, key = { it.category.id }) { node ->
+                    val activeIndex = activeIds.indexOf(node.category.id)
                     CategoryCard(
+                        modifier = Modifier.animateItem(),
                         node = node,
                         showArchived = showArchived,
-                        enabled = !state.saving,
+                        enabled = !state.saving && !state.reordering,
+                        dragging = draggedId == node.category.id,
+                        dragTranslationY = if (draggedId == node.category.id) dragDistance else 0f,
+                        dropTarget = targetId == node.category.id && draggedId != node.category.id,
+                        canMoveUp = activeIndex > 0,
+                        canMoveDown = activeIndex >= 0 && activeIndex < activeIds.lastIndex,
+                        onMoveUp = { onMoveCategory(node.category.id, activeIds[activeIndex - 1]) },
+                        onMoveDown = { onMoveCategory(node.category.id, activeIds[activeIndex + 1]) },
+                        onDragStart = {
+                            draggedId = node.category.id
+                            targetId = node.category.id
+                            previewOrderIds = state.categories.map { it.category.id }
+                            dragDistance = 0f
+                        },
+                        onDrag = { delta ->
+                            dragDistance += delta
+                            val visibleItems = listState.layoutInfo.visibleItemsInfo
+                            val draggedItem = visibleItems.firstOrNull { it.key == draggedId }
+                            val center = draggedItem?.let {
+                                it.offset + it.size / 2f + dragDistance
+                            }
+                            val targetItem = center?.let { draggedCenter ->
+                                visibleItems
+                                .filter { it.key in activeIds }
+                                    .minByOrNull { abs(draggedCenter - (it.offset + it.size / 2f)) }
+                            }
+                            val nearestId = targetItem?.key as? String
+                            if (nearestId != null) {
+                                targetId = nearestId
+                                val dragged = draggedId
+                                if (dragged != null && nearestId != dragged) {
+                                    val currentIds = previewOrderIds ?: state.categories.map { it.category.id }
+                                    val previewNodes = currentIds.mapNotNull(nodesById::get)
+                                    previewOrderIds = previewNodes
+                                        .map(CategoryWithSubcategories::category)
+                                        .moveActiveCategory(dragged, nearestId)
+                                        .map(Category::id)
+                                    dragDistance += draggedItem.offset - targetItem.offset
+                                }
+                            }
+                        },
+                        onDragEnd = { endDrag(commit = true) },
+                        onDragCancel = { endDrag(commit = false) },
                         onEdit = { dialog = TaxonomyDialog.EditCategory(node.category) },
                         onAddSubcategory = { dialog = TaxonomyDialog.AddSubcategory(node.category) },
                         onArchive = { archived ->
@@ -197,7 +277,7 @@ private fun SyncMessage(state: TaxonomyUiState) {
         state.error == TaxonomyError.InvalidColor -> stringResource(R.string.taxonomy_color_error)
         state.error == TaxonomyError.ArchivedParent -> stringResource(R.string.taxonomy_archived_parent_error)
         state.error == TaxonomyError.SaveFailed -> stringResource(R.string.taxonomy_save_error)
-        state.saving || state.syncState == SyncState.PENDING -> stringResource(R.string.taxonomy_sync_pending)
+        state.saving || state.reordering || state.syncState == SyncState.PENDING -> stringResource(R.string.taxonomy_sync_pending)
         state.syncState == SyncState.OFFLINE -> stringResource(R.string.taxonomy_offline)
         else -> null
     }
@@ -209,16 +289,27 @@ private fun CategoryCard(
     node: CategoryWithSubcategories,
     showArchived: Boolean,
     enabled: Boolean,
+    dragging: Boolean,
+    dragTranslationY: Float,
+    dropTarget: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDragStart: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
     onEdit: () -> Unit,
     onAddSubcategory: () -> Unit,
     onArchive: (Boolean) -> Unit,
     onEditSubcategory: (Subcategory) -> Unit,
     onArchiveSubcategory: (Subcategory, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val category = node.category
     val subcategories = node.subcategories.filter { showArchived || !it.archived }
     var expanded by rememberSaveable(category.id) { mutableStateOf(false) }
-    val hasSubcategories = subcategories.isNotEmpty()
     val expandDescription = stringResource(
         if (expanded) R.string.taxonomy_collapse_category else R.string.taxonomy_expand_category,
         category.name,
@@ -237,21 +328,54 @@ private fun CategoryCard(
         else R.string.taxonomy_archive_category_named,
         category.name,
     )
-    Card(modifier = Modifier.fillMaxWidth().testTag("taxonomy-category-${category.id}")) {
+    val dragDescription = stringResource(R.string.taxonomy_drag_category, category.name)
+    val draggingDescription = stringResource(R.string.taxonomy_dragging)
+    val moveUpDescription = stringResource(R.string.taxonomy_move_up_named, category.name)
+    val moveDownDescription = stringResource(R.string.taxonomy_move_down_named, category.name)
+    val elevation by animateDpAsState(if (dragging) 12.dp else 1.dp, label = "category elevation")
+    val scale by animateFloatAsState(if (dragging) 1.02f else 1f, label = "category scale")
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("taxonomy-category-${category.id}")
+            .semantics {
+                if (!category.archived) contentDescription = dragDescription
+                if (dragging) stateDescription = draggingDescription
+            }
+            .pointerInput(category.id, enabled, category.archived) {
+                if (enabled && !category.archived) detectDragGesturesAfterLongPress(
+                    onDragStart = { onDragStart() },
+                    onDragEnd = onDragEnd,
+                    onDragCancel = onDragCancel,
+                    onDrag = { change, amount ->
+                        change.consume()
+                        onDrag(amount.y)
+                    },
+                )
+            }
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationY = dragTranslationY
+            }
+            .zIndex(if (dragging) 1f else 0f),
+        elevation = CardDefaults.cardElevation(defaultElevation = elevation),
+        border = when {
+            dragging -> BorderStroke(3.dp, MaterialTheme.colorScheme.primary)
+            dropTarget -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+            else -> null
+        },
+    ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .testTag("taxonomy-category-header-${category.id}")
-                    .then(if (hasSubcategories) Modifier.clickable { expanded = !expanded } else Modifier)
+                    .clickable { expanded = !expanded }
                     .semantics {
-                        if (hasSubcategories) {
-                            contentDescription = expandDescription
-                            stateDescription = expansionState
-                        } else {
-                            stateDescription = emptyMessage
-                        }
+                        contentDescription = expandDescription
+                        stateDescription = expansionState
                     },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -260,28 +384,16 @@ private fun CategoryCard(
                         Surface(shape = CircleShape, color = category.accentColor(), modifier = Modifier.size(16.dp)) {}
                         Text(category.name, style = MaterialTheme.typography.titleMedium)
                     }
-                    Text(
-                        stringResource(
-                            if (category.defaultEntryType == EntryType.INCOME) R.string.taxonomy_default_income
-                            else R.string.taxonomy_default_expense,
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
                     if (category.archived) {
                         Text(stringResource(R.string.taxonomy_archived), style = MaterialTheme.typography.labelMedium)
                     }
-                    if (!hasSubcategories) {
-                        Text(emptyMessage, style = MaterialTheme.typography.labelMedium)
-                    }
                 }
-                if (hasSubcategories) {
-                    Icon(
-                        imageVector = if (expanded) Icons.Filled.KeyboardArrowDown
-                        else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.KeyboardArrowDown
+                    else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
             Row(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(
@@ -307,14 +419,49 @@ private fun CategoryCard(
                     Text(stringResource(if (category.archived) R.string.taxonomy_restore else R.string.taxonomy_archive))
                 }
             }
-            if (expanded && hasSubcategories) {
-                subcategories.forEach { subcategory ->
-                    SubcategoryRow(
-                        subcategory = subcategory,
-                        enabled = enabled,
-                        onEdit = { onEditSubcategory(subcategory) },
-                        onArchive = { onArchiveSubcategory(subcategory, !subcategory.archived) },
-                    )
+            if (expanded) {
+                Text(
+                    text = stringResource(R.string.taxonomy_default_type),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(
+                    text = stringResource(
+                        if (category.defaultEntryType == EntryType.INCOME) R.string.taxonomy_income
+                        else R.string.taxonomy_expense,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag("taxonomy-default-type-${category.id}"),
+                )
+                if (!category.archived) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IconButton(
+                            modifier = Modifier.testTag("taxonomy-move-up-${category.id}"),
+                            enabled = enabled && canMoveUp,
+                            onClick = onMoveUp,
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = moveUpDescription)
+                        }
+                        IconButton(
+                            modifier = Modifier.testTag("taxonomy-move-down-${category.id}"),
+                            enabled = enabled && canMoveDown,
+                            onClick = onMoveDown,
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = moveDownDescription)
+                        }
+                    }
+                }
+                if (subcategories.isEmpty()) {
+                    Text(emptyMessage, style = MaterialTheme.typography.labelMedium)
+                } else {
+                    subcategories.forEach { subcategory ->
+                        SubcategoryRow(
+                            subcategory = subcategory,
+                            enabled = enabled,
+                            onEdit = { onEditSubcategory(subcategory) },
+                            onArchive = { onArchiveSubcategory(subcategory, !subcategory.archived) },
+                        )
+                    }
                 }
             }
         }

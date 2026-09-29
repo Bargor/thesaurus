@@ -19,6 +19,7 @@ import org.junit.Test
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.CategoryPalette
+import pl.bargor.thesaurus.data.model.CategoryOrder
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncObservation
@@ -120,15 +121,44 @@ class TaxonomyViewModelTest {
         assertFalse(viewModel.state.value.saving)
         assertEquals(1, repository.saveAttempts)
     }
+
+    @Test
+    fun reorderingIsOptimisticAndPersistsEveryCategoryIncludingArchived() = runTest {
+        val repository = FakeTaxonomyRepository(
+            initialCategories = listOf(
+                category("a"),
+                category("archived", archived = true),
+                category("b"),
+            ),
+        )
+        val viewModel = TaxonomyViewModel(repository)
+        viewModel.start("house", "actor")
+        advanceUntilIdle()
+
+        viewModel.reorderCategories(listOf("b", "archived", "a"))
+        advanceUntilIdle()
+
+        assertEquals(listOf("b", "archived", "a"), viewModel.state.value.categories.map { it.category.id })
+        assertEquals(listOf("b", "archived", "a"), repository.savedOrder?.categoryIds)
+        assertEquals("actor", repository.savedOrder?.userId)
+    }
+
+    private fun category(id: String, archived: Boolean = false) = Category(
+        id = id, householdId = "house", name = id, archived = archived,
+        authorId = "actor", updatedById = "actor",
+    )
 }
 
 private class FakeTaxonomyRepository(
     private val failSaves: Boolean = false,
+    initialCategories: List<Category> = emptyList(),
 ) : TaxonomyRepository {
-    private val categories = MutableStateFlow(SyncObservation(value = emptyList<Category>(), state = SyncState.SYNCED))
+    private val categories = MutableStateFlow(SyncObservation(value = initialCategories, state = SyncState.SYNCED))
+    private val order = MutableStateFlow(SyncObservation<CategoryOrder>(state = SyncState.SYNCED))
     val savedCategories = mutableListOf<Category>()
     val savedSubcategories = mutableListOf<Subcategory>()
     var saveAttempts = 0
+    var savedOrder: CategoryOrder? = null
 
     override fun observeCategories(householdId: String): Flow<SyncObservation<List<Category>>> = categories
 
@@ -149,5 +179,16 @@ private class FakeTaxonomyRepository(
         saveAttempts++
         if (failSaves) error("Zapis niedostępny")
         savedSubcategories += subcategory
+    }
+
+    override fun observeCategoryOrder(
+        householdId: String,
+        userId: String,
+    ): Flow<SyncObservation<CategoryOrder>> = order
+
+    override suspend fun saveCategoryOrder(order: CategoryOrder) {
+        if (failSaves) error("Zapis niedostępny")
+        savedOrder = order
+        this.order.value = SyncObservation(order, SyncState.SYNCED)
     }
 }

@@ -6,6 +6,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.firestore.FieldValue
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
@@ -16,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import pl.bargor.thesaurus.LocalNetworkPermissionRule
 import pl.bargor.thesaurus.data.model.Category
+import pl.bargor.thesaurus.data.model.CategoryOrder
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncState
@@ -76,6 +78,28 @@ class TaxonomyRepositoryIntegrationTest {
             assertEquals("Zwierzęta", savedCategory.name)
             assertEquals(EntryType.INCOME, savedCategory.defaultEntryType)
             assertEquals("rose", savedCategory.color)
+
+            val secondCategory = category.copy(id = "second-$suffix", name = "Druga")
+            repository.save(secondCategory)
+            repository.saveCategoryOrder(
+                CategoryOrder(householdId, uid, listOf(secondCategory.id, category.id)),
+            )
+            val ordered = withTimeout(15_000) {
+                repository.observeOrderedCategories(householdId, uid).first { observation ->
+                    observation.state == SyncState.SYNCED && observation.value.orEmpty().size == 2
+                }
+            }
+            assertEquals(listOf(secondCategory.id, category.id), ordered.value!!.map(Category::id))
+
+            firestore.disableNetwork().await()
+            val offlineOrder = CategoryOrder(householdId, uid, listOf(category.id, secondCategory.id))
+            val pendingWrite = launch { repository.saveCategoryOrder(offlineOrder) }
+            val pending = withTimeout(15_000) {
+                repository.observeCategoryOrder(householdId, uid).first { it.state == SyncState.PENDING }
+            }
+            assertEquals(offlineOrder.categoryIds, pending.value!!.categoryIds)
+            firestore.enableNetwork().await()
+            withTimeout(15_000) { pendingWrite.join() }
 
             val child = Subcategory(
                 id = "subcategory-$suffix", householdId = householdId, categoryId = category.id,
