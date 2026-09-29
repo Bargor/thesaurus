@@ -576,5 +576,10 @@ private fun TaxonomyRoute(
 ) {
     LaunchedEffect(householdId, actorId) { taxonomyViewModel.start(householdId, actorId) }
     val state by taxonomyViewModel.state.collectAsState()
-    TaxonomyScreen(state = state, onMutation = taxonomyViewModel::mutate, onBack = onBack)
+    TaxonomyScreen(
+        state = state,
+        onMutation = taxonomyViewModel::mutate,
+        onMoveCategory = taxonomyViewModel::moveCategory,
+        onBack = onBack,
+    )
 }

@@ -4,6 +4,12 @@ Thesaurus is a Polish-language Android app for a shared household ledger. It kee
 
 The **Wpisy** tab is the ledger. **Podsumowanie** has independently remembered month and year views, and **Raporty** supports month, year, or custom dates, signed type filters, category shares, trends, and an entry drill-down. Household owners can invite a person by email and manage membership.
 
+### Category ordering
+
+Open **Ustawienia → Kategorie i podkategorie** to arrange top-level categories. Long-press the drag handle and move a category, or expand it and use the accessible **Przenieś wyżej / Przenieś niżej** actions. The same order is used by category management and by both the new-entry and edit-entry forms; subcategories always remain attached to their parent and keep their own alphabetical order.
+
+The preference belongs to one user in one household and is synchronized through Firestore, including its persistent offline queue, so another household member can choose a different order. Without a saved preference, the repository's deterministic alphabetical order is used. Once an order exists, new categories are appended. Archiving does not remove a category from the saved sequence, and restoring it returns it to its former position. Stale identifiers are ignored safely and categories absent from an older preference are appended without changing or deleting taxonomy documents.
+
 ## Requirements
 
 - JDK 21

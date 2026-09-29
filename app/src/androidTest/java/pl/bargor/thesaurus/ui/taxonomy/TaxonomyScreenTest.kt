@@ -1,11 +1,11 @@
 package pl.bargor.thesaurus.ui.taxonomy
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHasClickAction
-import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
@@ -107,7 +108,10 @@ class TaxonomyScreenTest {
         composeRule.onNodeWithTag("taxonomy-subcategory-market").assertDoesNotExist()
         composeRule.onNodeWithTag("taxonomy-subcategory-train").assertDoesNotExist()
         val foodHeader = composeRule.onNodeWithTag("taxonomy-category-header-food")
-        foodHeader.assertContentDescriptionEquals("Rozwiń kategorię Jedzenie")
+        foodHeader.assertContentDescriptionEquals(
+            "Rozwiń kategorię Jedzenie",
+            "Przeciągnij kategorię Jedzenie, aby zmienić kolejność",
+        )
         assertEquals(
             "Zwinięta",
             foodHeader.fetchSemanticsNode().config[SemanticsProperties.StateDescription],
@@ -120,7 +124,10 @@ class TaxonomyScreenTest {
         composeRule.onNodeWithTag("taxonomy-subcategory-market").assertIsDisplayed()
         composeRule.onNodeWithTag("taxonomy-subcategory-train").assertDoesNotExist()
         foodHeader
-            .assertContentDescriptionEquals("Zwiń kategorię Jedzenie")
+            .assertContentDescriptionEquals(
+                "Zwiń kategorię Jedzenie",
+                "Przeciągnij kategorię Jedzenie, aby zmienić kolejność",
+            )
             .performClick()
         assertEquals(
             "Zwinięta",
@@ -130,17 +137,18 @@ class TaxonomyScreenTest {
     }
 
     @Test
-    fun emptyCategoryHasVisibleNonExpandableState() {
+    fun emptyCategoryExpandsToShowDetailsAndEmptyState() {
         val empty = Category("empty", "house", "Inne", authorId = "user", updatedById = "user")
         showCategories(CategoryWithSubcategories(empty, emptyList()))
 
-        composeRule.onNodeWithText("Brak podkategorii").assertIsDisplayed()
+        composeRule.onNodeWithText("Domyślny typ wpisu").assertDoesNotExist()
+        composeRule.onNodeWithText("Brak podkategorii").assertDoesNotExist()
         val emptyHeader = composeRule.onNodeWithTag("taxonomy-category-header-empty")
-            .assertHasNoClickAction()
-        assertEquals(
-            "Brak podkategorii",
-            emptyHeader.fetchSemanticsNode().config[SemanticsProperties.StateDescription],
-        )
+            .assertHasClickAction()
+        emptyHeader.performClick()
+        composeRule.onNodeWithText("Domyślny typ wpisu").assertIsDisplayed()
+        composeRule.onNodeWithTag("taxonomy-default-type-empty").assertIsDisplayed()
+        composeRule.onNodeWithText("Brak podkategorii").assertIsDisplayed()
         composeRule.onNodeWithTag("taxonomy-add-subcategory-empty").assertHasClickAction()
     }
 
@@ -154,11 +162,11 @@ class TaxonomyScreenTest {
         )
 
         composeRule.onNodeWithTag("taxonomy-category-old").assertDoesNotExist()
+        composeRule.onNodeWithText("Brak aktywnych podkategorii").assertDoesNotExist()
+        composeRule.onNodeWithTag("taxonomy-category-header-food").performClick()
         composeRule.onNodeWithText("Brak aktywnych podkategorii").assertIsDisplayed()
-        composeRule.onNodeWithTag("taxonomy-category-header-food").assertHasNoClickAction()
         composeRule.onNodeWithTag("taxonomy-show-archived").performClick()
         composeRule.onNodeWithTag("taxonomy-category-old").assertExists()
-        composeRule.onNodeWithTag("taxonomy-category-header-food").performClick()
         composeRule.onNodeWithTag("taxonomy-subcategory-old-market").assertIsDisplayed()
         composeRule.onNodeWithTag("taxonomy-show-archived").performClick()
         composeRule.onNodeWithTag("taxonomy-subcategory-old-market").assertDoesNotExist()
@@ -174,7 +182,10 @@ class TaxonomyScreenTest {
 
         val density = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
         val header = composeRule.onNodeWithTag("taxonomy-category-header-food")
-        header.assertHasClickAction().assertContentDescriptionEquals("Rozwiń kategorię Jedzenie")
+        header.assertHasClickAction().assertContentDescriptionEquals(
+            "Rozwiń kategorię Jedzenie",
+            "Przeciągnij kategorię Jedzenie, aby zmienić kolejność",
+        )
         assertTrue(header.fetchSemanticsNode().boundsInRoot.height >= 48f * density - 1f)
         composeRule.onNodeWithTag("taxonomy-edit-category-food")
             .assertContentDescriptionEquals("Edytuj kategorię Jedzenie")
@@ -204,15 +215,59 @@ class TaxonomyScreenTest {
         assertEquals(2, mutations.size)
     }
 
+    @Test
+    fun accessibilityMoveActionsReorderActiveCategories() {
+        val moves = mutableListOf<Pair<String, String>>()
+        val food = Category("food", "house", "Jedzenie", authorId = "user", updatedById = "user")
+        val home = Category("home", "house", "Dom", authorId = "user", updatedById = "user")
+        showCategories(
+            CategoryWithSubcategories(food, emptyList()),
+            CategoryWithSubcategories(home, emptyList()),
+            onMoveCategory = { from, to -> moves += from to to },
+        )
+
+        composeRule.onNodeWithTag("taxonomy-category-header-food").performClick()
+        composeRule.onNodeWithTag("taxonomy-move-down-food")
+            .assertContentDescriptionEquals("Przenieś kategorię Jedzenie niżej")
+            .performClick()
+
+        assertEquals(listOf("food" to "home"), moves)
+    }
+
+    @Test
+    fun longPressDragMovesAnActiveCategory() {
+        val moves = mutableListOf<Pair<String, String>>()
+        val food = Category("food", "house", "Jedzenie", authorId = "user", updatedById = "user")
+        val home = Category("home", "house", "Dom", authorId = "user", updatedById = "user")
+        showCategories(
+            CategoryWithSubcategories(food, emptyList()),
+            CategoryWithSubcategories(home, emptyList()),
+            onMoveCategory = { from, to -> moves += from to to },
+        )
+
+        composeRule.onNodeWithTag("taxonomy-drag-food", useUnmergedTree = true).performTouchInput {
+            down(center)
+            advanceEventTime(1_000)
+            moveBy(Offset(0f, 400f))
+            advanceEventTime(100)
+            up()
+        }
+        composeRule.waitForIdle()
+
+        assertEquals(listOf("food" to "home"), moves)
+    }
+
     private fun showCategories(
         vararg categories: CategoryWithSubcategories,
         onMutation: (TaxonomyMutation) -> Unit = {},
+        onMoveCategory: (String, String) -> Unit = { _, _ -> },
     ) {
         composeRule.setContent {
             ThesaurusTheme {
                 TaxonomyScreen(
                     state = TaxonomyUiState(isLoading = false, categories = categories.toList()),
                     onMutation = onMutation,
+                    onMoveCategory = onMoveCategory,
                 )
             }
         }

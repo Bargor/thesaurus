@@ -13,11 +13,14 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
+import pl.bargor.thesaurus.data.firebase.observeOrderedCategories
 import pl.bargor.thesaurus.data.model.Category
+import pl.bargor.thesaurus.data.model.CategoryOrder
 import pl.bargor.thesaurus.data.model.CategoryPalette
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.data.model.moveActiveCategory
 import java.util.UUID
 import javax.inject.Inject
 
@@ -27,6 +30,7 @@ data class TaxonomyUiState(
     val syncState: SyncState = SyncState.SYNCED,
     val error: TaxonomyError? = null,
     val saving: Boolean = false,
+    val reordering: Boolean = false,
 )
 
 sealed interface TaxonomyError {
@@ -67,6 +71,7 @@ class TaxonomyViewModel @Inject constructor(
     val state: StateFlow<TaxonomyUiState> = mutableState.asStateFlow()
 
     private var startedFor: Pair<String, String>? = null
+    private var pendingOrderIds: List<String>? = null
 
     /** Called after authentication because household identity is intentionally not persisted in UI routes. */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -75,7 +80,7 @@ class TaxonomyViewModel @Inject constructor(
         startedFor = householdId to actorId
         mutableState.value = TaxonomyUiState()
         viewModelScope.launch {
-            repository.observeCategories(householdId)
+            repository.observeOrderedCategories(householdId, actorId)
                 .flatMapLatest { categoryObservation ->
                     val categories = categoryObservation.value.orEmpty()
                     val subcategoryObservations = categories.map { category ->
@@ -99,6 +104,8 @@ class TaxonomyViewModel @Inject constructor(
                     }
                 }
                 .collect { snapshot ->
+                    val observedIds = snapshot.categories.map(Category::id)
+                    if (pendingOrderIds == observedIds) pendingOrderIds = null
                     mutableState.update {
                         it.copy(
                             isLoading = false,
@@ -106,10 +113,38 @@ class TaxonomyViewModel @Inject constructor(
                                 CategoryWithSubcategories(category, snapshot.subcategories[category.id].orEmpty())
                             },
                             syncState = snapshot.state,
-                            error = snapshot.error?.let { TaxonomyError.SaveFailed },
+                            error = snapshot.error?.let { TaxonomyError.SaveFailed } ?: it.error,
+                            reordering = pendingOrderIds != null,
                         )
                     }
                 }
+        }
+    }
+
+    fun moveCategory(categoryId: String, targetCategoryId: String) {
+        val (householdId, actorId) = startedFor ?: return
+        val reordered = state.value.categories.map(CategoryWithSubcategories::category)
+            .moveActiveCategory(categoryId, targetCategoryId)
+        val ids = reordered.map(Category::id)
+        if (ids == state.value.categories.map { it.category.id }) return
+        val byId = state.value.categories.associateBy { it.category.id }
+        pendingOrderIds = ids
+        mutableState.update { old ->
+            old.copy(
+                categories = ids.mapNotNull(byId::get),
+                reordering = true,
+                error = null,
+            )
+        }
+        viewModelScope.launch {
+            runCatching {
+                repository.saveCategoryOrder(CategoryOrder(householdId, actorId, ids))
+            }.onFailure {
+                if (pendingOrderIds == ids) {
+                    pendingOrderIds = null
+                    mutableState.update { state -> state.copy(reordering = false, error = TaxonomyError.SaveFailed) }
+                }
+            }
         }
     }
 
