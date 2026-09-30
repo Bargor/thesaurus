@@ -6,13 +6,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.combinedClickable
@@ -75,6 +73,7 @@ fun EntryListScreen(
     val deletedLabel = stringResource(R.string.entries_deleted)
     val unnamedDeletedItem = stringResource(R.string.entries_deleted_item)
     val undoLabel = stringResource(R.string.entries_undo)
+    val rows = remember(state.visibleEntries) { entryListRows(state.visibleEntries) }
     LaunchedEffect(state.pendingDeletion?.entry?.id) {
         val pending = state.pendingDeletion ?: return@LaunchedEffect
         val result = snackbarHostState.showSnackbar(
@@ -105,40 +104,54 @@ fun EntryListScreen(
                 text = stringResource(R.string.entries_delete_error),
                 color = MaterialTheme.colorScheme.error,
             )
-            when {
-                state.isLoading -> CircularProgressIndicator(
-                    modifier = Modifier.padding(24.dp).testTag("entries-loading"),
-                )
-                state.error != null && state.entries.isEmpty() -> ErrorContent(onRetry)
-                state.entries.isEmpty() -> EmptyContent(onAddEntry)
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize().testTag("entries-list"),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (state.error != null) item { ErrorContent(onRetry) }
-                    items(state.visibleEntries, key = { it.entry.id }) { item ->
-                        EntryCard(item, onEditEntry, { actionCandidate = item })
-                    }
-                    if (state.hasMore) item {
-                        Button(
-                            modifier = Modifier.fillMaxWidth().testTag("entries-load-more"),
-                            onClick = onLoadNextPage,
-                        ) { Text(stringResource(R.string.entries_load_more)) }
-                    }
-                    item {
-                        Button(
-                            modifier = Modifier.fillMaxWidth().testTag("add-entry"),
-                            onClick = onAddEntry,
-                        ) { Text(stringResource(R.string.entry_add)) }
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    state.isLoading -> CircularProgressIndicator(
+                        modifier = Modifier.padding(24.dp).testTag("entries-loading"),
+                    )
+                    state.error != null && state.entries.isEmpty() -> ErrorContent(onRetry)
+                    state.entries.isEmpty() -> EmptyContent()
+                    else -> LazyColumn(
+                        modifier = Modifier.fillMaxSize().testTag("entries-list"),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        if (state.error != null) item { ErrorContent(onRetry) }
+                        items(rows, key = { it.key }, contentType = {
+                            when (it) {
+                                is EntryListRow.DateHeading -> "date"
+                                is EntryListRow.Entry -> "entry"
+                            }
+                        }) { row ->
+                            when (row) {
+                                is EntryListRow.DateHeading -> Text(
+                                    text = row.date.format(PolishDateFormatter),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.testTag(row.key),
+                                )
+                                is EntryListRow.Entry -> EntryCard(row.item, onEditEntry, { actionCandidate = row.item })
+                            }
+                        }
+                        if (state.hasMore) item {
+                            Button(
+                                modifier = Modifier.fillMaxWidth().testTag("entries-load-more"),
+                                onClick = onLoadNextPage,
+                            ) { Text(stringResource(R.string.entries_load_more)) }
+                        }
                     }
                 }
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
+            Button(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    .fillMaxWidth().heightIn(min = 48.dp).testTag("add-entry"),
+                onClick = onAddEntry,
+            ) { Text(stringResource(R.string.entry_add)) }
         }
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
     }
     actionCandidate?.let { item ->
         AlertDialog(
@@ -225,12 +238,9 @@ private fun EntryListSyncState(syncState: SyncState) {
 }
 
 @Composable
-private fun EmptyContent(onAddEntry: () -> Unit) {
+private fun EmptyContent() {
     Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(R.string.empty_entries))
-        Button(modifier = Modifier.testTag("add-entry"), onClick = onAddEntry) {
-            Text(stringResource(R.string.entry_add))
-        }
     }
 }
 
@@ -261,6 +271,7 @@ private fun EntryCard(
     val dark = surface.luminance() < 0.5f
     val cardModifier = Modifier
         .fillMaxWidth()
+        .heightIn(min = 48.dp)
         .testTag("entry-${entry.id}")
         .let { base ->
             if (item.canManage) base.combinedClickable(
@@ -277,13 +288,15 @@ private fun EntryCard(
         ),
         border = BorderStroke(1.dp, accent),
     ) {
-        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-            Box(
-                Modifier.width(6.dp).fillMaxHeight().background(accent)
-                    .testTag("entry-category-color-${entry.id}"),
-            )
-            Column(modifier = Modifier.padding(12.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(modifier = Modifier.fillMaxWidth()) {
+        Box(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Box(Modifier.matchParentSize()) {
+                Box(
+                    Modifier.width(6.dp).fillMaxHeight().background(accent)
+                        .testTag("entry-category-color-${entry.id}"),
+                )
+            }
+            Column(modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 7.dp, bottom = 7.dp)) {
+                FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(text = taxonomy, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                     Text(
                         text = entry.amountGrosze.toPolishCurrency(),
@@ -292,9 +305,11 @@ private fun EntryCard(
                         modifier = Modifier.testTag(if (entry.amountGrosze > 0) "entry-income-${entry.id}" else "entry-expense-${entry.id}"),
                     )
                 }
-                entry.normalizedTitle?.let { Text(it) }
-                Text(stringResource(R.string.entries_author_and_date, item.authorName, entry.date.format(PolishDateFormatter)))
-                if (entry.normalizedTags.isNotEmpty()) Text(entry.normalizedTags.joinToString(" ") { "#$it" })
+                entry.normalizedTitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                if (entry.normalizedTags.isNotEmpty()) Text(
+                    entry.normalizedTags.joinToString(" ") { "#$it" },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
