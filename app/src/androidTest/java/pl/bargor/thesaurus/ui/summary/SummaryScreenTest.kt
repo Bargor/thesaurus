@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,8 +15,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHasClickAction
-import androidx.compose.ui.test.assertIsNotSelected
-import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.Role
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.SavedStateHandle
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -29,6 +37,10 @@ import java.math.BigInteger
 import java.time.LocalDate
 import java.time.Year
 import java.time.YearMonth
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -39,9 +51,79 @@ import pl.bargor.thesaurus.data.model.SummaryTotals
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.LedgerEntry
+import pl.bargor.thesaurus.data.model.Subcategory
+import pl.bargor.thesaurus.data.model.SyncObservation
+import pl.bargor.thesaurus.data.firebase.LedgerRepository
+import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 
 class SummaryScreenTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun headingToggleRecalculatesRealViewModelTotalsFilteredTotalsAndList() {
+        val january = LedgerEntry(
+            id = "jan", householdId = "home", amountGrosze = 100, date = LocalDate.of(2026, 1, 1),
+            categoryId = "food", tags = listOf("dom"), authorId = "anna", updatedById = "anna",
+        )
+        val entries = listOf(
+            january,
+            january.copy(id = "feb", amountGrosze = 200, date = LocalDate.of(2026, 2, 1)),
+            january.copy(id = "other", amountGrosze = 300, tags = emptyList()),
+            january.copy(id = "previous", amountGrosze = 400, date = LocalDate.of(2025, 1, 1)),
+        )
+        val ledger = object : LedgerRepository {
+            override fun observeEntries(householdId: String, includeDeleted: Boolean) = flowOf(SyncObservation(entries, SyncState.SYNCED))
+            override suspend fun save(entry: LedgerEntry) = Unit
+            override suspend fun tombstone(householdId: String, entryId: String, actorId: String) = Unit
+        }
+        val taxonomy = object : TaxonomyRepository {
+            override fun observeCategories(householdId: String) = flowOf(SyncObservation<List<Category>>(emptyList(), SyncState.SYNCED))
+            override fun observeSubcategories(householdId: String, categoryId: String) = flowOf(SyncObservation<List<Subcategory>>(emptyList(), SyncState.SYNCED))
+            override suspend fun save(category: Category) = Unit
+            override suspend fun save(subcategory: Subcategory) = Unit
+        }
+        lateinit var vm: SummaryViewModel
+        composeRule.setContent {
+            val model = androidx.compose.runtime.remember {
+                SummaryViewModel(ledger, taxonomy, Clock.fixed(Instant.parse("2026-01-15T12:00:00Z"), ZoneOffset.UTC), SavedStateHandle())
+                    .also { vm = it; it.selectTag("dom"); it.selectSort(SummaryEntrySort.AMOUNT); it.toggleSortDirection() }
+            }
+            val store = androidx.compose.runtime.remember { ViewModelStore().also { it.put("summary", model) } }
+            DisposableEffect(store) { onDispose { store.clear() } }
+            LaunchedEffect(Unit) { model.start("home") }
+            val state by model.state.collectAsState()
+            ThesaurusTheme {
+                SummaryScreen(
+                    state, model::selectPeriodMode,
+                    { if (state.mode == SummaryPeriodMode.MONTH) model.previousMonth() else model.previousYear() },
+                    { if (state.mode == SummaryPeriodMode.MONTH) model.nextMonth() else model.nextYear() }, {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("summary-income").assertTextContains("4,00", substring = true)
+        composeRule.onNodeWithTag("summary-filtered-income").performScrollTo().assertTextContains("1,00", substring = true)
+        composeRule.onNodeWithTag("summary-entry-jan").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("summary-entry-feb").assertDoesNotExist()
+        composeRule.onNodeWithTag("summary-period").performScrollTo().performClick()
+        composeRule.onNodeWithTag("summary-income").assertTextContains("6,00", substring = true)
+        composeRule.onNodeWithTag("summary-filtered-income").performScrollTo().assertTextContains("3,00", substring = true)
+        composeRule.onNodeWithTag("summary-entry-feb").performScrollTo().assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals("dom", vm.state.value.selectedTag)
+            assertEquals(SummaryEntrySort.AMOUNT, vm.state.value.sort)
+            assertEquals(SummarySortDirection.ASCENDING, vm.state.value.direction)
+            assertEquals(listOf("jan", "feb"), vm.state.value.entries.map { it.entry.id })
+        }
+        composeRule.onNodeWithTag("summary-previous-period").performScrollTo().performClick()
+        composeRule.onNodeWithTag("summary-filtered-income").performScrollTo().assertTextContains("4,00", substring = true)
+        composeRule.onNodeWithTag("summary-entry-previous").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("summary-entry-jan").assertDoesNotExist()
+        composeRule.onNodeWithTag("summary-period").performScrollTo().performClick()
+        composeRule.onNodeWithTag("summary-period").assertTextContains("Styczeń 2025")
+        composeRule.onNodeWithTag("summary-filtered-income").performScrollTo().assertTextContains("4,00", substring = true)
+        composeRule.onNodeWithTag("summary-next-period").performScrollTo().performClick()
+        composeRule.onNodeWithTag("summary-filtered-income").performScrollTo().assertTextContains("0,00", substring = true)
+        composeRule.onNodeWithTag("summary-entry-previous").assertDoesNotExist()
+    }
 
     @Test fun periodControlsStartAtTheTopAtLargeFontScale() {
         composeRule.setContent {
@@ -59,12 +141,12 @@ class SummaryScreenTest {
         }
 
         composeRule.onNodeWithText("Podsumowanie").assertDoesNotExist()
-        val month = composeRule.onNodeWithTag("summary-mode-month").assertIsDisplayed().getUnclippedBoundsInRoot()
-        val year = composeRule.onNodeWithTag("summary-mode-year").assertIsDisplayed().getUnclippedBoundsInRoot()
+        composeRule.onNodeWithTag("summary-mode-month").assertDoesNotExist()
+        composeRule.onNodeWithTag("summary-mode-year").assertDoesNotExist()
         val period = composeRule.onNodeWithTag("summary-period").assertIsDisplayed().getUnclippedBoundsInRoot()
-        assertTrue("Period mode must start without title-sized empty space", month.top <= 24.dp)
-        assertTrue("Period modes must fit on a compact screen", month.left >= 0.dp && year.right <= 320.dp)
-        assertTrue("Period navigation must follow the mode selector", period.top >= month.bottom)
+        assertTrue("Period heading must start without title-sized empty space", period.top <= 24.dp)
+        assertTrue("Period heading must fit on a compact screen", period.left >= 0.dp && period.right <= 320.dp)
+        assertTrue("Period heading must have a 48dp touch target", period.bottom - period.top >= 48.dp)
     }
 
     @Test fun loadingEmptyOfflineErrorAndPendingStates() {
@@ -99,7 +181,7 @@ class SummaryScreenTest {
         composeRule.onNodeWithContentDescription("Bilans: +7,00 zł").assertIsDisplayed()
     }
 
-    @Test fun modeSelectorAndPeriodControlsNavigate() {
+    @Test fun headingAndPeriodControlsNavigateWithAccessibleScopeAndAction() {
         var previous = 0
         var next = 0
         var state by mutableStateOf(
@@ -116,18 +198,21 @@ class SummaryScreenTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("summary-mode-month").assertIsSelected()
-        composeRule.onNodeWithTag("summary-mode-year").assertIsNotSelected()
-        composeRule.onNodeWithTag("summary-mode-year").performClick()
-        composeRule.onNodeWithTag("summary-mode-year").assertIsSelected()
-        composeRule.onNodeWithTag("summary-mode-month").assertIsNotSelected()
+        composeRule.onNodeWithTag("summary-mode-month").assertDoesNotExist()
+        composeRule.onNodeWithTag("summary-mode-year").assertDoesNotExist()
+        val heading = composeRule.onNodeWithTag("summary-period").assertHasClickAction()
+        heading.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Podsumowanie miesięczne"))
+        assertEquals("Pokaż podsumowanie roczne", heading.fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        heading.performClick()
+        heading.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Podsumowanie roczne"))
+        assertEquals("Pokaż podsumowanie miesięczne", heading.fetchSemanticsNode().config[SemanticsActions.OnClick].label)
         composeRule.onNodeWithTag("summary-period").assertTextContains("2026")
         composeRule.onNodeWithTag("summary-previous-period").performClick()
         composeRule.onNodeWithTag("summary-next-period").performClick()
         assertEquals(1, previous)
         assertEquals(1, next)
-        composeRule.onNodeWithTag("summary-mode-month").performClick()
-        composeRule.onNodeWithTag("summary-mode-month").assertIsSelected()
+        heading.performClick()
         composeRule.onNodeWithTag("summary-period").assertTextContains("Wrzesień 2026")
     }
 
@@ -269,7 +354,7 @@ class SummaryScreenTest {
         composeRule.onNodeWithTag("summary-filtered-net").performScrollTo()
             .assertContentDescriptionEquals("Bilans: 0,00 zł")
 
-        composeRule.onNodeWithTag("summary-mode-year").performScrollTo().performClick()
+        composeRule.onNodeWithTag("summary-period").performScrollTo().performClick()
         composeRule.onNodeWithTag("summary-filtered-result").performScrollTo().assertExists()
         composeRule.onNodeWithTag("summary-sort-direction").performScrollTo().performClick()
         composeRule.onNodeWithTag("summary-filtered-net").performScrollTo()
@@ -359,8 +444,7 @@ class SummaryScreenTest {
             }
         }
         composeRule.onNodeWithTag("summary-entry-january").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("summary-mode-year").performScrollTo().performClick()
-        composeRule.onNodeWithTag("summary-mode-year").assertIsSelected()
+        composeRule.onNodeWithTag("summary-period").performScrollTo().performClick()
         composeRule.onNodeWithTag("summary-income").assertTextContains("3,00", substring = true)
         composeRule.onNodeWithTag("summary-entry-february").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("summary-entry-count").performScrollTo().assertTextContains("2", substring = true)

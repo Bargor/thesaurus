@@ -63,7 +63,7 @@ class OfflineScreenCoverageTest {
     }
 
     @Test fun summaryKeepsPeriodPositionAndPendingAndErrors() = verifyScreen(
-        "summary-mode-month", R.string.summary_sync_pending, R.string.summary_load_error,
+        "summary-period", R.string.summary_sync_pending, R.string.summary_load_error,
     ) { sync, error ->
         SummaryScreen(SummaryUiState(YearMonth.of(2026, 9), Year.of(2026), isLoading = false, syncState = sync, hasError = error), {}, {}, {}, {})
     }

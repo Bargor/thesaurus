@@ -1,6 +1,7 @@
 package pl.bargor.thesaurus.ui.summary
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Clock
@@ -59,11 +60,24 @@ class SummaryViewModel @Inject constructor(
     private val ledgerRepository: LedgerRepository,
     private val taxonomyRepository: TaxonomyRepository,
     clock: Clock,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+    private val currentMonth = YearMonth.now(clock)
+    private val initialMonth = YearMonth.of(
+        savedStateHandle["summary.year"] ?: currentMonth.year,
+        savedStateHandle["summary.month"] ?: currentMonth.monthValue,
+    )
     private val mutableState = MutableStateFlow(
-        SummaryUiState(month = YearMonth.now(clock), year = Year.now(clock)),
+        SummaryUiState(
+            month = initialMonth, year = Year.of(initialMonth.year),
+            mode = savedStateHandle.get<String>("summary.mode")?.let {
+                SummaryPeriodMode.entries.firstOrNull { mode -> mode.name == it }
+            } ?: SummaryPeriodMode.MONTH,
+        ),
     )
     val state: StateFlow<SummaryUiState> = mutableState.asStateFlow()
+
+    init { savePeriod() }
 
     private var householdId: String? = null
     private var observationJob: Job? = null
@@ -109,23 +123,35 @@ class SummaryViewModel @Inject constructor(
     fun nextYear() = changeYear(1)
 
     fun selectPeriodMode(mode: SummaryPeriodMode) {
-        mutableState.update { old ->
+        updatePeriod { old ->
             old.copy(mode = mode).recalculated()
         }
     }
 
     private fun changeMonth(delta: Long) {
-        mutableState.update { old ->
+        updatePeriod { old ->
             val month = old.month.plusMonths(delta)
-            old.copy(month = month).recalculated()
+            old.copy(month = month, year = Year.of(month.year)).recalculated()
         }
     }
 
     private fun changeYear(delta: Long) {
-        mutableState.update { old ->
+        updatePeriod { old ->
             val year = old.year.plusYears(delta)
-            old.copy(year = year).recalculated()
+            old.copy(year = year, month = YearMonth.of(year.value, old.month.monthValue)).recalculated()
         }
+    }
+
+    private fun updatePeriod(transform: (SummaryUiState) -> SummaryUiState) {
+        mutableState.update(transform)
+        savePeriod()
+    }
+
+    private fun savePeriod() {
+        val period = mutableState.value
+        savedStateHandle["summary.mode"] = period.mode.name
+        savedStateHandle["summary.year"] = period.year.value
+        savedStateHandle["summary.month"] = period.month.monthValue
     }
 
     fun selectCategory(id: String?) = mutableState.update { old ->

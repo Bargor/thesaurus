@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,9 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +40,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,7 +79,6 @@ fun SummaryScreen(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SummaryPeriodModeSelector(state.mode, onSelectPeriodMode)
         SummaryPeriodNavigator(
             label = when (state.mode) {
                 SummaryPeriodMode.MONTH -> state.month.format(monthFormatter).replaceFirstChar { it.titlecase(polishLocale) }
@@ -92,6 +92,12 @@ fun SummaryScreen(
             ),
             onPrevious = onPreviousPeriod,
             onNext = onNextPeriod,
+            scopeDescription = stringResource(if (state.mode == SummaryPeriodMode.MONTH)
+                R.string.summary_scope_month else R.string.summary_scope_year),
+            toggleDescription = stringResource(if (state.mode == SummaryPeriodMode.MONTH)
+                R.string.summary_switch_to_year else R.string.summary_switch_to_month),
+            onToggle = { onSelectPeriodMode(if (state.mode == SummaryPeriodMode.MONTH)
+                SummaryPeriodMode.YEAR else SummaryPeriodMode.MONTH) },
         )
         if (state.isLoading) {
             CircularProgressIndicator(
@@ -345,29 +351,6 @@ private fun SummaryChoicePicker(
     }
 }
 
-@Composable
-private fun SummaryPeriodModeSelector(
-    selectedMode: SummaryPeriodMode,
-    onSelect: (SummaryPeriodMode) -> Unit,
-) {
-    SingleChoiceSegmentedButtonRow {
-        SegmentedButton(
-            selected = selectedMode == SummaryPeriodMode.MONTH,
-            onClick = { onSelect(SummaryPeriodMode.MONTH) },
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-            label = { Text(stringResource(R.string.summary_mode_month)) },
-            modifier = Modifier.testTag("summary-mode-month"),
-        )
-        SegmentedButton(
-            selected = selectedMode == SummaryPeriodMode.YEAR,
-            onClick = { onSelect(SummaryPeriodMode.YEAR) },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-            label = { Text(stringResource(R.string.summary_mode_year)) },
-            modifier = Modifier.testTag("summary-mode-year"),
-        )
-    }
-}
-
 /** Period controls accept a display label, so a later summary can reuse them for other periods. */
 @Composable
 internal fun SummaryPeriodNavigator(
@@ -376,17 +359,26 @@ internal fun SummaryPeriodNavigator(
     nextDescription: String,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    scopeDescription: String,
+    toggleDescription: String,
+    onToggle: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         TextButton(
             onClick = onPrevious,
             modifier = Modifier.testTag("summary-previous-period").semantics { contentDescription = previousDescription },
         ) { Text("‹") }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.weight(1f).testTag("summary-period"),
-        )
+        TextButton(
+            onClick = onToggle,
+            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("summary-period").semantics {
+                heading()
+                stateDescription = scopeDescription
+                onClick(label = toggleDescription, action = null)
+            },
+        ) {
+            Text(label, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
+        }
         TextButton(
             onClick = onNext,
             modifier = Modifier.testTag("summary-next-period").semantics { contentDescription = nextDescription },

@@ -13,8 +13,10 @@
     <string name="summary_next_month">Następny miesiąc</string>
     <string name="summary_previous_year">Poprzedni rok</string>
     <string name="summary_next_year">Następny rok</string>
-    <string name="summary_mode_month">Miesiąc</string>
-    <string name="summary_mode_year">Rok</string>
+    <string name="summary_scope_month">Podsumowanie miesięczne</string>
+    <string name="summary_scope_year">Podsumowanie roczne</string>
+    <string name="summary_switch_to_year">Pokaż podsumowanie roczne</string>
+    <string name="summary_switch_to_month">Pokaż podsumowanie miesięczne</string>
     <string name="summary_income">Przychody</string>
     <string name="summary_expense">Wydatki</string>
     <string name="summary_net">Bilans</string>
