@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.ShortNavigationBar
+import androidx.compose.material3.ShortNavigationBarItem
+import androidx.compose.material3.ShortNavigationBarDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -165,39 +167,19 @@ internal fun HouseholdApp(
         bottomBar = {
             Column {
                 DeveloperToolsContent(onSignOut)
-                NavigationBar {
-                    Destination.entries.forEach { destination ->
-                        val label = stringResource(destination.labelRes)
-                        NavigationBarItem(
-                            modifier = Modifier.testTag(destination.navigationTestTag),
-                            selected = currentRoute == destination.route,
-                            onClick = {
-                                // Settings is a temporary screen above Entries, not a saved tab.
-                                if (currentRoute == "settings") {
-                                    navController.popBackStack(Destination.Entries.route, inclusive = false)
-                                }
-                                navController.navigate(destination.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = {
-                                Icon(
-                                    imageVector = when (destination) {
-                                        Destination.Entries -> Icons.Default.Description
-                                        Destination.Summary -> Icons.Default.Summarize
-                                        Destination.Reports -> Icons.Default.Assessment
-                                    },
-                                    contentDescription = null,
-                                )
-                            },
-                            label = { Text(label) },
-                        )
+                HouseholdNavigationBar(currentRoute = currentRoute, onNavigate = { destination ->
+                    // Settings is a temporary screen above Entries, not a saved tab.
+                    if (currentRoute == "settings") {
+                        navController.popBackStack(Destination.Entries.route, inclusive = false)
                     }
-                }
+                    navController.navigate(destination.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                })
             }
         },
     ) { padding ->
@@ -264,6 +246,44 @@ internal fun HouseholdApp(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun HouseholdNavigationBar(
+    currentRoute: String?,
+    onNavigate: (Destination) -> Unit,
+    windowInsets: WindowInsets = ShortNavigationBarDefaults.windowInsets,
+) {
+    // The short bar measures its content, so large labels can grow beyond 64 dp.
+    ShortNavigationBar(
+        modifier = Modifier.testTag("bottom-navigation"),
+        windowInsets = windowInsets,
+    ) {
+        Destination.entries.forEach { destination ->
+            ShortNavigationBarItem(
+                modifier = Modifier.testTag(destination.navigationTestTag),
+                selected = currentRoute == destination.route,
+                onClick = { onNavigate(destination) },
+                icon = {
+                    Icon(
+                        modifier = Modifier.testTag("${destination.navigationTestTag}-icon"),
+                        imageVector = when (destination) {
+                            Destination.Entries -> Icons.Default.Description
+                            Destination.Summary -> Icons.Default.Summarize
+                            Destination.Reports -> Icons.Default.Assessment
+                        },
+                        contentDescription = null,
+                    )
+                },
+                label = {
+                    Text(
+                        stringResource(destination.labelRes),
+                        modifier = Modifier.testTag("${destination.navigationTestTag}-label"),
+                    )
+                },
+            )
         }
     }
 }
