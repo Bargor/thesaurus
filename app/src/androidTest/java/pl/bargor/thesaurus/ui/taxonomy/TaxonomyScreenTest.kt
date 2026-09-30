@@ -4,6 +4,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.hasTestTag
@@ -87,6 +95,7 @@ class TaxonomyScreenTest {
             }
         }
 
+        composeRule.onNodeWithTag("taxonomy-category-header-dom").performClick()
         composeRule.onNodeWithTag("taxonomy-edit-category-dom").performClick()
         composeRule.onNodeWithTag("taxonomy-color-blue").performScrollTo()
             .assertContentDescriptionEquals("Kolor: Niebieski")
@@ -183,6 +192,8 @@ class TaxonomyScreenTest {
         val header = composeRule.onNodeWithTag("taxonomy-category-header-food")
         header.assertHasClickAction().assertContentDescriptionEquals("Rozwiń kategorię Jedzenie")
         assertTrue(header.fetchSemanticsNode().boundsInRoot.height >= 48f * density - 1f)
+        composeRule.onNodeWithTag("taxonomy-edit-category-food").assertDoesNotExist()
+        header.performClick()
         composeRule.onNodeWithTag("taxonomy-edit-category-food")
             .assertContentDescriptionEquals("Edytuj kategorię Jedzenie")
             .performClick()
@@ -197,8 +208,7 @@ class TaxonomyScreenTest {
             .assertContentDescriptionEquals("Archiwizuj kategorię Jedzenie")
             .performClick()
         assertEquals(TaxonomyMutation.SetCategoryArchived(food, true), mutations.single())
-        composeRule.onNodeWithTag("taxonomy-subcategory-market").assertDoesNotExist()
-        header.performClick()
+        composeRule.onNodeWithTag("taxonomy-subcategory-market").assertIsDisplayed()
         composeRule.onNodeWithTag("taxonomy-edit-subcategory-market")
             .assertContentDescriptionEquals("Edytuj podkategorię Supermarket")
             .performClick()
@@ -223,11 +233,84 @@ class TaxonomyScreenTest {
         )
 
         composeRule.onNodeWithTag("taxonomy-category-header-food").performClick()
+        composeRule.onNodeWithText("Kolejność kategorii").assertIsDisplayed()
+        composeRule.onNodeWithTag("taxonomy-move-up-food").assertIsNotEnabled()
         composeRule.onNodeWithTag("taxonomy-move-down-food")
             .assertContentDescriptionEquals("Przenieś kategorię Jedzenie niżej")
             .performClick()
 
         assertEquals(listOf("food" to "home"), moves)
+        composeRule.onNodeWithTag("taxonomy-category-header-food").performClick()
+        composeRule.onNodeWithTag("taxonomy-category-header-home").performClick()
+        composeRule.onNodeWithTag("taxonomy-move-up-home").assertIsEnabled().performClick()
+        composeRule.onNodeWithTag("taxonomy-move-down-home").assertIsNotEnabled()
+        assertEquals(listOf("food" to "home", "home" to "food"), moves)
+    }
+
+    @Test
+    fun compactCardsAndExpandedActionsRemainReadableAtLargeFontAndDisplayScale() {
+        val name = "Bardzo długa nazwa kategorii domowych wydatków"
+        val food = Category("food", "house", name, authorId = "user", updatedById = "user")
+        composeRule.setContent {
+            val density = LocalDensity.current.density * 1.15f
+            CompositionLocalProvider(LocalDensity provides Density(density, fontScale = 1.6f)) {
+                ThesaurusTheme {
+                    TaxonomyScreen(
+                        state = TaxonomyUiState(isLoading = false, categories = listOf(
+                            CategoryWithSubcategories(food, listOf(subcategory("market", "food", "Bardzo długa nazwa podkategorii"))),
+                        )),
+                        onMutation = {},
+                        modifier = Modifier.width(280.dp),
+                    )
+                }
+            }
+        }
+        val header = composeRule.onNodeWithTag("taxonomy-category-header-food")
+        val card = composeRule.onNodeWithTag("taxonomy-category-food")
+        val density = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density * 1.15f
+        assertTrue(header.fetchSemanticsNode().boundsInRoot.height >= 48f * density - 1f)
+        assertTrue(card.fetchSemanticsNode().boundsInRoot.height - header.fetchSemanticsNode().boundsInRoot.height <= 9f * density)
+        composeRule.onNodeWithText(name).assertIsDisplayed()
+        header.performClick()
+        listOf("taxonomy-edit-category-food", "taxonomy-add-subcategory-food", "taxonomy-archive-category-food",
+            "taxonomy-move-up-food", "taxonomy-move-down-food", "taxonomy-edit-subcategory-market",
+            "taxonomy-archive-subcategory-market").forEach { tag ->
+            val action = composeRule.onNodeWithTag(tag).performScrollTo()
+            action.assertIsDisplayed()
+            val bounds = action.fetchSemanticsNode().boundsInRoot
+            val cardBounds = card.fetchSemanticsNode().boundsInRoot
+            assertTrue("$tag touch target", bounds.height >= 48f * density - 1f)
+            assertTrue("$tag within card", bounds.left >= cardBounds.left && bounds.right <= cardBounds.right)
+        }
+        composeRule.onNodeWithTag("taxonomy-move-up-food")
+            .assertIsNotEnabled().assertContentDescriptionEquals("Przenieś kategorię $name wyżej")
+        composeRule.onNodeWithTag("taxonomy-move-down-food").assertIsNotEnabled()
+        composeRule.onNodeWithTag("taxonomy-move-up-market").assertDoesNotExist()
+        composeRule.onNodeWithTag("taxonomy-move-down-market").assertDoesNotExist()
+    }
+
+    @Test
+    fun savingDisablesReorderAndArchivedCategoriesHaveNoReorderActions() {
+        val active = Category("food", "house", "Jedzenie", authorId = "user", updatedById = "user")
+        val old = active.copy(id = "old", name = "Dawne", archived = true)
+        composeRule.setContent {
+            ThesaurusTheme {
+                TaxonomyScreen(
+                    state = TaxonomyUiState(isLoading = false, reordering = true, categories = listOf(
+                        CategoryWithSubcategories(active, emptyList()),
+                        CategoryWithSubcategories(active.copy(id = "home"), emptyList()),
+                        CategoryWithSubcategories(old, emptyList()),
+                    )), onMutation = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("taxonomy-category-header-food").performClick()
+        composeRule.onNodeWithTag("taxonomy-move-down-food").assertIsNotEnabled()
+        composeRule.onNodeWithTag("taxonomy-category-header-food").performClick()
+        composeRule.onNodeWithTag("taxonomy-show-archived").performClick()
+        composeRule.onNodeWithTag("taxonomy-category-header-old").performClick()
+        composeRule.onNodeWithTag("taxonomy-move-up-old").assertDoesNotExist()
+        composeRule.onNodeWithTag("taxonomy-move-down-old").assertDoesNotExist()
     }
 
     @Test

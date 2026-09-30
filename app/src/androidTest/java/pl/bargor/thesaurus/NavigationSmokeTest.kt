@@ -15,6 +15,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.rememberNavController
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import pl.bargor.thesaurus.ui.taxonomy.TaxonomyScreen
+import pl.bargor.thesaurus.ui.taxonomy.TaxonomyUiState
 import java.time.YearMonth
 import java.time.Year
 import java.time.LocalDate
@@ -32,6 +38,57 @@ import pl.bargor.thesaurus.ui.entry.EntryFormUiState
 class NavigationSmokeTest {
     @get:Rule
     val composeTestRule = createComposeRule()
+
+    @Test
+    fun taxonomyBottomEntriesReturnsToEntriesAndDoesNotRestoreSettings() = verifyTaxonomyExit("entries")
+
+    @Test
+    fun taxonomyBackReturnsToEntriesAndDoesNotRestoreSettings() = verifyTaxonomyExit("back")
+
+    @Test
+    fun taxonomySwitchingTabsDoesNotSaveSettingsInEntriesStack() = verifyTaxonomyExit("summary")
+
+    private fun verifyTaxonomyExit(exit: String) {
+        lateinit var controller: NavHostController
+        composeTestRule.setContent {
+            controller = rememberNavController()
+            ThesaurusTheme {
+                HouseholdApp(
+                    navController = controller,
+                    entriesContent = { onOpenSettings, _, _, _ ->
+                        Button(modifier = Modifier.testTag("open-taxonomy"), onClick = onOpenSettings) { Text("Kategorie") }
+                    },
+                    summaryContent = { Text("Podsumowanie testowe") },
+                    reportsContent = { Text("Raporty testowe") },
+                    taxonomyContent = { onBack ->
+                        TaxonomyScreen(TaxonomyUiState(isLoading = false), onMutation = {}, onBack = onBack)
+                    },
+                )
+            }
+        }
+        composeTestRule.onNodeWithTag("open-taxonomy").performClick()
+        composeTestRule.onNodeWithTag("taxonomy-back").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsNotSelected()
+        when (exit) {
+            "back" -> composeTestRule.onNodeWithTag("taxonomy-back").performClick()
+            "summary" -> composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).performClick()
+            else -> composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).performClick()
+        }
+        if (exit == "summary") {
+            composeTestRule.onNodeWithText("Podsumowanie testowe").assertIsDisplayed()
+            composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).performClick()
+        }
+        composeTestRule.onNodeWithTag("open-taxonomy").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsSelected()
+        composeTestRule.onNodeWithTag("taxonomy-back").assertDoesNotExist()
+        composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).performClick()
+        composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).performClick()
+        composeTestRule.onNodeWithTag("open-taxonomy").assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(Destination.Entries.route, controller.currentDestination?.route)
+            assertNull(controller.previousBackStackEntry)
+        }
+    }
 
     @Test
     fun bottomNavigationShowsEveryDestination() {

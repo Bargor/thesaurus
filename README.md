@@ -6,7 +6,7 @@ The **Wpisy** tab is the ledger. **Podsumowanie** has independently remembered m
 
 ### Category ordering
 
-Open **Ustawienia → Kategorie i podkategorie** to arrange top-level categories. Long-press the drag handle and move a category, or expand it and use the accessible **Przenieś wyżej / Przenieś niżej** actions. The same order is used by category management and by both the new-entry and edit-entry forms; subcategories always remain attached to their parent and keep their own alphabetical order.
+Open **Ustawienia → Kategorie i podkategorie** to arrange top-level categories. Long-press anywhere on a category card and drag it, or expand it and use **Przenieś wyżej / Przenieś niżej** under **Kolejność kategorii**. Expanded cards also contain editing and archive actions. The same order is used by category management and by both the new-entry and edit-entry forms; subcategories always remain attached to their parent and keep their own alphabetical order.
 
 The preference belongs to one user in one household and is synchronized through Firestore, including its persistent offline queue, so another household member can choose a different order. Without a saved preference, the repository's deterministic alphabetical order is used. Once an order exists, new categories are appended. Archiving does not remove a category from the saved sequence, and restoring it returns it to its former position. Stale identifiers are ignored safely and categories absent from an older preference are appended without changing or deleting taxonomy documents.
 

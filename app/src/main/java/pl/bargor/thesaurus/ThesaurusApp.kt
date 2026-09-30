@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -153,9 +154,10 @@ internal fun HouseholdApp(
         ReportsRoute(householdId, onOpenEntry)
     },
     entryFormContent: (@Composable (entryId: String?, onCreated: () -> Unit) -> Unit)? = null,
+    taxonomyContent: (@Composable (onBack: () -> Unit) -> Unit)? = null,
+    navController: NavHostController = rememberNavController(),
     onSignOut: () -> Unit = {},
 ) {
-    val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
 
@@ -170,6 +172,10 @@ internal fun HouseholdApp(
                             modifier = Modifier.testTag(destination.navigationTestTag),
                             selected = currentRoute == destination.route,
                             onClick = {
+                                // Settings is a temporary screen above Entries, not a saved tab.
+                                if (currentRoute == "settings") {
+                                    navController.popBackStack(Destination.Entries.route, inclusive = false)
+                                }
                                 navController.navigate(destination.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
@@ -213,10 +219,14 @@ internal fun HouseholdApp(
             composable(Destination.Summary.route) { summaryContent { entryId -> navController.navigate("edit-entry/$entryId") } }
             composable(Destination.Reports.route) { reportsContent { entryId -> navController.navigate("edit-entry/$entryId") } }
             composable("settings") {
-                TaxonomyRoute(
+                val onBack = {
+                    navController.popBackStack(Destination.Entries.route, inclusive = false)
+                    Unit
+                }
+                if (taxonomyContent != null) taxonomyContent(onBack) else TaxonomyRoute(
                     householdId = householdId,
                     actorId = actorId,
-                    onBack = { navController.popBackStack() },
+                    onBack = onBack,
                 )
             }
             composable("family") {
