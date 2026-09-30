@@ -270,7 +270,6 @@ private fun DirectionSelector(selected: EntryType, onSelected: (EntryType) -> Un
 private fun EntrySyncState(state: EntryFormUiState) {
     val message = when (state.syncState) {
         SyncState.PENDING -> R.string.entry_sync_pending
-        SyncState.OFFLINE -> R.string.entry_offline
         else -> null
     }
     message?.let { Text(stringResource(it)) }

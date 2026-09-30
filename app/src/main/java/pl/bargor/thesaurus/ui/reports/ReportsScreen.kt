@@ -101,7 +101,6 @@ fun ReportsScreen(
         }
         when (state.syncState) {
             SyncState.PENDING -> Text(stringResource(R.string.reports_sync_pending), Modifier.testTag("reports-pending"))
-            SyncState.OFFLINE -> Text(stringResource(R.string.reports_offline), Modifier.testTag("reports-offline"))
             else -> Unit
         }
         if (state.hasError && state.aggregation.totals.isEmpty) return@Column
@@ -135,7 +134,7 @@ fun ReportsScreen(
 
 @Composable
 private fun ReportPeriodSelector(selected: ReportPeriodMode, onSelect: (ReportPeriodMode) -> Unit) {
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().testTag("reports-period-selector")) {
         ReportPeriodMode.entries.forEachIndexed { index, mode ->
             SegmentedButton(
                 selected = selected == mode,

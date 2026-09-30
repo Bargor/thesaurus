@@ -10,6 +10,12 @@ Open **Ustawienia → Kategorie i podkategorie** to arrange top-level categories
 
 The preference belongs to one user in one household and is synchronized through Firestore, including its persistent offline queue, so another household member can choose a different order. Without a saved preference, the repository's deterministic alphabetical order is used. Once an order exists, new categories are appended. Archiving does not remove a category from the saved sequence, and restoring it returns it to its former position. Stale identifiers are ignored safely and categories absent from an older preference are appended without changing or deleting taxonomy documents.
 
+### Offline indicator
+
+A disconnected-plug icon in the top-right corner indicates that Android has no validated internet connection. Tap it for a Polish explanation; the tooltip closes after five seconds or on the next touch, which still activates the control underneath. Navigation and reconnection also dismiss it. The shared 48 dp header remains reserved when online, so the icon never covers screen actions and connectivity changes do not move content.
+
+This indicator is independent of Firestore snapshot/cache metadata and pending writes. Pending-sync notices and actionable errors remain visible. In developer mode, stopping the local Firebase emulators does not by itself mean the device has lost internet, and a local emulator connection does not imply internet access. The app still uses Firestore's existing offline queue; the indicator does not enable, disable, or retry synchronization.
+
 ## Requirements
 
 - JDK 21

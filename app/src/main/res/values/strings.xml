@@ -1,4 +1,6 @@
 <resources>
+    <string name="offline_indicator_description">Brak połączenia z internetem. Pokaż informacje o trybie offline</string>
+    <string name="offline_tooltip">Brak połączenia z internetem. Możesz korzystać z zapisanych danych. Zmiany zsynchronizują się po odzyskaniu połączenia.</string>
     <string name="app_name">Thesaurus</string>
     <string name="accessibility_loading">Ładowanie danych</string>
     <string name="navigation_entries">Wpisy</string>
@@ -19,7 +21,6 @@
     <string name="summary_total_description">%1$s: %2$s</string>
     <string name="summary_load_error">Nie udało się wczytać podsumowania. Spróbuj ponownie po odzyskaniu połączenia.</string>
     <string name="summary_sync_pending">Zmiany oczekują na synchronizację. Kwoty uwzględniają lokalne wpisy.</string>
-    <string name="summary_offline">Tryb offline — podsumowanie może nie zawierać wszystkich wpisów.</string>
     <string name="summary_entries_count">Wpisy w okresie: %1$d</string>
     <string name="summary_filtered_result">Wynik filtrowania</string>
     <string name="summary_filtered_income">Wpływy</string>
@@ -56,7 +57,6 @@
     <string name="reports_type_expense">Wydatki</string>
     <string name="reports_load_error">Nie udało się wczytać raportu. Spróbuj ponownie po odzyskaniu połączenia.</string>
     <string name="reports_sync_pending">Zmiany oczekują na synchronizację. Raport uwzględnia lokalne wpisy.</string>
-    <string name="reports_offline">Tryb offline — raport może nie zawierać wszystkich wpisów.</string>
     <string name="reports_category_chart">Kategorie</string>
     <string name="reports_category_chart_description">Wykres pierścieniowy kategorii: %1$s</string>
     <string name="reports_trend_monthly">Trend miesięczny</string>
@@ -109,7 +109,6 @@
     <string name="family_mutation_error">Nie udało się zapisać zmiany. Sprawdź połączenie i spróbuj ponownie.</string>
     <string name="family_dismiss">Zamknij</string>
     <string name="family_sync_pending">Zmiany oczekują na synchronizację.</string>
-    <string name="family_offline">Tryb offline — wyświetlane są dane lokalne.</string>
     <string name="family_share_chooser">Udostępnij zaproszenie</string>
     <string name="invitation_accept_title">Dołącz do gospodarstwa</string>
     <string name="invitation_for_email">Zaproszenie jest przeznaczone dla: %1$s</string>
@@ -132,7 +131,6 @@
     <string name="entries_load_more">Pokaż więcej</string>
     <string name="entries_load_error">Nie udało się wczytać wpisów. Spróbuj ponownie po odzyskaniu połączenia.</string>
     <string name="entries_sync_pending">Zmiany oczekują na synchronizację.</string>
-    <string name="entries_offline">Tryb offline — wyświetlane są dane lokalne.</string>
     <string name="entries_unknown_category">Nieznana kategoria</string>
     <string name="entries_author_and_date">%1$s · %2$s</string>
     <string name="entry_add_title">Nowy wpis</string>
@@ -179,7 +177,6 @@
     <string name="entries_undo">Cofnij</string>
     <string name="entries_delete_error">Nie udało się usunąć wpisu. Został przywrócony na liście.</string>
     <string name="entry_sync_pending">Zmiany oczekują na synchronizację.</string>
-    <string name="entry_offline">Tryb offline — wpis zostanie zsynchronizowany po odzyskaniu połączenia.</string>
     <string name="taxonomy_title">Kategorie i podkategorie</string>
     <string name="taxonomy_show_archived">Pokaż zarchiwizowane</string>
     <string name="taxonomy_add_category">Dodaj kategorię</string>
@@ -201,7 +198,6 @@
     <string name="taxonomy_edit_subcategory">Edytuj podkategorię</string>
     <string name="taxonomy_empty">Nie ma jeszcze kategorii.</string>
     <string name="taxonomy_sync_pending">Zmiany oczekują na synchronizację.</string>
-    <string name="taxonomy_offline">Tryb offline — zmiany zostaną zsynchronizowane po odzyskaniu połączenia.</string>
     <string name="taxonomy_archived">Zarchiwizowana</string>
     <string name="taxonomy_edit">Edytuj</string>
     <string name="taxonomy_archive">Archiwizuj</string>
