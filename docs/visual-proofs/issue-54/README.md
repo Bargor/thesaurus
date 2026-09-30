@@ -29,4 +29,6 @@ The large-font image also exposes pre-existing wrapping in the report controls a
 - `NavigationSmokeTest`: 10 tests passed, including real household Scaffold/system-inset integration and existing navigation regressions.
 - No Material dependency upgrade, custom fixed-height override or merge of #53 was required.
 
+The inset test also reproduces the CI emulator's 320 dp / density-1 geometry. Native equal-weight items divide integer pixels: after 12 px left and 18 px right insets, 290 px yields three 96 px items and a 2 px trailing remainder. Assertions check this exact remainder and all touch targets rather than incorrectly requiring the last item to end exactly at the inset boundary.
+
 Instrumentation classes were run separately with `connectedDebugAndroidTest` and `-Pandroid.testInstrumentationRunnerArguments.class=<fully-qualified-class>`; JVM/lint used `testDebugUnitTest lintDebug`. The DEV APK was built with `assembleDevDebug` for screenshots.

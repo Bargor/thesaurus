@@ -39,6 +39,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import kotlin.math.roundToInt
 
 class BottomNavigationTest {
     @get:Rule val compose = createComposeRule()
@@ -99,24 +100,46 @@ class BottomNavigationTest {
 
     @Test
     fun bottomAndHorizontalSafeAreaInsetsRemainOutsideTheTouchTargets() {
-        var density = 1f
+        val testDensity = mutableStateOf(1f)
+        var deviceDensity = 1f
         compose.setContent {
-            density = LocalDensity.current.density
-            ThesaurusTheme {
-                HouseholdNavigationBar(
-                    Destination.Entries.route, {},
-                    WindowInsets(left = 12.dp, top = 0.dp, right = 18.dp, bottom = 24.dp),
-                )
+            deviceDensity = LocalDensity.current.density
+            CompositionLocalProvider(LocalDensity provides Density(testDensity.value)) {
+                ThesaurusTheme {
+                    Column(Modifier.width(320.dp)) {
+                        HouseholdNavigationBar(
+                            Destination.Entries.route, {},
+                            WindowInsets(left = 12.dp, top = 0.dp, right = 18.dp, bottom = 24.dp),
+                        )
+                    }
+                }
             }
         }
-        val bar = bounds("bottom-navigation")
-        val first = bounds(Destination.Entries.navigationTestTag)
-        val last = bounds(Destination.Reports.navigationTestTag)
-        assertEquals(88f, bar.height / density, 1f)
-        assertEquals(12f, (first.left - bar.left) / density, 1f)
-        assertEquals(18f, (bar.right - last.right) / density, 1f)
-        assertEquals(24f, (bar.bottom - first.bottom) / density, 1f)
-        assertContentFits(density)
+        compose.waitForIdle()
+        listOf(1f, deviceDensity).distinct().forEach { density ->
+            compose.runOnIdle { testDensity.value = density }
+            val bar = bounds("bottom-navigation")
+            val first = bounds(Destination.Entries.navigationTestTag)
+            val last = bounds(Destination.Reports.navigationTestTag)
+            val leftInsetPx = (12f * density).roundToInt()
+            val rightInsetPx = (18f * density).roundToInt()
+            val contentWidthPx = bar.width.roundToInt() - leftInsetPx - rightInsetPx
+            val itemCount = Destination.entries.size
+            // Native EqualWeight divides integer pixels equally and leaves the remainder
+            // at the trailing edge: 320 - 12 - 18 = 290, or 3 * 96 plus 2 pixels.
+            val trailingRemainderPx = contentWidthPx % itemCount
+            assertEquals(88f, bar.height / density, 1f)
+            assertEquals(leftInsetPx.toFloat(), first.left - bar.left, 0f)
+            assertEquals((rightInsetPx + trailingRemainderPx).toFloat(), bar.right - last.right, 0f)
+            assertTrue("The right safe area must remain clear", bar.right - last.right >= rightInsetPx)
+            assertEquals(24f, (bar.bottom - first.bottom) / density, 1f)
+            Destination.entries.forEach { destination ->
+                val item = bounds(destination.navigationTestTag)
+                assertEquals((contentWidthPx / itemCount).toFloat(), item.width, 0f)
+                assertTrue(item.width / density >= 48f && item.height / density >= 48f)
+            }
+            assertContentFits(density)
+        }
     }
 
     @Test
