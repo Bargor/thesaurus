@@ -1,5 +1,6 @@
 package pl.bargor.thesaurus.ui.summary
 
+import androidx.lifecycle.SavedStateHandle
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -39,7 +40,7 @@ class SummaryViewModelTest {
 
     @Test fun currentMonthAndNavigationCrossYearBoundary() = runTest {
         val ledger = FakeLedger(SyncObservation(listOf(entry("dec", 1_000, LocalDate.of(2025, 12, 31))), SyncState.SYNCED))
-        val vm = SummaryViewModel(ledger, FakeTaxonomy(), clock)
+        val vm = SummaryViewModel(ledger, FakeTaxonomy(), clock, SavedStateHandle())
         assertEquals(YearMonth.of(2026, 1), vm.state.value.month)
         vm.start("home")
         advanceUntilIdle()
@@ -55,7 +56,7 @@ class SummaryViewModelTest {
 
     @Test fun pendingLocalWritesRecalculateTotalsAndOfflineKeepsCachedValues() = runTest {
         val ledger = FakeLedger(SyncObservation(emptyList(), SyncState.SYNCED))
-        val vm = SummaryViewModel(ledger, FakeTaxonomy(), clock)
+        val vm = SummaryViewModel(ledger, FakeTaxonomy(), clock, SavedStateHandle())
         vm.start("home")
         advanceUntilIdle()
         assertFalse(vm.state.value.isLoading)
@@ -72,7 +73,7 @@ class SummaryViewModelTest {
         assertEquals(listOf("local"), vm.state.value.entries.map { it.entry.id })
     }
 
-    @Test fun yearlyModeUsesCurrentYearAndPreservesTheIndependentMonthSelection() = runTest {
+    @Test fun yearlyModeUsesSelectedMonthsYearAndYearArrowsRetainMonth() = runTest {
         val leapYearClock = Clock.fixed(Instant.parse("2028-01-15T12:00:00Z"), ZoneOffset.UTC)
         val ledger = FakeLedger(SyncObservation(listOf(
             entry("previous-year", 500, LocalDate.of(2027, 12, 31)),
@@ -81,7 +82,7 @@ class SummaryViewModelTest {
             entry("last-day", -10_500, LocalDate.of(2028, 12, 31)),
             entry("next-year", -800, LocalDate.of(2029, 1, 1)),
         ), SyncState.SYNCED))
-        val vm = SummaryViewModel(ledger, FakeTaxonomy(), leapYearClock)
+        val vm = SummaryViewModel(ledger, FakeTaxonomy(), leapYearClock, SavedStateHandle())
 
         assertEquals(YearMonth.of(2028, 1), vm.state.value.month)
         assertEquals(Year.of(2028), vm.state.value.year)
@@ -94,6 +95,9 @@ class SummaryViewModelTest {
         assertEquals(500.toBigInteger(), vm.state.value.totals.incomeGrosze)
 
         vm.selectPeriodMode(SummaryPeriodMode.YEAR)
+        assertEquals(Year.of(2027), vm.state.value.year)
+        assertEquals(500.toBigInteger(), vm.state.value.totals.incomeGrosze)
+        vm.nextYear()
         assertEquals(Year.of(2028), vm.state.value.year)
         assertEquals(25_000.toBigInteger(), vm.state.value.totals.incomeGrosze)
         assertEquals(15_000.toBigInteger(), vm.state.value.totals.expenseGrosze)
@@ -106,13 +110,70 @@ class SummaryViewModelTest {
         assertEquals(500.toBigInteger(), vm.state.value.totals.incomeGrosze)
         vm.nextYear()
         vm.selectPeriodMode(SummaryPeriodMode.MONTH)
-        assertEquals(YearMonth.of(2027, 12), vm.state.value.month)
+        assertEquals(YearMonth.of(2028, 12), vm.state.value.month)
+        assertEquals(10_500.toBigInteger(), vm.state.value.totals.expenseGrosze)
+        assertEquals(listOf("last-day"), vm.state.value.entries.map { it.entry.id })
+    }
+
+    @Test fun changedMonthAndSelectedYearSurviveFreshSavedStateHandle() = runTest {
+        val septemberClock = Clock.fixed(Instant.parse("2026-09-15T12:00:00Z"), ZoneOffset.UTC)
+        val saved = SavedStateHandle()
+        val vm = SummaryViewModel(FakeLedger(SyncObservation(emptyList(), SyncState.SYNCED)), FakeTaxonomy(), septemberClock, saved)
+        vm.nextMonth()
+        vm.selectPeriodMode(SummaryPeriodMode.YEAR)
+        vm.previousYear()
+        val restored = SummaryViewModel(
+            FakeLedger(SyncObservation(emptyList(), SyncState.SYNCED)), FakeTaxonomy(), clock,
+            SavedStateHandle(saved.keys().associateWith { saved.get<Any?>(it) }),
+        )
+        assertEquals(SummaryPeriodMode.YEAR, restored.state.value.mode)
+        assertEquals(Year.of(2025), restored.state.value.year)
+        assertEquals(YearMonth.of(2025, 10), restored.state.value.month)
+        restored.selectPeriodMode(SummaryPeriodMode.MONTH)
+        assertEquals(YearMonth.of(2025, 10), restored.state.value.month)
+        restored.selectPeriodMode(SummaryPeriodMode.YEAR)
+        assertEquals(Year.of(2025), restored.state.value.year)
+    }
+
+    @Test fun septemberHeadingToggleRemembersMonthAndDecemberNavigationMovesYear() = runTest {
+        val septemberClock = Clock.fixed(Instant.parse("2026-09-15T12:00:00Z"), ZoneOffset.UTC)
+        val vm = SummaryViewModel(FakeLedger(SyncObservation(emptyList(), SyncState.SYNCED)), FakeTaxonomy(), septemberClock, SavedStateHandle())
+        vm.selectPeriodMode(SummaryPeriodMode.YEAR)
+        assertEquals(Year.of(2026), vm.state.value.year)
+        vm.selectPeriodMode(SummaryPeriodMode.MONTH)
+        assertEquals(YearMonth.of(2026, 9), vm.state.value.month)
+        repeat(4) { vm.nextMonth() }
+        assertEquals(YearMonth.of(2027, 1), vm.state.value.month)
+        vm.selectPeriodMode(SummaryPeriodMode.YEAR)
+        assertEquals(Year.of(2027), vm.state.value.year)
+        vm.nextYear()
+        vm.selectPeriodMode(SummaryPeriodMode.MONTH)
+        assertEquals(YearMonth.of(2028, 1), vm.state.value.month)
+    }
+
+    @Test fun leapFebruaryStaysFebruaryWhenYearNavigationMovesToNonLeapYear() = runTest {
+        val leapClock = Clock.fixed(Instant.parse("2028-02-15T12:00:00Z"), ZoneOffset.UTC)
+        val ledger = FakeLedger(SyncObservation(listOf(
+            entry("leap", 100, LocalDate.of(2028, 2, 29)),
+            entry("non-leap", 200, LocalDate.of(2027, 2, 28)),
+            entry("march", 300, LocalDate.of(2027, 3, 1)),
+        ), SyncState.SYNCED))
+        val vm = SummaryViewModel(ledger, FakeTaxonomy(), leapClock, SavedStateHandle())
+        vm.start("home")
+        advanceUntilIdle()
+        assertEquals(listOf("leap"), vm.state.value.entries.map { it.entry.id })
+        vm.selectPeriodMode(SummaryPeriodMode.YEAR)
+        vm.previousYear()
         assertEquals(500.toBigInteger(), vm.state.value.totals.incomeGrosze)
+        vm.selectPeriodMode(SummaryPeriodMode.MONTH)
+        assertEquals(YearMonth.of(2027, 2), vm.state.value.month)
+        assertEquals(listOf("non-leap"), vm.state.value.entries.map { it.entry.id })
+        assertEquals(200.toBigInteger(), vm.state.value.totals.incomeGrosze)
     }
 
     @Test fun errorWithoutDataAndRetryRecoverToEmptyState() = runTest {
         val ledger = FakeLedger(SyncObservation(state = SyncState.ERROR, error = IllegalStateException("offline")))
-        val vm = SummaryViewModel(ledger, FakeTaxonomy(), clock)
+        val vm = SummaryViewModel(ledger, FakeTaxonomy(), clock, SavedStateHandle())
         vm.start("home")
         advanceUntilIdle()
         assertTrue(vm.state.value.hasError)
@@ -141,7 +202,7 @@ class SummaryViewModelTest {
             entry("new", -200, LocalDate.of(2026, 1, 31)).copy(categoryId = "food", subcategoryId = "cafe", tags = listOf("dom")),
             entry("car", -300, LocalDate.of(2026, 1, 20)).copy(categoryId = "car", subcategoryId = "fuel"),
         ), SyncState.SYNCED))
-        val vm = SummaryViewModel(ledger, taxonomy, clock)
+        val vm = SummaryViewModel(ledger, taxonomy, clock, SavedStateHandle())
         vm.start("home")
         advanceUntilIdle()
         assertEquals(listOf("new", "car", "old"), vm.state.value.entries.map { it.entry.id })
@@ -193,7 +254,7 @@ class SummaryViewModelTest {
             ),
             entry("previous", 5_000, LocalDate.of(2027, 12, 31)).copy(tags = listOf("shared")),
         ), SyncState.SYNCED))
-        val vm = SummaryViewModel(ledger, FakeTaxonomy(), leapYearClock)
+        val vm = SummaryViewModel(ledger, FakeTaxonomy(), leapYearClock, SavedStateHandle())
         vm.start("home")
         advanceUntilIdle()
 
@@ -225,7 +286,7 @@ class SummaryViewModelTest {
             entry("deleted", 200, LocalDate.of(2026, 1, 15)).copy(deleted = true, deletedById = "anna"),
             entry("feb", 300, LocalDate.of(2026, 2, 1)),
         ), SyncState.SYNCED))
-        val vm = SummaryViewModel(ledger, FakeTaxonomy(), clock)
+        val vm = SummaryViewModel(ledger, FakeTaxonomy(), clock, SavedStateHandle())
         vm.start("home")
         advanceUntilIdle()
         assertEquals(1, vm.state.value.totals.entryCount)
