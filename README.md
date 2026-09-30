@@ -4,6 +4,8 @@ Thesaurus is a Polish-language Android app for a shared household ledger. It kee
 
 The **Wpisy** tab is the ledger. Tap the period heading in **Podsumowanie** to switch between a month and its year; returning to the monthly view keeps the last selected month in the selected year, including after state restoration. **Raporty** supports month, year, or custom dates, signed type filters, category shares, trends, and an entry drill-down. Household owners can invite a person by email and manage membership.
 
+Reports pair each donut segment with a category row containing its name, exact PLN amount, share, and matching color swatch. The chart keeps distinguishable category colors and resolves duplicate or similar colors locally using a deterministic palette that extends with additional hues and tones instead of cycling. Assignment uses category identifiers, so recomposition or changes to entry ordering do not reshuffle colors. Category rows retain report order (largest amount first); persisted category colors and entry-card accents are unchanged. With very many categories, color differences necessarily become smaller, so visible names and screen-reader descriptions also identify every segment.
+
 ### Category ordering
 
 Open **Ustawienia → Kategorie i podkategorie** to arrange top-level categories. Long-press anywhere on a category card and drag it, or expand it and use **Przenieś wyżej / Przenieś niżej** under **Kolejność kategorii**. Expanded cards also contain editing and archive actions. The same order is used by category management and by both the new-entry and edit-entry forms; subcategories always remain attached to their parent and keep their own alphabetical order.

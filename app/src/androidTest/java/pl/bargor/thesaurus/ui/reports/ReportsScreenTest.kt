@@ -96,7 +96,7 @@ class ReportsScreenTest {
         )
         composeRule.setContent { ThesaurusTheme { ReportsScreen(state, {}, {}, {}, {}, {}, {}, {}, { opened = it }, {}) } }
         composeRule.onNodeWithContentDescription("Wykres pierścieniowy kategorii: Jedzenie: 12,50 zł (100%)").assertIsDisplayed()
-        composeRule.onNodeWithTag("reports-category-legend").assertTextContains("Jedzenie", substring = true)
+        composeRule.onNodeWithTag("reports-category-name-food", useUnmergedTree = true).assertTextContains("Jedzenie", substring = true)
         composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
         composeRule.onNodeWithTag("reports-trend-summary").assertDoesNotExist()
         composeRule.onAllNodesWithText("Trend dzienny").assertCountEquals(0)
@@ -218,7 +218,9 @@ class ReportsScreenTest {
         }
 
         val legend = composeRule.onNodeWithTag("reports-category-legend").performScrollTo()
-        categoryNames.forEach { legend.assertTextContains(it, substring = true) }
+        categoryNames.forEachIndexed { index, name ->
+            composeRule.onNodeWithTag("reports-category-name-category-$index", useUnmergedTree = true).assertTextContains(name, substring = true)
+        }
         val chartBounds = chart.getUnclippedBoundsInRoot()
         val legendBounds = legend.getUnclippedBoundsInRoot()
         assertTrue("Legenda zachodzi na wykres", legendBounds.top > chartBounds.bottom)

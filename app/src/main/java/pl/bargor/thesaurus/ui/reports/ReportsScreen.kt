@@ -3,9 +3,11 @@ package pl.bargor.thesaurus.ui.reports
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -29,6 +31,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -45,6 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.math.MathContext
 import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -258,14 +262,33 @@ private data class NamedCategoryValue(
     val value: ReportCategoryValue,
 )
 
+private data class ChartCategoryValue(
+    val category: NamedCategoryValue,
+    val color: Color,
+    val share: Float,
+)
+
+/** Divide before converting to Float, including for amounts beyond the floating-point range. */
+internal fun reportCategoryShare(amount: BigInteger, total: BigInteger): Float =
+    if (total.signum() <= 0) 0f else BigDecimal(amount)
+        .divide(BigDecimal(total), MathContext.DECIMAL64).toFloat().coerceIn(0f, 1f)
+
 /** Canvas is paired with a visible Polish legend and a semantic description for screen readers. */
 @Composable
 private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
-    val total = categories.fold(BigInteger.ZERO) { sum, item -> sum + item.value.amountGrosze }
-    val legend = categories.joinToString("; ") { item ->
-        val percent = item.value.amountGrosze.toDouble() * 100 / total.toDouble()
-        "${item.name}: ${item.value.amountGrosze.currency()} (${String.format(reportsLocale, "%.0f", percent)}%)"
+    val presentation = remember(categories) {
+        val total = categories.fold(BigInteger.ZERO) { sum, item -> sum + item.value.amountGrosze }
+        val colors = ReportChartPalette.assign(categories.associate { it.value.categoryId to it.colorToken })
+        categories.map { item ->
+            ChartCategoryValue(
+                item,
+                Color(0xFF000000L or colors.getValue(item.value.categoryId)),
+                reportCategoryShare(item.value.amountGrosze, total),
+            )
+        }
     }
+    fun ChartCategoryValue.label() = "${category.name}: ${category.value.amountGrosze.currency()} (${String.format(reportsLocale, "%.0f", share * 100)}%)"
+    val legend = presentation.joinToString("; ") { it.label() }
     val description = stringResource(R.string.reports_category_chart_description, legend)
     Text(stringResource(R.string.reports_category_chart), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
     Canvas(
@@ -280,10 +303,10 @@ private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
         val arcDiameter = outerDiameter - strokeWidth
         val arcOffset = Offset((size.width - arcDiameter) / 2f, (size.height - arcDiameter) / 2f)
         var start = -90f
-        categories.forEach { item ->
-            val sweep = item.value.amountGrosze.toFloat() / total.toFloat() * 360f
+        presentation.forEach { item ->
+            val sweep = item.share * 360f
             drawArc(
-                categoryAccentColor(item.value.categoryId, item.colorToken),
+                item.color,
                 start,
                 sweep,
                 false,
@@ -294,7 +317,51 @@ private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
             start += sweep
         }
     }
-    Text(legend, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().testTag("reports-category-legend"))
+    Column(
+        Modifier.fillMaxWidth().testTag("reports-category-legend"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            stringResource(R.string.reports_category_legend_heading),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { heading() },
+        )
+        presentation.forEach { item ->
+            val id = item.category.value.categoryId
+            val rowDescription = stringResource(R.string.reports_category_segment_description, item.label())
+            Row(
+                modifier = Modifier.fillMaxWidth().testTag("reports-category-row-$id")
+                    .semantics(mergeDescendants = true) { contentDescription = rowDescription },
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Box(
+                    Modifier.padding(top = 3.dp).size(24.dp)
+                        .background(item.color)
+                        .border(1.dp, MaterialTheme.colorScheme.onSurface)
+                        .testTag("reports-category-swatch-$id"),
+                )
+                // Stacking avoids competing fixed widths for long names and exact large amounts.
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        item.category.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.testTag("reports-category-name-$id"),
+                    )
+                    Text(
+                        item.category.value.amountGrosze.currency(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag("reports-category-amount-$id"),
+                    )
+                    Text(
+                        String.format(reportsLocale, "%.0f%%", item.share * 100),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** Shows the monthly buckets provided by [ReportsViewModel] for annual reports. */
