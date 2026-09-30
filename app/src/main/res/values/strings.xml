@@ -212,6 +212,7 @@
     <string name="taxonomy_drag_category">Przeciągnij kategorię %1$s, aby zmienić kolejność</string>
     <string name="taxonomy_dragging">Przenoszona</string>
     <string name="taxonomy_move_up">Przenieś wyżej</string>
+    <string name="taxonomy_category_order">Kolejność kategorii</string>
     <string name="taxonomy_move_down">Przenieś niżej</string>
     <string name="taxonomy_move_up_named">Przenieś kategorię %1$s wyżej</string>
     <string name="taxonomy_move_down_named">Przenieś kategorię %1$s niżej</string>

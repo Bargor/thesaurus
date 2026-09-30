@@ -9,9 +9,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -31,7 +33,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -49,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -111,7 +113,7 @@ fun TaxonomyScreen(
         dragDistance = 0f
     }
 
-    Column(modifier = modifier.padding(16.dp)) {
+    Column(modifier = modifier.padding(8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = stringResource(R.string.taxonomy_title),
@@ -152,8 +154,8 @@ fun TaxonomyScreen(
             )
             else -> LazyColumn(
                 state = listState,
-                modifier = Modifier.padding(top = 12.dp).testTag("taxonomy-list"),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 8.dp).testTag("taxonomy-list"),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 items(categories, key = { it.category.id }) { node ->
                     val activeIndex = activeIds.indexOf(node.category.id)
@@ -366,7 +368,7 @@ private fun CategoryCard(
             else -> null
         },
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -382,7 +384,7 @@ private fun CategoryCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Surface(shape = CircleShape, color = category.accentColor(), modifier = Modifier.size(16.dp)) {}
-                        Text(category.name, style = MaterialTheme.typography.titleMedium)
+                        Text(category.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     }
                     if (category.archived) {
                         Text(stringResource(R.string.taxonomy_archived), style = MaterialTheme.typography.labelMedium)
@@ -395,31 +397,31 @@ private fun CategoryCard(
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
-            Row(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    modifier = Modifier.testTag("taxonomy-edit-category-${category.id}")
-                        .semantics { contentDescription = editDescription },
-                    onClick = onEdit,
-                    enabled = enabled,
-                ) { Text(stringResource(R.string.taxonomy_edit)) }
-                TextButton(
-                    modifier = Modifier.testTag("taxonomy-add-subcategory-${category.id}")
-                        .semantics { contentDescription = addDescription },
-                    onClick = onAddSubcategory,
-                    enabled = enabled && !category.archived,
-                ) {
-                    Text(stringResource(R.string.taxonomy_add_subcategory))
-                }
-                TextButton(
-                    modifier = Modifier.testTag("taxonomy-archive-category-${category.id}")
-                        .semantics { contentDescription = archiveDescription },
-                    onClick = { onArchive(!category.archived) },
-                    enabled = enabled,
-                ) {
-                    Text(stringResource(if (category.archived) R.string.taxonomy_restore else R.string.taxonomy_archive))
-                }
-            }
             if (expanded) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("taxonomy-edit-category-${category.id}")
+                            .semantics { contentDescription = editDescription },
+                        onClick = onEdit,
+                        enabled = enabled,
+                    ) { Text(stringResource(R.string.taxonomy_edit)) }
+                    TextButton(
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("taxonomy-add-subcategory-${category.id}")
+                            .semantics { contentDescription = addDescription },
+                        onClick = onAddSubcategory,
+                        enabled = enabled && !category.archived,
+                    ) {
+                        Text(stringResource(R.string.taxonomy_add_subcategory))
+                    }
+                    TextButton(
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("taxonomy-archive-category-${category.id}")
+                            .semantics { contentDescription = archiveDescription },
+                        onClick = { onArchive(!category.archived) },
+                        enabled = enabled,
+                    ) {
+                        Text(stringResource(if (category.archived) R.string.taxonomy_restore else R.string.taxonomy_archive))
+                    }
+                }
                 Text(
                     text = stringResource(R.string.taxonomy_default_type),
                     style = MaterialTheme.typography.labelMedium,
@@ -434,20 +436,29 @@ private fun CategoryCard(
                     modifier = Modifier.testTag("taxonomy-default-type-${category.id}"),
                 )
                 if (!category.archived) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        IconButton(
-                            modifier = Modifier.testTag("taxonomy-move-up-${category.id}"),
+                    Text(
+                        stringResource(R.string.taxonomy_category_order),
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 8.dp).semantics { heading() },
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("taxonomy-move-up-${category.id}")
+                                .semantics { contentDescription = moveUpDescription },
                             enabled = enabled && canMoveUp,
                             onClick = onMoveUp,
                         ) {
-                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = moveUpDescription)
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = null)
+                            Text(stringResource(R.string.taxonomy_move_up))
                         }
-                        IconButton(
-                            modifier = Modifier.testTag("taxonomy-move-down-${category.id}"),
+                        TextButton(
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("taxonomy-move-down-${category.id}")
+                                .semantics { contentDescription = moveDownDescription },
                             enabled = enabled && canMoveDown,
                             onClick = onMoveDown,
                         ) {
-                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = moveDownDescription)
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+                            Text(stringResource(R.string.taxonomy_move_down))
                         }
                     }
                 }
@@ -481,27 +492,35 @@ private fun SubcategoryRow(
         else R.string.taxonomy_archive_subcategory_named,
         subcategory.name,
     )
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            subcategory.name,
-            modifier = Modifier.weight(1f).testTag("taxonomy-subcategory-${subcategory.id}"),
-        )
+    val actions: @Composable () -> Unit = {
         TextButton(
-            modifier = Modifier.testTag("taxonomy-edit-subcategory-${subcategory.id}")
+            modifier = Modifier.heightIn(min = 48.dp).testTag("taxonomy-edit-subcategory-${subcategory.id}")
                 .semantics { contentDescription = editDescription },
             onClick = onEdit,
             enabled = enabled,
         ) { Text(stringResource(R.string.taxonomy_edit)) }
         TextButton(
-            modifier = Modifier.testTag("taxonomy-archive-subcategory-${subcategory.id}")
+            modifier = Modifier.heightIn(min = 48.dp).testTag("taxonomy-archive-subcategory-${subcategory.id}")
                 .semantics { contentDescription = archiveDescription },
             onClick = onArchive,
             enabled = enabled,
         ) {
             Text(stringResource(if (subcategory.archived) R.string.taxonomy_restore else R.string.taxonomy_archive))
+        }
+    }
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 6.dp),
+    ) {
+        if (maxWidth < 320.dp || LocalDensity.current.fontScale > 1.3f) {
+            Column {
+                Text(subcategory.name, modifier = Modifier.testTag("taxonomy-subcategory-${subcategory.id}"))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) { actions() }
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(subcategory.name, modifier = Modifier.weight(1f).testTag("taxonomy-subcategory-${subcategory.id}"))
+                actions()
+            }
         }
     }
 }
