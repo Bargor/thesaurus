@@ -5,11 +5,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +27,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -41,10 +45,13 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -53,6 +60,7 @@ import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.max
+import kotlin.math.ceil
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.ReportCategoryValue
 import pl.bargor.thesaurus.data.model.ReportTrendValue
@@ -326,38 +334,97 @@ private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.semantics { heading() },
         )
-        presentation.forEach { item ->
-            val id = item.category.value.categoryId
-            val rowDescription = stringResource(R.string.reports_category_segment_description, item.label())
-            Row(
-                modifier = Modifier.fillMaxWidth().testTag("reports-category-row-$id")
-                    .semantics(mergeDescendants = true) { contentDescription = rowDescription },
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top,
+        CategoryLegendTable(presentation)
+    }
+}
+
+/** One shared table aligns amounts beside percentages at the right edge. */
+@Composable
+private fun CategoryLegendTable(presentation: List<ChartCategoryValue>) {
+    val textStyle = LocalTextStyle.current.merge(MaterialTheme.typography.bodyMedium)
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val amounts = remember(presentation) { presentation.map { it.category.value.amountGrosze.currency() } }
+    val percentages = remember(presentation) { presentation.map { String.format(reportsLocale, "%.0f%%", it.share * 100) } }
+    val widths = remember(presentation, amounts, percentages, textStyle, textMeasurer, density) {
+        fun width(text: String): Int {
+            val result = textMeasurer.measure(
+                text = text, style = textStyle, softWrap = false, maxLines = 1,
+            )
+            // Text's fractional intrinsic width can exceed its integer measured size. Reserve
+            // a pixel on each side so rounding a shared column cannot clip the rendered text.
+            return ceil(maxOf(result.size.width.toFloat(), result.multiParagraph.maxIntrinsicWidth)).toInt() + 2
+        }
+        Triple(
+            presentation.maxOfOrNull { width(it.category.name) } ?: 0,
+            amounts.maxOfOrNull { width(it) } ?: 0,
+            percentages.maxOfOrNull { width(it) } ?: 0,
+        )
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // Measure rendered text, including font/display scaling. Shared numeric columns stay
+        // beside each other at the right edge, with the remaining space given to category names.
+        // Only overflow expands the entire table into one shared scroller.
+        val tableWidth = with(density) {
+            maxOf(
+                maxWidth.roundToPx(),
+                widths.first + 24.dp.roundToPx() + widths.second + widths.third + 2 * 12.dp.roundToPx(),
+            ).toDp()
+        }
+        val amountWidth = with(density) { widths.second.toDp() }
+        val nameWidth = with(density) { widths.first.toDp() }
+        val percentageWidth = with(density) { widths.third.toDp() }
+        val nameColumnWidth = tableWidth - amountWidth - 12.dp - percentageWidth
+        Column(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .testTag("reports-category-legend-table"),
+        ) {
+            Column(
+                Modifier.width(tableWidth).testTag("reports-category-legend-content"),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Box(
-                    Modifier.padding(top = 3.dp).size(24.dp)
-                        .background(item.color)
-                        .border(1.dp, MaterialTheme.colorScheme.onSurface)
-                        .testTag("reports-category-swatch-$id"),
-                )
-                // Stacking avoids competing fixed widths for long names and exact large amounts.
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        item.category.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.testTag("reports-category-name-$id"),
-                    )
-                    Text(
-                        item.category.value.amountGrosze.currency(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.testTag("reports-category-amount-$id"),
-                    )
-                    Text(
-                        String.format(reportsLocale, "%.0f%%", item.share * 100),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                presentation.forEachIndexed { index, item ->
+                    val id = item.category.value.categoryId
+                    val label = "${item.category.name}: ${amounts[index]} (${percentages[index]})"
+                    val rowDescription = stringResource(R.string.reports_category_segment_description, label)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                            .testTag("reports-category-row-$id")
+                            .semantics(mergeDescendants = true) { contentDescription = rowDescription },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            Modifier.width(nameColumnWidth),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                Modifier.size(16.dp).background(item.color)
+                                    .border(1.dp, MaterialTheme.colorScheme.onSurface)
+                                    .testTag("reports-category-swatch-$id"),
+                            )
+                            Text(
+                                item.category.name, style = textStyle, maxLines = 1, softWrap = false,
+                                modifier = Modifier.width(nameWidth).testTag("reports-category-name-$id"),
+                            )
+                        }
+                        Box(Modifier.width(amountWidth), contentAlignment = Alignment.CenterEnd) {
+                            Text(
+                                amounts[index], style = textStyle, maxLines = 1, softWrap = false,
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.width(amountWidth).testTag("reports-category-amount-$id"),
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Box(Modifier.width(percentageWidth), contentAlignment = Alignment.CenterEnd) {
+                            Text(
+                                percentages[index], style = textStyle, maxLines = 1, softWrap = false,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.width(percentageWidth).testTag("reports-category-percentage-$id"),
+                            )
+                        }
+                    }
                 }
             }
         }
