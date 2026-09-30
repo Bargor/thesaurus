@@ -81,7 +81,7 @@ class SummaryScreenTest {
         composeRule.onNodeWithTag("summary-empty").assertIsDisplayed()
         composeRule.onNodeWithTag("summary-income").assertIsDisplayed()
         composeRule.runOnIdle { state = state.copy(syncState = SyncState.OFFLINE) }
-        composeRule.onNodeWithTag("summary-offline").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("summary-offline").assertDoesNotExist()
         composeRule.runOnIdle { state = state.copy(syncState = SyncState.ERROR, hasError = true) }
         composeRule.onNodeWithTag("summary-error").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("summary-empty").assertDoesNotExist()

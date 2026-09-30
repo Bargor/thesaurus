@@ -116,10 +116,6 @@ fun SummaryScreen(
                 stringResource(R.string.summary_sync_pending),
                 modifier = Modifier.testTag("summary-pending"),
             )
-            SyncState.OFFLINE -> Text(
-                stringResource(R.string.summary_offline),
-                modifier = Modifier.testTag("summary-offline"),
-            )
             else -> Unit
         }
         if (!state.hasError || !state.totals.isEmpty) {

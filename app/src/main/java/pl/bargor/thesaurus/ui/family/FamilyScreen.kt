@@ -219,7 +219,6 @@ private fun InvitationCard(invitation: Invitation, revoking: Boolean, onRevoke: 
 private fun FamilySyncNotice(syncState: SyncState) {
     val message = when (syncState) {
         SyncState.PENDING -> R.string.family_sync_pending
-        SyncState.OFFLINE -> R.string.family_offline
         else -> null
     } ?: return
     Text(modifier = Modifier.padding(horizontal = 16.dp), text = stringResource(message))

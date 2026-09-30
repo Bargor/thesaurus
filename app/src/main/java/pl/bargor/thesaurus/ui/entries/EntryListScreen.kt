@@ -231,7 +231,6 @@ private fun SortSelector(selected: EntryListSort, onChangeSort: (EntryListSort) 
 private fun EntryListSyncState(syncState: SyncState) {
     val label = when (syncState) {
         SyncState.PENDING -> R.string.entries_sync_pending
-        SyncState.OFFLINE -> R.string.entries_offline
         else -> null
     } ?: return
     Text(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), text = stringResource(label))

@@ -43,6 +43,11 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import pl.bargor.thesaurus.data.connectivity.AndroidNetworkMonitor
+import pl.bargor.thesaurus.data.connectivity.NetworkMonitor
+import pl.bargor.thesaurus.ui.OfflineStatusHost
+import pl.bargor.thesaurus.ui.LocalDismissOfflineTooltip
+import pl.bargor.thesaurus.ui.rememberNetworkOnline
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -83,51 +88,61 @@ enum class Destination(
 fun ThesaurusApp(
     authViewModel: AuthViewModel = hiltViewModel(),
     invitationLink: FamilyInvitationLink? = null,
+    networkMonitor: NetworkMonitor = rememberNetworkMonitor(),
 ) {
+    val isOnline by rememberNetworkOnline(networkMonitor)
     val authState by authViewModel.state.collectAsState()
     var pendingInvitation by remember { mutableStateOf(invitationLink) }
     LaunchedEffect(invitationLink) { pendingInvitation = invitationLink }
-    when (val state = authState) {
-        is AuthUiState.Ready -> if (pendingInvitation == null) {
-            HouseholdApp(state.identity.uid, state.householdId, onSignOut = authViewModel::signOut)
-        } else if (pendingInvitation?.householdId == state.householdId) {
-            InvitationAcceptRoute(
-                link = pendingInvitation!!,
-                identity = state.identity,
-                onSignOut = authViewModel::signOut,
-                onAccepted = { identity ->
-                    pendingInvitation = null
-                    authViewModel.membershipAccepted(identity)
-                },
+    OfflineStatusHost(isOnline = isOnline, screenKey = Pair(authState::class, pendingInvitation)) {
+        when (val state = authState) {
+            is AuthUiState.Ready -> if (pendingInvitation == null) {
+                HouseholdApp(state.identity.uid, state.householdId, onSignOut = authViewModel::signOut)
+            } else if (pendingInvitation?.householdId == state.householdId) {
+                InvitationAcceptRoute(
+                    link = pendingInvitation!!,
+                    identity = state.identity,
+                    onSignOut = authViewModel::signOut,
+                    onAccepted = { identity ->
+                        pendingInvitation = null
+                        authViewModel.membershipAccepted(identity)
+                    },
+                )
+            } else {
+                ExistingHouseholdInvitationContent { pendingInvitation = null }
+            }
+            is AuthUiState.NeedsHousehold -> pendingInvitation?.let { link ->
+                InvitationAcceptRoute(
+                    link,
+                    state.identity,
+                    authViewModel::signOut,
+                    onAccepted = { identity ->
+                        pendingInvitation = null
+                        authViewModel.membershipAccepted(identity)
+                    },
+                )
+            } ?: AuthenticationContent(
+                state = state,
+                onSignIn = authViewModel::signIn,
+                onEmailSignIn = authViewModel::signInWithEmail,
+                onCreateHousehold = authViewModel::createHousehold,
+                onRetry = authViewModel::retry,
             )
-        } else {
-            ExistingHouseholdInvitationContent { pendingInvitation = null }
+            else -> AuthenticationContent(
+                state = state,
+                onSignIn = authViewModel::signIn,
+                onEmailSignIn = authViewModel::signInWithEmail,
+                onCreateHousehold = authViewModel::createHousehold,
+                onRetry = authViewModel::retry,
+            )
         }
-        is AuthUiState.NeedsHousehold -> pendingInvitation?.let { link ->
-            InvitationAcceptRoute(
-                link,
-                state.identity,
-                authViewModel::signOut,
-                onAccepted = { identity ->
-                    pendingInvitation = null
-                    authViewModel.membershipAccepted(identity)
-                },
-            )
-        } ?: AuthenticationContent(
-            state = state,
-            onSignIn = authViewModel::signIn,
-            onEmailSignIn = authViewModel::signInWithEmail,
-            onCreateHousehold = authViewModel::createHousehold,
-            onRetry = authViewModel::retry,
-        )
-        else -> AuthenticationContent(
-            state = state,
-            onSignIn = authViewModel::signIn,
-            onEmailSignIn = authViewModel::signInWithEmail,
-            onCreateHousehold = authViewModel::createHousehold,
-            onRetry = authViewModel::retry,
-        )
     }
+}
+
+@Composable
+private fun rememberNetworkMonitor(): NetworkMonitor {
+    val context = LocalContext.current
+    return remember(context) { AndroidNetworkMonitor(context) }
 }
 
 @Composable
@@ -162,6 +177,8 @@ internal fun HouseholdApp(
 ) {
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
+    val dismissOfflineTooltip = LocalDismissOfflineTooltip.current
+    LaunchedEffect(currentBackStackEntry) { dismissOfflineTooltip() }
 
     Scaffold(
         bottomBar = {

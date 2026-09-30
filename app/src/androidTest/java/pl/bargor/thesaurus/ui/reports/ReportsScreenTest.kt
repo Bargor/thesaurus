@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
@@ -49,7 +50,7 @@ class ReportsScreenTest {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.8f)) {
                 ThesaurusTheme {
-                    Box(Modifier.width(320.dp).fillMaxHeight()) {
+                    Box(Modifier.width(320.dp).fillMaxHeight().testTag("reports-fixture")) {
                         ReportsScreen(
                             state = ReportsUiState(
                                 today = LocalDate.of(2026, 9, 30), month = YearMonth.of(2026, 9),
@@ -68,15 +69,17 @@ class ReportsScreenTest {
         val month = composeRule.onNodeWithTag("reports-mode-month").assertIsDisplayed().getUnclippedBoundsInRoot()
         val custom = composeRule.onNodeWithTag("reports-mode-custom").assertIsDisplayed().getUnclippedBoundsInRoot()
         val period = composeRule.onNodeWithTag("reports-period").assertIsDisplayed().getUnclippedBoundsInRoot()
-        // The semantic bounds of Material segmented buttons can differ slightly between
-        // hardware-rendered and headless emulators. Keep the limit well below the space
-        // a headline row would occupy while allowing that platform variation.
+        val fixture = composeRule.onNodeWithTag("reports-fixture").getUnclippedBoundsInRoot()
+        val selector = composeRule.onNodeWithTag("reports-period-selector").getUnclippedBoundsInRoot()
+        // At large font sizes the taller custom button vertically centers the month button.
+        // Measure the row itself relative to its fixture to verify the actual top padding.
+        val topPadding = selector.top - fixture.top
         assertTrue(
-            "Report mode must start without title-sized empty space: ${month.top}",
-            month.top <= 40.dp,
+            "Report selector must start at the 16 dp content padding: $topPadding",
+            topPadding >= 15.dp && topPadding <= 17.dp,
         )
         assertTrue("Period modes must fit on a compact screen", month.left >= 0.dp && custom.right <= 320.dp)
-        assertTrue("Period navigation must follow the mode selector", period.top >= month.bottom)
+        assertTrue("Period navigation must follow the entire mode selector", period.top >= selector.bottom)
     }
 
     @Test fun monthlyReportExposesCategoryLegendAndEntryDrillDownWithoutTrend() {
@@ -166,7 +169,7 @@ class ReportsScreenTest {
                 ReportsScreen(state, { state = state.copy(mode = it) }, {}, {}, {}, {}, {}, {}, {}, {})
             }
         }
-        composeRule.onNodeWithTag("reports-offline").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("reports-offline").assertDoesNotExist()
         composeRule.onAllNodesWithText("Podaj daty w formacie RRRR-MM-DD. Data „od” nie może być późniejsza od daty „do”.").assertCountEquals(1)
         composeRule.onNodeWithTag("reports-mode-month").performScrollTo().performClick()
         composeRule.onNodeWithContentDescription("Poprzedni miesiąc").performScrollTo().assertIsDisplayed()

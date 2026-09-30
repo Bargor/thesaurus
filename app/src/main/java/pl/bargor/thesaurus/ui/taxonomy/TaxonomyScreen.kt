@@ -280,7 +280,6 @@ private fun SyncMessage(state: TaxonomyUiState) {
         state.error == TaxonomyError.ArchivedParent -> stringResource(R.string.taxonomy_archived_parent_error)
         state.error == TaxonomyError.SaveFailed -> stringResource(R.string.taxonomy_save_error)
         state.saving || state.reordering || state.syncState == SyncState.PENDING -> stringResource(R.string.taxonomy_sync_pending)
-        state.syncState == SyncState.OFFLINE -> stringResource(R.string.taxonomy_offline)
         else -> null
     }
     text?.let { Text(it, modifier = Modifier.padding(top = 8.dp).testTag("taxonomy-status")) }
