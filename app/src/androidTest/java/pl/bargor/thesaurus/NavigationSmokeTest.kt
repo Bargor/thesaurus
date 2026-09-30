@@ -9,15 +9,22 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertTrue
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavHostController
@@ -35,6 +42,8 @@ import pl.bargor.thesaurus.ui.summary.SummaryScreen
 import pl.bargor.thesaurus.ui.summary.SummaryUiState
 import pl.bargor.thesaurus.ui.entries.EntryListScreen
 import pl.bargor.thesaurus.ui.entries.EntryListUiState
+import pl.bargor.thesaurus.ui.entries.EntryListItem
+import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.ui.reports.ReportsScreen
 import pl.bargor.thesaurus.ui.reports.ReportsUiState
 import pl.bargor.thesaurus.ui.entry.EntryFormError
@@ -123,6 +132,47 @@ class NavigationSmokeTest {
             assertEquals(Destination.Entries.route, controller.currentDestination?.route)
             assertNull(controller.previousBackStackEntry)
         }
+    }
+
+    @Test
+    fun persistentAddEntryFitsAboveNavigationAndSystemInsetsAtLargeFontAndDensity() {
+        composeTestRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density * 1.1f, 1.8f)) {
+                ThesaurusTheme {
+                    // Reserve an additional system inset independently of the real device's bars.
+                    Box(Modifier.fillMaxSize().testTag("inset-root").windowInsetsPadding(WindowInsets(bottom = 32.dp))) {
+                        HouseholdApp(
+                            entriesContent = { onOpenSettings, onAddEntry, onOpenFamily, _ ->
+                                EntryListScreen(
+                                    state = EntryListUiState(isLoading = false, entries = (1..20).map { index ->
+                                        EntryListItem(
+                                            LedgerEntry(
+                                                id = "inset-$index", householdId = "home", amountGrosze = -100,
+                                                date = LocalDate.of(2026, 9, 16), categoryId = "food", authorId = "creator", updatedById = "creator",
+                                            ), "Jedzenie", null, "creator@example.test",
+                                        )
+                                    }),
+                                    onChangeSort = {}, onLoadNextPage = {}, onRetry = {},
+                                    onOpenSettings = onOpenSettings, onAddEntry = onAddEntry, onOpenFamily = onOpenFamily,
+                                )
+                            },
+                            summaryContent = {}, reportsContent = {},
+                            entryFormContent = { _, _ -> Text("Nowy wpis") },
+                        )
+                    }
+                }
+            }
+        }
+        val root = composeTestRule.onNodeWithTag("inset-root").fetchSemanticsNode().boundsInRoot
+        val add = composeTestRule.onNodeWithTag("add-entry").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val navigation = composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue("Add action must remain above bottom navigation", add.bottom <= navigation.top)
+        assertTrue("Navigation must leave the reserved bottom system inset", navigation.bottom < root.bottom)
+        assertTrue("Add action fits horizontally", add.left >= root.left && add.right <= root.right)
+        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entry-inset-20"))
+        composeTestRule.onNodeWithTag("add-entry").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithText("Nowy wpis").assertIsDisplayed()
     }
 
     @Test
