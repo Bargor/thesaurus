@@ -23,4 +23,13 @@ class DestinationTest {
             Destination.entries.map(Destination::route),
         )
     }
+
+    @Test
+    fun compactNavigationPreservesStableTagsAndDistinctLabelsForEveryTab() {
+        assertEquals(
+            listOf("navigation-entries", "navigation-summary", "navigation-reports"),
+            Destination.entries.map(Destination::navigationTestTag),
+        )
+        assertEquals(3, Destination.entries.map(Destination::labelRes).distinct().size)
+    }
 }

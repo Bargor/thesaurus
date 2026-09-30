@@ -13,6 +13,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Button
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavHostController
@@ -38,6 +43,36 @@ import pl.bargor.thesaurus.ui.entry.EntryFormUiState
 class NavigationSmokeTest {
     @get:Rule
     val composeTestRule = createComposeRule()
+
+    @Test
+    fun householdScaffoldKeepsNavigationAboveSystemInsetsAndContentAboveTheBar() {
+        var bottomInset = 0
+        composeTestRule.setContent {
+            bottomInset = WindowInsets.systemBars.getBottom(LocalDensity.current)
+            ThesaurusTheme {
+                Box(Modifier.fillMaxSize().testTag("household-root")) {
+                    HouseholdApp(
+                        entriesContent = { _, _, _, _ ->
+                            Box(Modifier.fillMaxSize().testTag("household-body"))
+                        },
+                        summaryContent = {},
+                        reportsContent = {},
+                    )
+                }
+            }
+        }
+        val root = composeTestRule.onNodeWithTag("household-root").fetchSemanticsNode().boundsInRoot
+        val body = composeTestRule.onNodeWithTag("household-body").fetchSemanticsNode().boundsInRoot
+        val bar = composeTestRule.onNodeWithTag("bottom-navigation").fetchSemanticsNode().boundsInRoot
+        assertEquals(root.bottom, bar.bottom, 1f)
+        // Developer tools, when present in DEV builds, also belong below screen content.
+        org.junit.Assert.assertTrue(body.bottom <= bar.top + 1f)
+        Destination.entries.forEach { destination ->
+            val item = composeTestRule.onNodeWithTag(destination.navigationTestTag).fetchSemanticsNode().boundsInRoot
+            assertEquals(bottomInset.toFloat(), bar.bottom - item.bottom, 1f)
+            org.junit.Assert.assertTrue(item.top >= bar.top && item.bottom <= root.bottom)
+        }
+    }
 
     @Test
     fun taxonomyBottomEntriesReturnsToEntriesAndDoesNotRestoreSettings() = verifyTaxonomyExit("entries")
