@@ -1,17 +1,24 @@
 package pl.bargor.thesaurus.ui.entries
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -111,6 +118,7 @@ class EntryListScreenTest {
 
     @Test
     fun fiveRepresentativeEntriesFitAboveThePersistentAction() {
+        var fixtureDensity = 0f
         val entries = (1..5).map { index ->
             item(
                 "dense-$index", -13972,
@@ -119,22 +127,51 @@ class EntryListScreenTest {
             ).let { it.copy(entry = it.entry.copy(date = LocalDate.of(2026, 9, 30 - (index - 1) / 2))) }
         }
         composeRule.setContent {
-            ThesaurusTheme {
-                // Representative route height above app navigation and the DEV account action.
-                Box(Modifier.width(411.dp).height(700.dp)) {
-                    EntryListScreen(
-                        state = EntryListUiState(isLoading = false, entries = entries, syncState = SyncState.OFFLINE),
-                        onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
-                    )
+            BoxWithConstraints(Modifier.fillMaxSize().testTag("density-window")) {
+                val nativeDensity = LocalDensity.current
+                // Measure the canonical route at native pixel density, then scale its rendering
+                // into the window. Scaling LocalDensity would change rounded font metrics.
+                val fit = minOf(1f, maxWidth.value / 411f, maxHeight.value / 700f)
+                val density = Density(nativeDensity.density, fontScale = 1f)
+                fixtureDensity = density.density * fit
+                CompositionLocalProvider(LocalDensity provides density) {
+                    ThesaurusTheme {
+                        Box(
+                            Modifier.wrapContentSize(Alignment.TopStart, unbounded = true)
+                                .requiredSize(411.dp, 700.dp)
+                                .graphicsLayer {
+                                    scaleX = fit
+                                    scaleY = fit
+                                    transformOrigin = TransformOrigin(0f, 0f)
+                                }
+                                .testTag("density-fixture"),
+                        ) {
+                            EntryListScreen(
+                                state = EntryListUiState(isLoading = false, entries = entries, syncState = SyncState.OFFLINE),
+                                onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
+                            )
+                        }
+                    }
                 }
             }
         }
+        val window = composeRule.onNodeWithTag("density-window").fetchSemanticsNode().boundsInRoot
+        val fixture = composeRule.onNodeWithTag("density-fixture").fetchSemanticsNode().boundsInRoot
+        assertEquals("Canonical fixture width must not be constrained", 411f * fixtureDensity, fixture.width, 1f)
+        assertEquals("Canonical fixture height must not be constrained", 700f * fixtureDensity, fixture.height, 1f)
+        val transformEpsilon = 0.001f // Physical pixels, for floating-point layer transforms only.
+        assertTrue(
+            "Fixture fits inside the real window: fixture=$fixture window=$window",
+            fixture.left >= window.left - transformEpsilon && fixture.top >= window.top - transformEpsilon &&
+                fixture.right <= window.right + transformEpsilon && fixture.bottom <= window.bottom + transformEpsilon,
+        )
         val list = composeRule.onNodeWithTag("entries-list").getUnclippedBoundsInRoot()
         entries.forEach { item ->
             val card = composeRule.onNodeWithTag("entry-${item.entry.id}").assertIsDisplayed().getUnclippedBoundsInRoot()
             assertTrue("Every representative card fits completely: ${item.entry.id} card=$card list=$list", card.top >= list.top && card.bottom <= list.bottom)
         }
-        composeRule.onNodeWithTag("add-entry").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        val add = composeRule.onNodeWithTag("add-entry").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue("Add target remains at least 48 dp in the fixture's density", add.height + 1f >= 48f * fixtureDensity)
     }
 
     @Test
