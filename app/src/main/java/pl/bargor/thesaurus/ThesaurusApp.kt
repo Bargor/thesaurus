@@ -168,8 +168,8 @@ internal fun HouseholdApp(
             onEditEntry = onEditEntry,
         )
     },
-    summaryContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { _ ->
-        SummaryRoute()
+    summaryContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
+        SummaryRoute(householdId, actorId, onOpenEntry)
     },
     reportsContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
         ReportsRoute(householdId, onOpenEntry)
@@ -348,20 +348,22 @@ private fun BrowseRoute(
 
 @Composable
 private fun SummaryRoute(
+    householdId: String,
+    actorId: String,
+    onOpenEntry: (String) -> Unit,
     summaryViewModel: SummaryViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(householdId, actorId) { summaryViewModel.start(householdId, actorId) }
     val state by summaryViewModel.state.collectAsState()
     SummaryScreen(
         state = state,
         onSelectPeriodMode = summaryViewModel::selectPeriodMode,
-        onPreviousPeriod = {
-            if (state.mode == SummaryPeriodMode.MONTH) summaryViewModel.previousMonth()
-            else summaryViewModel.previousYear()
-        },
-        onNextPeriod = {
-            if (state.mode == SummaryPeriodMode.MONTH) summaryViewModel.nextMonth()
-            else summaryViewModel.nextYear()
-        },
+        onPreviousPeriod = summaryViewModel::previousYear,
+        onNextPeriod = summaryViewModel::nextYear,
+        onOpenPeriod = summaryViewModel::openPeriod,
+        onClosePeriod = summaryViewModel::closePeriod,
+        onOpenEntry = onOpenEntry,
+        onRetry = summaryViewModel::retry,
     )
 }
 
