@@ -49,6 +49,8 @@ import java.math.BigDecimal
 import java.math.BigInteger
 import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
+import java.time.YearMonth
+import java.time.Year
 import java.util.Locale
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.SummaryTotals
@@ -79,26 +81,7 @@ fun SummaryScreen(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SummaryPeriodNavigator(
-            label = when (state.mode) {
-                SummaryPeriodMode.MONTH -> state.month.format(monthFormatter).replaceFirstChar { it.titlecase(polishLocale) }
-                SummaryPeriodMode.YEAR -> state.year.toString()
-            },
-            previousDescription = stringResource(
-                if (state.mode == SummaryPeriodMode.MONTH) R.string.summary_previous_month else R.string.summary_previous_year,
-            ),
-            nextDescription = stringResource(
-                if (state.mode == SummaryPeriodMode.MONTH) R.string.summary_next_month else R.string.summary_next_year,
-            ),
-            onPrevious = onPreviousPeriod,
-            onNext = onNextPeriod,
-            scopeDescription = stringResource(if (state.mode == SummaryPeriodMode.MONTH)
-                R.string.summary_scope_month else R.string.summary_scope_year),
-            toggleDescription = stringResource(if (state.mode == SummaryPeriodMode.MONTH)
-                R.string.summary_switch_to_year else R.string.summary_switch_to_month),
-            onToggle = { onSelectPeriodMode(if (state.mode == SummaryPeriodMode.MONTH)
-                SummaryPeriodMode.YEAR else SummaryPeriodMode.MONTH) },
-        )
+        SummaryPeriodHeader(state.month, state.year, state.mode, onSelectPeriodMode, onPreviousPeriod, onNextPeriod)
         if (state.isLoading) {
             CircularProgressIndicator(
                 modifier = Modifier.testTag("summary-loading").semantics {
@@ -353,6 +336,37 @@ private fun SummaryChoicePicker(
 
 /** Period controls accept a display label, so a later summary can reuse them for other periods. */
 @Composable
+internal fun SummaryPeriodHeader(
+    month: YearMonth,
+    year: Year,
+    mode: SummaryPeriodMode,
+    onSelectPeriodMode: (SummaryPeriodMode) -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    testTagPrefix: String = "summary",
+) {
+    SummaryPeriodNavigator(
+        label = when (mode) {
+            SummaryPeriodMode.MONTH -> month.format(monthFormatter).replaceFirstChar { it.titlecase(polishLocale) }
+            SummaryPeriodMode.YEAR -> year.toString()
+        },
+        previousDescription = stringResource(if (mode == SummaryPeriodMode.MONTH)
+            R.string.summary_previous_month else R.string.summary_previous_year),
+        nextDescription = stringResource(if (mode == SummaryPeriodMode.MONTH)
+            R.string.summary_next_month else R.string.summary_next_year),
+        onPrevious = onPrevious,
+        onNext = onNext,
+        scopeDescription = stringResource(if (mode == SummaryPeriodMode.MONTH)
+            R.string.summary_scope_month else R.string.summary_scope_year),
+        toggleDescription = stringResource(if (mode == SummaryPeriodMode.MONTH)
+            R.string.summary_switch_to_year else R.string.summary_switch_to_month),
+        onToggle = { onSelectPeriodMode(if (mode == SummaryPeriodMode.MONTH)
+            SummaryPeriodMode.YEAR else SummaryPeriodMode.MONTH) },
+        testTagPrefix = testTagPrefix,
+    )
+}
+
+@Composable
 internal fun SummaryPeriodNavigator(
     label: String,
     previousDescription: String,
@@ -362,15 +376,16 @@ internal fun SummaryPeriodNavigator(
     scopeDescription: String,
     toggleDescription: String,
     onToggle: () -> Unit,
+    testTagPrefix: String = "summary",
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         TextButton(
             onClick = onPrevious,
-            modifier = Modifier.testTag("summary-previous-period").semantics { contentDescription = previousDescription },
+            modifier = Modifier.testTag("$testTagPrefix-previous-period").semantics { contentDescription = previousDescription },
         ) { Text("‹") }
         TextButton(
             onClick = onToggle,
-            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("summary-period").semantics {
+            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("$testTagPrefix-period").semantics {
                 heading()
                 stateDescription = scopeDescription
                 onClick(label = toggleDescription, action = null)
@@ -381,7 +396,7 @@ internal fun SummaryPeriodNavigator(
         }
         TextButton(
             onClick = onNext,
-            modifier = Modifier.testTag("summary-next-period").semantics { contentDescription = nextDescription },
+            modifier = Modifier.testTag("$testTagPrefix-next-period").semantics { contentDescription = nextDescription },
         ) { Text("›") }
     }
 }

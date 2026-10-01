@@ -43,7 +43,7 @@ import kotlin.math.roundToInt
 
 class BottomNavigationTest {
     @get:Rule val compose = createComposeRule()
-    private val labels = listOf("Wpisy", "Podsumowanie", "Raporty")
+    private val labels = listOf("Wpisy", "Podsumowanie", "Raporty", "Przegląd")
 
     @Test
     fun normalBarIs16DpShorterThanThePreviousMaterialBar() {
@@ -51,8 +51,8 @@ class BottomNavigationTest {
         compose.setContent {
             density = LocalDensity.current.density
             ThesaurusTheme {
-                // Exercise the narrow 320 dp portrait width used by CI as well as phones.
-                Column(Modifier.width(320.dp)) {
+                // At device width all four labels fit their compact baseline.
+                Column(Modifier.width(411.dp)) {
                     HouseholdNavigationBar(Destination.Entries.route, {}, WindowInsets(0, 0, 0, 0))
                     NavigationBar(Modifier.testTag("previous-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) {
                         Destination.entries.forEach {
@@ -71,6 +71,25 @@ class BottomNavigationTest {
         assertEquals(64f, compact.height / density, 1f)
         assertEquals(16f, (previous.height - compact.height) / density, 1f)
         assertContentFits(density)
+    }
+
+    @Test
+    fun fourTabsGrowTo80DpAtNarrowPortraitWidthWithoutClippingLabels() {
+        var density = 1f
+        compose.setContent {
+            density = LocalDensity.current.density
+            ThesaurusTheme {
+                Column(Modifier.width(320.dp)) {
+                    HouseholdNavigationBar(Destination.Entries.route, {}, WindowInsets(0, 0, 0, 0))
+                }
+            }
+        }
+        assertEquals(80f, bounds("bottom-navigation").height / density, 1f)
+        assertContentFits(density)
+        Destination.entries.forEach {
+            val item = bounds(it.navigationTestTag)
+            assertTrue(item.width / density >= 48f && item.height / density >= 48f)
+        }
     }
 
     @Test
@@ -120,15 +139,16 @@ class BottomNavigationTest {
             compose.runOnIdle { testDensity.value = density }
             val bar = bounds("bottom-navigation")
             val first = bounds(Destination.Entries.navigationTestTag)
-            val last = bounds(Destination.Reports.navigationTestTag)
+            val last = bounds(Destination.entries.last().navigationTestTag)
             val leftInsetPx = (12f * density).roundToInt()
             val rightInsetPx = (18f * density).roundToInt()
             val contentWidthPx = bar.width.roundToInt() - leftInsetPx - rightInsetPx
             val itemCount = Destination.entries.size
             // Native EqualWeight divides integer pixels equally and leaves the remainder
-            // at the trailing edge: 320 - 12 - 18 = 290, or 3 * 96 plus 2 pixels.
+            // at the trailing edge when the available width is not evenly divisible.
             val trailingRemainderPx = contentWidthPx % itemCount
-            assertEquals(88f, bar.height / density, 1f)
+            assertTrue("Wrapped four-tab content must retain its natural height", first.height / density >= 80f - 1f)
+            assertEquals("Bottom inset must be added below the full natural content height", first.height / density + 24f, bar.height / density, 1f)
             assertEquals(leftInsetPx.toFloat(), first.left - bar.left, 0f)
             assertEquals((rightInsetPx + trailingRemainderPx).toFloat(), bar.right - last.right, 0f)
             assertTrue("The right safe area must remain clear", bar.right - last.right >= rightInsetPx)

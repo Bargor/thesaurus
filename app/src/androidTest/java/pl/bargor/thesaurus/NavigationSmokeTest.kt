@@ -272,6 +272,42 @@ class NavigationSmokeTest {
     }
 
     @Test
+    fun fourthBrowseTabOpensEntriesAndReturningRestoresItsScreen() {
+        composeTestRule.setContent {
+            ThesaurusTheme {
+                HouseholdApp(
+                    entriesContent = { _, _, _, _ -> Text("Wpisy testowe") },
+                    summaryContent = { Text("Podsumowanie testowe") },
+                    reportsContent = { Text("Raporty testowe") },
+                    browseContent = { onOpenEntry ->
+                        Button(modifier = Modifier.testTag("browse-open-entry"), onClick = { onOpenEntry("browse-42") }) {
+                            Text("Przegląd testowy")
+                        }
+                    },
+                    entryFormContent = { entryId, _ -> Text("Wybrany wpis: $entryId") },
+                )
+            }
+        }
+        composeTestRule.onNodeWithTag(Destination.Browse.navigationTestTag).assertIsNotSelected().performClick().assertIsSelected()
+        composeTestRule.onNodeWithText("Przegląd testowy").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("browse-open-entry").performClick()
+        composeTestRule.onNodeWithText("Wybrany wpis: browse-42").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(Destination.Browse.navigationTestTag).performClick().assertIsSelected()
+        composeTestRule.onNodeWithText("Przegląd testowy").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).performClick()
+        composeTestRule.onNodeWithText("Raporty testowe").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(Destination.Browse.navigationTestTag).performClick()
+        composeTestRule.onNodeWithText("Przegląd testowy").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("browse-open-entry").performClick()
+        composeTestRule.onNodeWithText("Wybrany wpis: browse-42").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).performClick()
+        composeTestRule.onNodeWithText("Podsumowanie testowe").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(Destination.Browse.navigationTestTag).performClick().assertIsSelected()
+        composeTestRule.onNodeWithText("Przegląd testowy").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Wybrany wpis: browse-42").assertDoesNotExist()
+    }
+
+    @Test
     fun successfulCreationReturnsToEntriesOnceEvenAfterRecomposition() = verifyCreationReturn(queuedOffline = false)
 
     @Test

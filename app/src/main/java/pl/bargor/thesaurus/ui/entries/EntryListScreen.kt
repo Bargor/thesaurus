@@ -50,7 +50,7 @@ import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.ui.categoryAccentColor
 import pl.bargor.thesaurus.ui.categoryContainer
 
-private val PolishDateFormatter: DateTimeFormatter =
+internal val PolishDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.forLanguageTag("pl-PL"))
 
 @Composable
@@ -130,7 +130,7 @@ fun EntryListScreen(
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.testTag(row.key),
                                 )
-                                is EntryListRow.Entry -> EntryCard(row.item, onEditEntry, { actionCandidate = row.item })
+                                is EntryListRow.Entry -> EntryCard(row.item, onEditEntry, onOpenActions = { actionCandidate = row.item })
                             }
                         }
                         if (state.hasMore) item {
@@ -254,10 +254,11 @@ private fun ErrorContent(onRetry: () -> Unit) {
 }
 
 @Composable
-private fun EntryCard(
+internal fun EntryCard(
     item: EntryListItem,
     onEditEntry: (String) -> Unit,
-    onOpenActions: () -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenActions: (() -> Unit)? = null,
 ) {
     val entry = item.entry
     val amountColor = if (entry.amountGrosze > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -268,14 +269,14 @@ private fun EntryCard(
     val accent = categoryAccentColor(entry.categoryId, item.categoryColor)
     val surface = MaterialTheme.colorScheme.surface
     val dark = surface.luminance() < 0.5f
-    val cardModifier = Modifier
+    val cardModifier = modifier
         .fillMaxWidth()
         .heightIn(min = 48.dp)
         .testTag("entry-${entry.id}")
         .let { base ->
             if (item.canManage) base.combinedClickable(
                 onClickLabel = editLabel,
-                onLongClickLabel = actionsLabel,
+                onLongClickLabel = if (onOpenActions != null) actionsLabel else null,
                 onLongClick = onOpenActions,
                 onClick = { onEditEntry(entry.id) },
             ) else base

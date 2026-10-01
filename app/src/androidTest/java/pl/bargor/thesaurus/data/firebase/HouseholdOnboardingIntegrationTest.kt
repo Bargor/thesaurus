@@ -75,7 +75,8 @@ class HouseholdOnboardingIntegrationTest {
             assertEquals(FirstHouseholdResult.Existing(householdId), retried)
         } finally {
             runCatching { firestore.terminate().await() }
-            app.delete()
+            // Keep this named app registered until the instrumentation process exits;
+            // deletion can race Firebase Auth's background workers in later tests.
         }
     }
 }
