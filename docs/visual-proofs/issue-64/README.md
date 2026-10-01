@@ -10,6 +10,14 @@ before installing this feature. It shows the original three-tab navigation.
 
 ## Screenshots and observed results
 
+### Review update: main-tab order
+
+The final tab order is **Wpisy → Przegląd → Podsumowanie → Raporty**.
+[Updated navigation screenshot](reordered-navigation.png) shows Przegląd
+selected as the second tab. The earlier screenshots below document the
+initial feature walkthrough before this review adjustment; their fourth-tab
+placement is superseded by this updated screenshot.
+
 | Screen | Evidence |
 | --- | --- |
 | Original three-tab navigation | [Before](before-navigation.png) |
@@ -71,3 +79,15 @@ Manual spoken TalkBack and physical-device/API 37 validation are not claimed.
 
 CI must still produce a clean full run before merge. Test assertions were not
 weakened to accommodate the redraw timeout.
+
+The first GitHub run passed 98/99 instrumentation cases, including all Browse
+tests. Its sole failure was the navigation baseline fixture requesting 411 dp
+inside a narrower CI viewport and unexpectedly wrapping to 80 dp. The fixture
+now scales only its local density to fit that logical width; strict 64 dp and
+16 dp height-reduction assertions are retained. The separate 320 dp wrapping
+test and accessibility/clip checks remain unchanged. Navigation tests also
+assert the requested rendered left-to-right order.
+
+After the review update, local verification passed all 115 JVM tests,
+six BottomNavigation tests, and 12 NavigationSmoke tests. Debug lint and
+DEV APK assembly passed; the updated APK is installed on the visible emulator.

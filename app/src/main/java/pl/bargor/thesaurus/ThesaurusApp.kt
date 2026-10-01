@@ -83,9 +83,9 @@ enum class Destination(
     val route: String,
 ) {
     Entries(R.string.navigation_entries, R.string.empty_entries, "navigation-entries", "entries"),
+    Browse(R.string.navigation_browse, R.string.empty_summary, "navigation-browse", "browse"),
     Summary(R.string.navigation_summary, R.string.empty_summary, "navigation-summary", "summary"),
     Reports(R.string.navigation_reports, R.string.empty_reports, "navigation-reports", "reports"),
-    Browse(R.string.navigation_browse, R.string.empty_summary, "navigation-browse", "browse"),
 }
 
 @Composable

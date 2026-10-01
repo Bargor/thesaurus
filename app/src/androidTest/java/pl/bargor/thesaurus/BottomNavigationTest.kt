@@ -1,6 +1,7 @@
 package pl.bargor.thesaurus
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
@@ -43,24 +44,32 @@ import kotlin.math.roundToInt
 
 class BottomNavigationTest {
     @get:Rule val compose = createComposeRule()
-    private val labels = listOf("Wpisy", "Podsumowanie", "Raporty", "Przegląd")
+    private val labels = listOf("Wpisy", "Przegląd", "Podsumowanie", "Raporty")
+    private val expectedDestinationOrder = listOf(Destination.Entries, Destination.Browse, Destination.Summary, Destination.Reports)
 
     @Test
     fun normalBarIs16DpShorterThanThePreviousMaterialBar() {
         var density = 1f
         compose.setContent {
-            density = LocalDensity.current.density
-            ThesaurusTheme {
-                // At device width all four labels fit their compact baseline.
-                Column(Modifier.width(411.dp)) {
-                    HouseholdNavigationBar(Destination.Entries.route, {}, WindowInsets(0, 0, 0, 0))
-                    NavigationBar(Modifier.testTag("previous-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) {
-                        Destination.entries.forEach {
-                            NavigationBarItem(
-                                selected = it == Destination.Entries, onClick = {},
-                                icon = { Icon(Icons.Default.Description, null) },
-                                label = { Text(stringResource(it.labelRes)) },
-                            )
+            BoxWithConstraints {
+                val deviceDensity = LocalDensity.current.density
+                // A requested width alone is clamped by a narrow CI viewport. Scale only this
+                // baseline fixture so its full 411 dp fits the available physical pixels.
+                val fixtureDensity = minOf(deviceDensity, constraints.maxWidth / 411f)
+                CompositionLocalProvider(LocalDensity provides Density(fixtureDensity, fontScale = 1f)) {
+                    density = fixtureDensity
+                    ThesaurusTheme {
+                        Column(Modifier.width(411.dp)) {
+                            HouseholdNavigationBar(Destination.Entries.route, {}, WindowInsets(0, 0, 0, 0))
+                            NavigationBar(Modifier.testTag("previous-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) {
+                                Destination.entries.forEach {
+                                    NavigationBarItem(
+                                        selected = it == Destination.Entries, onClick = {},
+                                        icon = { Icon(Icons.Default.Description, null) },
+                                        label = { Text(stringResource(it.labelRes)) },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -208,6 +217,12 @@ class BottomNavigationTest {
     }
 
     private fun assertContentFits(density: Float) {
+        val spatialOrder = Destination.entries.sortedBy { bounds(it.navigationTestTag).left }
+        assertEquals("Tabs must appear left to right as Wpisy, Przegląd, Podsumowanie, Raporty", expectedDestinationOrder, spatialOrder)
+        expectedDestinationOrder.zipWithNext().forEach { (left, right) ->
+            assertTrue("${left.route} must be wholly left of ${right.route}",
+                bounds(left.navigationTestTag).right <= bounds(right.navigationTestTag).left + 1f)
+        }
         Destination.entries.forEachIndexed { index, destination ->
             val item = bounds(destination.navigationTestTag)
             val icon = bounds("${destination.navigationTestTag}-icon", unmerged = true)
