@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -72,6 +73,8 @@ import pl.bargor.thesaurus.ui.summary.SummaryViewModel
 import pl.bargor.thesaurus.ui.summary.SummaryPeriodMode
 import pl.bargor.thesaurus.ui.reports.ReportsScreen
 import pl.bargor.thesaurus.ui.reports.ReportsViewModel
+import pl.bargor.thesaurus.ui.browse.BrowseScreen
+import pl.bargor.thesaurus.ui.browse.BrowseViewModel
 
 enum class Destination(
     @param:StringRes val labelRes: Int,
@@ -80,6 +83,7 @@ enum class Destination(
     val route: String,
 ) {
     Entries(R.string.navigation_entries, R.string.empty_entries, "navigation-entries", "entries"),
+    Browse(R.string.navigation_browse, R.string.empty_summary, "navigation-browse", "browse"),
     Summary(R.string.navigation_summary, R.string.empty_summary, "navigation-summary", "summary"),
     Reports(R.string.navigation_reports, R.string.empty_reports, "navigation-reports", "reports"),
 }
@@ -174,6 +178,9 @@ internal fun HouseholdApp(
     taxonomyContent: (@Composable (onBack: () -> Unit) -> Unit)? = null,
     navController: NavHostController = rememberNavController(),
     onSignOut: () -> Unit = {},
+    browseContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
+        BrowseRoute(householdId, actorId, onOpenEntry)
+    },
 ) {
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
@@ -188,6 +195,11 @@ internal fun HouseholdApp(
                     // Settings is a temporary screen above Entries, not a saved tab.
                     if (currentRoute == "settings") {
                         navController.popBackStack(Destination.Entries.route, inclusive = false)
+                    }
+                    // Entry editing belongs to its source tab, not that tab's saved stack.
+                    // Dismiss it before saving navigation state, including when reselecting the source tab.
+                    if (currentRoute == "edit-entry/{entryId}") {
+                        navController.popBackStack()
                     }
                     navController.navigate(destination.route) {
                         popUpTo(navController.graph.findStartDestination().id) {
@@ -216,6 +228,7 @@ internal fun HouseholdApp(
                 )
             }
             composable(Destination.Summary.route) { summaryContent { entryId -> navController.navigate("edit-entry/$entryId") } }
+            composable(Destination.Browse.route) { browseContent { entryId -> navController.navigate("edit-entry/$entryId") } }
             composable(Destination.Reports.route) { reportsContent { entryId -> navController.navigate("edit-entry/$entryId") } }
             composable("settings") {
                 val onBack = {
@@ -289,6 +302,7 @@ internal fun HouseholdNavigationBar(
                         imageVector = when (destination) {
                             Destination.Entries -> Icons.Default.Description
                             Destination.Summary -> Icons.Default.Summarize
+                            Destination.Browse -> Icons.Default.AccountTree
                             Destination.Reports -> Icons.Default.Assessment
                         },
                         contentDescription = null,
@@ -303,6 +317,33 @@ internal fun HouseholdNavigationBar(
             )
         }
     }
+}
+
+@Composable
+private fun BrowseRoute(
+    householdId: String,
+    actorId: String,
+    onOpenEntry: (String) -> Unit,
+    browseViewModel: BrowseViewModel = hiltViewModel(),
+) {
+    LaunchedEffect(householdId, actorId) { browseViewModel.start(householdId, actorId) }
+    val state by browseViewModel.state.collectAsState()
+    BrowseScreen(
+        state = state,
+        onSelectPeriodMode = browseViewModel::selectPeriodMode,
+        onPreviousPeriod = {
+            if (state.mode == SummaryPeriodMode.MONTH) browseViewModel.previousMonth()
+            else browseViewModel.previousYear()
+        },
+        onNextPeriod = {
+            if (state.mode == SummaryPeriodMode.MONTH) browseViewModel.nextMonth()
+            else browseViewModel.nextYear()
+        },
+        onToggleCategory = browseViewModel::toggleCategory,
+        onToggleSubcategory = browseViewModel::toggleSubcategory,
+        onRetry = browseViewModel::retry,
+        onOpenEntry = onOpenEntry,
+    )
 }
 
 @Composable

@@ -125,7 +125,8 @@ class TaxonomyRepositoryIntegrationTest {
             assertEquals("rose", archivedCategory.color)
         } finally {
             runCatching { firestore.terminate().await() }
-            app.delete()
+            // Keep this named app registered until the instrumentation process exits;
+            // deletion can race Firebase Auth's background workers in later tests.
         }
     }
 }

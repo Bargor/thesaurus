@@ -1,6 +1,7 @@
 package pl.bargor.thesaurus
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
@@ -43,24 +44,51 @@ import kotlin.math.roundToInt
 
 class BottomNavigationTest {
     @get:Rule val compose = createComposeRule()
-    private val labels = listOf("Wpisy", "Podsumowanie", "Raporty")
+    private val labels = listOf("Wpisy", "Przegląd", "Podsumowanie", "Raporty")
+    private val expectedDestinationOrder = listOf(Destination.Entries, Destination.Browse, Destination.Summary, Destination.Reports)
 
     @Test
     fun normalBarIs16DpShorterThanThePreviousMaterialBar() {
+        assertCompactBaseline()
+    }
+
+    @Test
+    fun compactBaselineFits320PhysicalPixelsAtHalfDensityWithoutRoundingDrift() {
+        val density = assertCompactBaseline(viewportWidthPx = 320)
+        assertEquals(0.5f, density, 0f)
+        assertEquals(320f, bounds("baseline-viewport").width, 0f)
+        assertEquals(32f, bounds("bottom-navigation").height, 0f)
+        assertEquals(40f, bounds("previous-navigation").height, 0f)
+    }
+
+    private fun assertCompactBaseline(viewportWidthPx: Int? = null): Float {
         var density = 1f
         compose.setContent {
-            density = LocalDensity.current.density
-            ThesaurusTheme {
-                // Exercise the narrow 320 dp portrait width used by CI as well as phones.
-                Column(Modifier.width(320.dp)) {
-                    HouseholdNavigationBar(Destination.Entries.route, {}, WindowInsets(0, 0, 0, 0))
-                    NavigationBar(Modifier.testTag("previous-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) {
-                        Destination.entries.forEach {
-                            NavigationBarItem(
-                                selected = it == Destination.Entries, onClick = {},
-                                icon = { Icon(Icons.Default.Description, null) },
-                                label = { Text(stringResource(it.labelRes)) },
-                            )
+            val deviceDensity = LocalDensity.current.density
+            val viewportModifier = if (viewportWidthPx == null) Modifier else
+                Modifier.width((viewportWidthPx / deviceDensity).dp)
+            BoxWithConstraints(viewportModifier.testTag("baseline-viewport")) {
+                // Keep the logical 411 dp fixture within the actual viewport. Binary density
+                // steps make 64/80 dp heights and 16 dp label lines exact integer pixels;
+                // an arbitrary scale such as 320/411 accumulates component rounding errors.
+                val maximumDensity = minOf(deviceDensity, constraints.maxWidth / 411f)
+                var fixtureDensity = 1f
+                while (fixtureDensity > maximumDensity) fixtureDensity /= 2f
+                while (fixtureDensity * 2f <= maximumDensity) fixtureDensity *= 2f
+                CompositionLocalProvider(LocalDensity provides Density(fixtureDensity, fontScale = 1f)) {
+                    density = fixtureDensity
+                    ThesaurusTheme {
+                        Column(Modifier.width(411.dp)) {
+                            HouseholdNavigationBar(Destination.Entries.route, {}, WindowInsets(0, 0, 0, 0))
+                            NavigationBar(Modifier.testTag("previous-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) {
+                                Destination.entries.forEach {
+                                    NavigationBarItem(
+                                        selected = it == Destination.Entries, onClick = {},
+                                        icon = { Icon(Icons.Default.Description, null) },
+                                        label = { Text(stringResource(it.labelRes)) },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -68,9 +96,30 @@ class BottomNavigationTest {
         }
         val compact = bounds("bottom-navigation")
         val previous = bounds("previous-navigation")
-        assertEquals(64f, compact.height / density, 1f)
-        assertEquals(16f, (previous.height - compact.height) / density, 1f)
+        assertEquals(64f * density, compact.height, 0f)
+        assertEquals(80f * density, previous.height, 0f)
+        assertEquals(16f * density, previous.height - compact.height, 0f)
         assertContentFits(density)
+        return density
+    }
+
+    @Test
+    fun fourTabsGrowTo80DpAtNarrowPortraitWidthWithoutClippingLabels() {
+        var density = 1f
+        compose.setContent {
+            density = LocalDensity.current.density
+            ThesaurusTheme {
+                Column(Modifier.width(320.dp)) {
+                    HouseholdNavigationBar(Destination.Entries.route, {}, WindowInsets(0, 0, 0, 0))
+                }
+            }
+        }
+        assertEquals(80f, bounds("bottom-navigation").height / density, 1f)
+        assertContentFits(density)
+        Destination.entries.forEach {
+            val item = bounds(it.navigationTestTag)
+            assertTrue(item.width / density >= 48f && item.height / density >= 48f)
+        }
     }
 
     @Test
@@ -120,15 +169,16 @@ class BottomNavigationTest {
             compose.runOnIdle { testDensity.value = density }
             val bar = bounds("bottom-navigation")
             val first = bounds(Destination.Entries.navigationTestTag)
-            val last = bounds(Destination.Reports.navigationTestTag)
+            val last = bounds(Destination.entries.last().navigationTestTag)
             val leftInsetPx = (12f * density).roundToInt()
             val rightInsetPx = (18f * density).roundToInt()
             val contentWidthPx = bar.width.roundToInt() - leftInsetPx - rightInsetPx
             val itemCount = Destination.entries.size
             // Native EqualWeight divides integer pixels equally and leaves the remainder
-            // at the trailing edge: 320 - 12 - 18 = 290, or 3 * 96 plus 2 pixels.
+            // at the trailing edge when the available width is not evenly divisible.
             val trailingRemainderPx = contentWidthPx % itemCount
-            assertEquals(88f, bar.height / density, 1f)
+            assertTrue("Wrapped four-tab content must retain its natural height", first.height / density >= 80f - 1f)
+            assertEquals("Bottom inset must be added below the full natural content height", first.height / density + 24f, bar.height / density, 1f)
             assertEquals(leftInsetPx.toFloat(), first.left - bar.left, 0f)
             assertEquals((rightInsetPx + trailingRemainderPx).toFloat(), bar.right - last.right, 0f)
             assertTrue("The right safe area must remain clear", bar.right - last.right >= rightInsetPx)
@@ -188,6 +238,12 @@ class BottomNavigationTest {
     }
 
     private fun assertContentFits(density: Float) {
+        val spatialOrder = Destination.entries.sortedBy { bounds(it.navigationTestTag).left }
+        assertEquals("Tabs must appear left to right as Wpisy, Przegląd, Podsumowanie, Raporty", expectedDestinationOrder, spatialOrder)
+        expectedDestinationOrder.zipWithNext().forEach { (left, right) ->
+            assertTrue("${left.route} must be wholly left of ${right.route}",
+                bounds(left.navigationTestTag).right <= bounds(right.navigationTestTag).left + 1f)
+        }
         Destination.entries.forEachIndexed { index, destination ->
             val item = bounds(destination.navigationTestTag)
             val icon = bounds("${destination.navigationTestTag}-icon", unmerged = true)

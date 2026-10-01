@@ -5,10 +5,11 @@ import org.junit.Test
 
 class DestinationTest {
     @Test
-    fun destinationsProvideTheThreeMainSections() {
+    fun destinationsProvideTheFourMainSections() {
         assertEquals(
             listOf(
                 R.string.navigation_entries,
+                R.string.navigation_browse,
                 R.string.navigation_summary,
                 R.string.navigation_reports,
             ),
@@ -19,7 +20,7 @@ class DestinationTest {
     @Test
     fun destinationsProvideUniqueStableRoutes() {
         assertEquals(
-            listOf("entries", "summary", "reports"),
+            listOf("entries", "browse", "summary", "reports"),
             Destination.entries.map(Destination::route),
         )
     }
@@ -27,9 +28,9 @@ class DestinationTest {
     @Test
     fun compactNavigationPreservesStableTagsAndDistinctLabelsForEveryTab() {
         assertEquals(
-            listOf("navigation-entries", "navigation-summary", "navigation-reports"),
+            listOf("navigation-entries", "navigation-browse", "navigation-summary", "navigation-reports"),
             Destination.entries.map(Destination::navigationTestTag),
         )
-        assertEquals(3, Destination.entries.map(Destination::labelRes).distinct().size)
+        assertEquals(4, Destination.entries.map(Destination::labelRes).distinct().size)
     }
 }
