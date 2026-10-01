@@ -138,7 +138,7 @@ fun ReportsScreen(
             else -> Unit
         }
         if (state.hasError && state.aggregation.totals.isEmpty) return@Column
-        ReportsTotalCards(state)
+        ReportsTotalCards(state.aggregation.totals)
         if (state.aggregation.totals.isEmpty) {
             Text(stringResource(R.string.empty_reports), Modifier.testTag("reports-empty"))
             return@Column
@@ -356,26 +356,6 @@ private fun ReportTypeFilter.labelRes() = when (this) {
     ReportTypeFilter.ALL -> R.string.reports_type_all
     ReportTypeFilter.INCOME -> R.string.reports_type_income
     ReportTypeFilter.EXPENSE -> R.string.reports_type_expense
-}
-
-@Composable
-private fun ReportsTotalCards(state: ReportsUiState) {
-    val totals = state.aggregation.totals
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        ReportTotalCard(R.string.summary_income, totals.incomeGrosze, "reports-income", Modifier.weight(1f))
-        ReportTotalCard(R.string.summary_expense, totals.expenseGrosze, "reports-expense", Modifier.weight(1f))
-        ReportTotalCard(R.string.summary_net, totals.netGrosze, "reports-net", Modifier.weight(1f), signed = true)
-    }
-}
-
-@Composable
-private fun ReportTotalCard(label: Int, value: BigInteger, tag: String, modifier: Modifier, signed: Boolean = false) {
-    Card(modifier = modifier) {
-        Column(Modifier.padding(10.dp)) {
-            Text(stringResource(label), style = MaterialTheme.typography.labelSmall)
-            Text((if (signed && value.signum() > 0) "+" else "") + value.currency(), Modifier.testTag(tag))
-        }
-    }
 }
 
 private data class NamedCategoryValue(

@@ -112,7 +112,7 @@ class ReportsScreenTest {
         composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
         composeRule.onNodeWithTag("reports-trend-summary").assertDoesNotExist()
         composeRule.onAllNodesWithText("Trend dzienny").assertCountEquals(0)
-        composeRule.onNodeWithTag("reports-net").assertTextContains("-12,50", substring = true)
+        composeRule.onNodeWithTag("reports-net", useUnmergedTree = true).assertTextContains("-12,50", substring = true)
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("report-entry-e1").performScrollTo().performClick()
         assertEquals("e1", opened)

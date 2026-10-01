@@ -34,6 +34,8 @@
     <string name="summary_income">Przychody</string>
     <string name="summary_expense">Wydatki</string>
     <string name="summary_net">Bilans</string>
+    <string name="reports_total_description">%1$s: %2$s</string>
+    <string name="reports_total_scroll_hint">Przesuń kwotę poziomo, aby zobaczyć całość.</string>
     <string name="summary_metric_description">%1$s: %2$s</string>
     <string name="summary_all_years">Wszystkie lata</string>
     <string name="summary_top_expense">Największe wydatki: %1$s</string>
