@@ -14,8 +14,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -24,6 +28,10 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.TextLayoutResult
 import java.math.BigInteger
 import java.time.LocalDate
 import java.time.Year
@@ -96,7 +104,11 @@ class ReportsScreenTest {
         )
         composeRule.setContent { ThesaurusTheme { ReportsScreen(state, {}, {}, {}, {}, {}, {}, {}, { opened = it }, {}) } }
         composeRule.onNodeWithContentDescription("Wykres pierścieniowy kategorii: Jedzenie: 12,50 zł (100%)").assertIsDisplayed()
-        composeRule.onNodeWithTag("reports-category-legend").assertTextContains("Jedzenie", substring = true)
+        composeRule.onNodeWithTag("reports-category-name-food", useUnmergedTree = true).assertTextContains("Jedzenie", substring = true)
+        composeRule.onNodeWithTag("reports-category-row-food")
+            .assertContentDescriptionEquals("Segment wykresu kategorii: Jedzenie: 12,50 zł (100%)")
+        composeRule.onNodeWithTag("reports-category-amount-food", useUnmergedTree = true).assertTextEquals("12,50 zł")
+        composeRule.onNodeWithTag("reports-category-percentage-food", useUnmergedTree = true).assertTextEquals("100%")
         composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
         composeRule.onNodeWithTag("reports-trend-summary").assertDoesNotExist()
         composeRule.onAllNodesWithText("Trend dzienny").assertCountEquals(0)
@@ -218,12 +230,52 @@ class ReportsScreenTest {
         }
 
         val legend = composeRule.onNodeWithTag("reports-category-legend").performScrollTo()
-        categoryNames.forEach { legend.assertTextContains(it, substring = true) }
+        categoryNames.forEachIndexed { index, name ->
+            val text = composeRule.onNodeWithTag("reports-category-name-category-$index", useUnmergedTree = true)
+            text.revealInReport().assertTextEquals(name).assertIsDisplayed()
+            text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                val results = mutableListOf<TextLayoutResult>()
+                assertTrue(action(results))
+                assertEquals("Every long category remains a single horizontal line", 1, results.single().lineCount)
+                assertTrue("Horizontal scrolling must preserve the full category", !results.single().didOverflowWidth)
+                assertTrue("Long names must not be ellipsized", !results.single().isLineEllipsized(0))
+            }
+        }
         val chartBounds = chart.getUnclippedBoundsInRoot()
         val legendBounds = legend.getUnclippedBoundsInRoot()
         assertTrue("Legenda zachodzi na wykres", legendBounds.top > chartBounds.bottom)
         assertTrue("Legenda wychodzi poza szerokość wykresu", legendBounds.left >= chartBounds.left && legendBounds.right <= chartBounds.right)
-        assertTrue("Długie nazwy kategorii powinny zawijać się w legendzie", legendBounds.bottom - legendBounds.top > 40.dp)
+        val viewport = composeRule.onNodeWithTag("reports-category-legend-table", useUnmergedTree = true)
+        val content = composeRule.onNodeWithTag("reports-category-legend-content", useUnmergedTree = true)
+        val contentBounds = content.getUnclippedBoundsInRoot()
+        val viewportBounds = viewport.getUnclippedBoundsInRoot()
+        assertTrue("Długie nazwy powinny być dostępne po przewinięciu w poziomie", contentBounds.right - contentBounds.left > viewportBounds.right - viewportBounds.left)
+        assertTrue(viewport.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].maxValue() > 0f)
+    }
+
+    private fun SemanticsNodeInteraction.revealInReport(): SemanticsNodeInteraction {
+        // The nearest scroll ancestor is the horizontal legend. Reveal the row in the
+        // outer report first, then bring its text into the shared horizontal viewport.
+        val report = composeRule.onNode(SemanticsMatcher("vertical report scroller") {
+            it.config.contains(SemanticsProperties.VerticalScrollAxisRange)
+        }, useUnmergedTree = true)
+        val verticalDelta = fetchSemanticsNode().positionInRoot.y - report.fetchSemanticsNode().positionInRoot.y
+        report.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, verticalDelta) }
+        composeRule.waitForIdle()
+        val viewport = composeRule.onNodeWithTag("reports-category-legend-table", useUnmergedTree = true)
+        val viewportNode = viewport.fetchSemanticsNode()
+        val target = fetchSemanticsNode()
+        val leftDelta = target.positionInRoot.x - viewportNode.positionInRoot.x
+        val rightDelta = leftDelta + target.size.width - viewportNode.size.width
+        val horizontalDelta = when {
+            target.size.width >= viewportNode.size.width -> leftDelta
+            leftDelta < 0f -> leftDelta
+            rightDelta > 0f -> rightDelta
+            else -> 0f
+        }
+        viewport.performSemanticsAction(SemanticsActions.ScrollBy) { it(horizontalDelta, 0f) }
+        composeRule.waitForIdle()
+        return this
     }
 
     private fun testEntry(id: String, amount: Long, categoryId: String = "food") = pl.bargor.thesaurus.data.model.LedgerEntry(

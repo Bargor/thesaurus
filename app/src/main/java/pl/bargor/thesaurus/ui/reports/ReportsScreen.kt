@@ -3,11 +3,16 @@ package pl.bargor.thesaurus.ui.reports
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +27,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -29,6 +35,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -38,17 +45,22 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.math.MathContext
 import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.max
+import kotlin.math.ceil
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.ReportCategoryValue
 import pl.bargor.thesaurus.data.model.ReportTrendValue
@@ -258,14 +270,33 @@ private data class NamedCategoryValue(
     val value: ReportCategoryValue,
 )
 
+private data class ChartCategoryValue(
+    val category: NamedCategoryValue,
+    val color: Color,
+    val share: Float,
+)
+
+/** Divide before converting to Float, including for amounts beyond the floating-point range. */
+internal fun reportCategoryShare(amount: BigInteger, total: BigInteger): Float =
+    if (total.signum() <= 0) 0f else BigDecimal(amount)
+        .divide(BigDecimal(total), MathContext.DECIMAL64).toFloat().coerceIn(0f, 1f)
+
 /** Canvas is paired with a visible Polish legend and a semantic description for screen readers. */
 @Composable
 private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
-    val total = categories.fold(BigInteger.ZERO) { sum, item -> sum + item.value.amountGrosze }
-    val legend = categories.joinToString("; ") { item ->
-        val percent = item.value.amountGrosze.toDouble() * 100 / total.toDouble()
-        "${item.name}: ${item.value.amountGrosze.currency()} (${String.format(reportsLocale, "%.0f", percent)}%)"
+    val presentation = remember(categories) {
+        val total = categories.fold(BigInteger.ZERO) { sum, item -> sum + item.value.amountGrosze }
+        val colors = ReportChartPalette.assign(categories.associate { it.value.categoryId to it.colorToken })
+        categories.map { item ->
+            ChartCategoryValue(
+                item,
+                Color(0xFF000000L or colors.getValue(item.value.categoryId)),
+                reportCategoryShare(item.value.amountGrosze, total),
+            )
+        }
     }
+    fun ChartCategoryValue.label() = "${category.name}: ${category.value.amountGrosze.currency()} (${String.format(reportsLocale, "%.0f", share * 100)}%)"
+    val legend = presentation.joinToString("; ") { it.label() }
     val description = stringResource(R.string.reports_category_chart_description, legend)
     Text(stringResource(R.string.reports_category_chart), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
     Canvas(
@@ -280,10 +311,10 @@ private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
         val arcDiameter = outerDiameter - strokeWidth
         val arcOffset = Offset((size.width - arcDiameter) / 2f, (size.height - arcDiameter) / 2f)
         var start = -90f
-        categories.forEach { item ->
-            val sweep = item.value.amountGrosze.toFloat() / total.toFloat() * 360f
+        presentation.forEach { item ->
+            val sweep = item.share * 360f
             drawArc(
-                categoryAccentColor(item.value.categoryId, item.colorToken),
+                item.color,
                 start,
                 sweep,
                 false,
@@ -294,7 +325,110 @@ private fun CategoryDonutChart(categories: List<NamedCategoryValue>) {
             start += sweep
         }
     }
-    Text(legend, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().testTag("reports-category-legend"))
+    Column(
+        Modifier.fillMaxWidth().testTag("reports-category-legend"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            stringResource(R.string.reports_category_legend_heading),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { heading() },
+        )
+        CategoryLegendTable(presentation)
+    }
+}
+
+/** One shared table aligns amounts beside percentages at the right edge. */
+@Composable
+private fun CategoryLegendTable(presentation: List<ChartCategoryValue>) {
+    val textStyle = LocalTextStyle.current.merge(MaterialTheme.typography.bodyMedium)
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val amounts = remember(presentation) { presentation.map { it.category.value.amountGrosze.currency() } }
+    val percentages = remember(presentation) { presentation.map { String.format(reportsLocale, "%.0f%%", it.share * 100) } }
+    val widths = remember(presentation, amounts, percentages, textStyle, textMeasurer, density) {
+        fun width(text: String): Int {
+            val result = textMeasurer.measure(
+                text = text, style = textStyle, softWrap = false, maxLines = 1,
+            )
+            // Text's fractional intrinsic width can exceed its integer measured size. Reserve
+            // a pixel on each side so rounding a shared column cannot clip the rendered text.
+            return ceil(maxOf(result.size.width.toFloat(), result.multiParagraph.maxIntrinsicWidth)).toInt() + 2
+        }
+        Triple(
+            presentation.maxOfOrNull { width(it.category.name) } ?: 0,
+            amounts.maxOfOrNull { width(it) } ?: 0,
+            percentages.maxOfOrNull { width(it) } ?: 0,
+        )
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // Measure rendered text, including font/display scaling. Shared numeric columns stay
+        // beside each other at the right edge, with the remaining space given to category names.
+        // Only overflow expands the entire table into one shared scroller.
+        val tableWidth = with(density) {
+            maxOf(
+                maxWidth.roundToPx(),
+                widths.first + 24.dp.roundToPx() + widths.second + widths.third + 2 * 12.dp.roundToPx(),
+            ).toDp()
+        }
+        val amountWidth = with(density) { widths.second.toDp() }
+        val nameWidth = with(density) { widths.first.toDp() }
+        val percentageWidth = with(density) { widths.third.toDp() }
+        val nameColumnWidth = tableWidth - amountWidth - 12.dp - percentageWidth
+        Column(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .testTag("reports-category-legend-table"),
+        ) {
+            Column(
+                Modifier.width(tableWidth).testTag("reports-category-legend-content"),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                presentation.forEachIndexed { index, item ->
+                    val id = item.category.value.categoryId
+                    val label = "${item.category.name}: ${amounts[index]} (${percentages[index]})"
+                    val rowDescription = stringResource(R.string.reports_category_segment_description, label)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                            .testTag("reports-category-row-$id")
+                            .semantics(mergeDescendants = true) { contentDescription = rowDescription },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            Modifier.width(nameColumnWidth),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                Modifier.size(16.dp).background(item.color)
+                                    .border(1.dp, MaterialTheme.colorScheme.onSurface)
+                                    .testTag("reports-category-swatch-$id"),
+                            )
+                            Text(
+                                item.category.name, style = textStyle, maxLines = 1, softWrap = false,
+                                modifier = Modifier.width(nameWidth).testTag("reports-category-name-$id"),
+                            )
+                        }
+                        Box(Modifier.width(amountWidth), contentAlignment = Alignment.CenterEnd) {
+                            Text(
+                                amounts[index], style = textStyle, maxLines = 1, softWrap = false,
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.width(amountWidth).testTag("reports-category-amount-$id"),
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Box(Modifier.width(percentageWidth), contentAlignment = Alignment.CenterEnd) {
+                            Text(
+                                percentages[index], style = textStyle, maxLines = 1, softWrap = false,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.width(percentageWidth).testTag("reports-category-percentage-$id"),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Shows the monthly buckets provided by [ReportsViewModel] for annual reports. */

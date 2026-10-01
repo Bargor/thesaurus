@@ -60,6 +60,8 @@
     <string name="reports_load_error">Nie udało się wczytać raportu. Spróbuj ponownie po odzyskaniu połączenia.</string>
     <string name="reports_sync_pending">Zmiany oczekują na synchronizację. Raport uwzględnia lokalne wpisy.</string>
     <string name="reports_category_chart">Kategorie</string>
+    <string name="reports_category_legend_heading">Kategorie na wykresie</string>
+    <string name="reports_category_segment_description">Segment wykresu kategorii: %1$s</string>
     <string name="reports_category_chart_description">Wykres pierścieniowy kategorii: %1$s</string>
     <string name="reports_trend_monthly">Trend miesięczny</string>
     <string name="reports_trend_chart_description">%1$s: %2$s</string>
