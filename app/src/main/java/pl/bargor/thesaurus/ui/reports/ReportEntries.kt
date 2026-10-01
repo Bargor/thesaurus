@@ -18,10 +18,12 @@ internal fun selectReportEntries(
     subcategoryId: String?,
     sort: ReportEntrySort,
     direction: ReportSortDirection,
+    memberIds: Set<String>? = null,
 ): List<LedgerEntry> {
     val selected = filterReportEntries(entries, period, type).filter {
         it.householdId == householdId && (categoryId == null || it.categoryId == categoryId) &&
-            (subcategoryId == null || (categoryId != null && it.subcategoryId == subcategoryId))
+            (subcategoryId == null || (categoryId != null && it.subcategoryId == subcategoryId)) &&
+            (memberIds == null || it.authorId in memberIds)
     }
     val ascending = when (sort) {
         ReportEntrySort.DATE -> compareBy<LedgerEntry> { it.date }
