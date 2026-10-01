@@ -62,10 +62,20 @@ class OfflineScreenCoverageTest {
         )
     }
 
-    @Test fun summaryKeepsPeriodPositionAndPendingAndErrors() = verifyScreen(
-        "summary-period", R.string.summary_sync_pending, R.string.summary_load_error,
-    ) { sync, error ->
-        SummaryScreen(SummaryUiState(YearMonth.of(2026, 9), Year.of(2026), isLoading = false, syncState = sync, hasError = error), {}, {}, {}, {})
+    @Test fun minimalSummaryKeepsPeriodPositionUnderGlobalOfflineIndicator() {
+        var online by mutableStateOf(true)
+        rule.setContent { ThesaurusTheme { OfflineStatusHost(online, "summary-period") {
+            SummaryScreen(SummaryUiState(YearMonth.of(2026, 9), Year.of(2026)), {}, {}, {})
+        } } }
+        val marker = rule.onNodeWithTag("summary-period").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        rule.runOnIdle { online = false }
+        val indicator = rule.onNodeWithTag("offline-indicator").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue(indicator.bottom <= marker.top)
+        assertEquals(marker, rule.onNodeWithTag("summary-period").fetchSemanticsNode().boundsInRoot)
+        listOf("summary-pending", "summary-error", "summary-net", "summary-empty").forEach { rule.onNodeWithTag(it).assertDoesNotExist() }
+        rule.runOnIdle { online = true }
+        rule.onNodeWithTag("offline-indicator").assertDoesNotExist()
+        assertEquals(marker, rule.onNodeWithTag("summary-period").fetchSemanticsNode().boundsInRoot)
     }
 
     @Test fun reportsKeepPeriodPositionAndPendingAndErrors() = verifyScreen(

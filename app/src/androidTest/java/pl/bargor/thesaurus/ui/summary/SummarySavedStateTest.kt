@@ -18,17 +18,9 @@ import java.time.Instant
 import java.time.Year
 import java.time.YearMonth
 import java.time.ZoneOffset
-import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
-import pl.bargor.thesaurus.data.firebase.LedgerRepository
-import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
-import pl.bargor.thesaurus.data.model.Category
-import pl.bargor.thesaurus.data.model.LedgerEntry
-import pl.bargor.thesaurus.data.model.Subcategory
-import pl.bargor.thesaurus.data.model.SyncObservation
-import pl.bargor.thesaurus.data.model.SyncState
 
 class SummarySavedStateTest {
     @Test fun configurationRecreationRetainsViewModelAndSelectedPeriod() {
@@ -38,8 +30,6 @@ class SummarySavedStateTest {
             vm.nextMonth()
             vm.selectPeriodMode(SummaryPeriodMode.YEAR)
             vm.previousYear()
-            vm.selectTag("dom")
-            vm.selectSort(SummaryEntrySort.AMOUNT)
             val saved = Bundle().also(original.controller::performSave)
             // Configuration recreation retains the store while replacing the lifecycle owner.
             original.registry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -50,8 +40,6 @@ class SummarySavedStateTest {
             assertEquals(Year.of(2025), retainedVm.state.value.year)
             retainedVm.selectPeriodMode(SummaryPeriodMode.MONTH)
             assertEquals(YearMonth.of(2025, 10), retainedVm.state.value.month)
-            assertEquals("dom", retainedVm.state.value.selectedTag)
-            assertEquals(SummaryEntrySort.AMOUNT, retainedVm.state.value.sort)
             recreated.viewModelStore.clear()
             recreated.registry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         }
@@ -103,7 +91,6 @@ class SummarySavedStateTest {
             val factory = object : AbstractSavedStateViewModelFactory(this, null) {
                 override fun <T : ViewModel> create(key: String, modelClass: Class<T>, handle: SavedStateHandle): T =
                     SummaryViewModel(
-                        EmptyLedger, EmptyTaxonomy,
                         Clock.fixed(Instant.parse("2026-09-15T12:00:00Z"), ZoneOffset.UTC), handle,
                     ) as T
             }
@@ -111,15 +98,4 @@ class SummarySavedStateTest {
         }
     }
 
-    private object EmptyLedger : LedgerRepository {
-        override fun observeEntries(householdId: String, includeDeleted: Boolean) = flowOf(SyncObservation<List<LedgerEntry>>(emptyList(), SyncState.SYNCED))
-        override suspend fun save(entry: LedgerEntry) = Unit
-        override suspend fun tombstone(householdId: String, entryId: String, actorId: String) = Unit
-    }
-    private object EmptyTaxonomy : TaxonomyRepository {
-        override fun observeCategories(householdId: String) = flowOf(SyncObservation<List<Category>>(emptyList(), SyncState.SYNCED))
-        override fun observeSubcategories(householdId: String, categoryId: String) = flowOf(SyncObservation<List<Subcategory>>(emptyList(), SyncState.SYNCED))
-        override suspend fun save(category: Category) = Unit
-        override suspend fun save(subcategory: Subcategory) = Unit
-    }
 }

@@ -1,5 +1,6 @@
 package pl.bargor.thesaurus.ui.reports
 
+import androidx.lifecycle.SavedStateHandle
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -40,7 +41,7 @@ class ReportsViewModelTest {
     @Test fun customRangeRejectsReversedDatesCapsFutureAndExpenseTrendUsesMagnitude() = runTest {
         val ledger = FakeLedger(listOf(entry("expense", -500, LocalDate.of(2026, 2, 15))))
         val taxonomy = FakeTaxonomy()
-        val vm = ReportsViewModel(ledger, taxonomy, clock)
+        val vm = ReportsViewModel(ledger, taxonomy, clock, SavedStateHandle())
         vm.start("home")
         advanceUntilIdle()
         vm.selectPeriodMode(ReportPeriodMode.CUSTOM)
@@ -61,7 +62,7 @@ class ReportsViewModelTest {
 
     @Test fun nextPeriodDoesNotPassCurrentMonthOrYearAndOfflineDataStaysVisible() = runTest {
         val ledger = FakeLedger(listOf(entry("current", 400, LocalDate.of(2026, 2, 1))), SyncState.OFFLINE)
-        val vm = ReportsViewModel(ledger, FakeTaxonomy(), clock)
+        val vm = ReportsViewModel(ledger, FakeTaxonomy(), clock, SavedStateHandle())
         vm.start("home")
         advanceUntilIdle()
         vm.nextPeriod()

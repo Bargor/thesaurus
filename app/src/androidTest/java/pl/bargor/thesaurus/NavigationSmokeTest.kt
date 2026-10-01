@@ -189,8 +189,8 @@ class NavigationSmokeTest {
                     },
                     summaryContent = {
                         SummaryScreen(
-                            state = SummaryUiState(month = YearMonth.of(2026, 9), year = Year.of(2026), isLoading = false),
-                            onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {}, onRetry = {},
+                            state = SummaryUiState(month = YearMonth.of(2026, 9), year = Year.of(2026)),
+                            onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {},
                         )
                     },
                     reportsContent = {
@@ -213,7 +213,8 @@ class NavigationSmokeTest {
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).assertIsNotSelected()
         composeTestRule.onAllNodesWithText("Wpisy", useUnmergedTree = true).assertCountEquals(1)
         composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).performClick()
-        composeTestRule.onNodeWithText("Brak wpisów w wybranym miesiącu.").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("summary-period").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Brak wpisów w wybranym miesiącu.").assertDoesNotExist()
         composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).assertIsSelected()
         composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsNotSelected()
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).assertIsNotSelected()
@@ -247,28 +248,6 @@ class NavigationSmokeTest {
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).performClick()
         composeTestRule.onNodeWithTag("open-report-entry").performClick()
         composeTestRule.onNodeWithText("Wybrany wpis: entry-42").assertIsDisplayed()
-    }
-
-    @Test
-    fun summaryEntryDrillDownNavigatesToTheSelectedEntry() {
-        composeTestRule.setContent {
-            ThesaurusTheme {
-                HouseholdApp(
-                    entriesContent = { _, _, _, _ -> Text(stringResource(R.string.empty_entries)) },
-                    summaryContent = { onOpenEntry ->
-                        Button(
-                            modifier = Modifier.testTag("open-summary-entry"),
-                            onClick = { onOpenEntry("summary-42") },
-                        ) { Text("Otwórz wpis") }
-                    },
-                    reportsContent = { Text(stringResource(R.string.empty_reports)) },
-                    entryFormContent = { entryId, _ -> Text("Wybrany wpis: $entryId") },
-                )
-            }
-        }
-        composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).performClick()
-        composeTestRule.onNodeWithTag("open-summary-entry").performClick()
-        composeTestRule.onNodeWithText("Wybrany wpis: summary-42").assertIsDisplayed()
     }
 
     @Test
