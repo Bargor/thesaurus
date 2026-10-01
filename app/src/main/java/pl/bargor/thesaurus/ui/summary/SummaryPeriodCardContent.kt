@@ -10,7 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,8 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -42,6 +49,26 @@ import pl.bargor.thesaurus.R
 
 private val summaryLocale = Locale.forLanguageTag("pl-PL")
 private val summaryMonthFormatter = DateTimeFormatter.ofPattern("LLLL uuuu", summaryLocale)
+private val summaryBalanceIcon = ImageVector.Builder(
+    name = "SummaryBalance", defaultWidth = 24.dp, defaultHeight = 24.dp,
+    viewportWidth = 24f, viewportHeight = 24f,
+).apply {
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(5f, 3f)
+        lineTo(19f, 3f)
+        lineTo(19f, 5f)
+        lineTo(8.5f, 5f)
+        lineTo(15.5f, 12f)
+        lineTo(8.5f, 19f)
+        lineTo(19f, 19f)
+        lineTo(19f, 21f)
+        lineTo(5f, 21f)
+        lineTo(5f, 19f)
+        lineTo(12f, 12f)
+        lineTo(5f, 5f)
+        close()
+    }
+}.build()
 
 internal fun summaryPeriodLabel(card: SummaryPeriodCard): String =
     if (card.key.mode == SummaryPeriodMode.MONTH) card.period.from.format(summaryMonthFormatter)
@@ -103,9 +130,11 @@ private fun SummaryAmounts(card: SummaryPeriodCard, income: String, expense: Str
     val green = if (dark) Color(0xFF8FDBA1) else Color(0xFF146C2E)
     val red = if (dark) Color(0xFFFFB4AB) else Color(0xFFB3261E)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SummaryAmount(stringResource(R.string.summary_income), income, green, "summary-income-${card.tagKey}")
-        SummaryAmount(stringResource(R.string.summary_expense), expense, red, "summary-expense-${card.tagKey}")
-        SummaryAmount(stringResource(R.string.summary_net), balance, when {
+        SummaryAmount(Icons.Default.ArrowUpward, stringResource(R.string.summary_income), income, green,
+            "summary-income-${card.tagKey}")
+        SummaryAmount(Icons.Default.ArrowDownward, stringResource(R.string.summary_expense), expense, red,
+            "summary-expense-${card.tagKey}")
+        SummaryAmount(summaryBalanceIcon, stringResource(R.string.summary_net), balance, when {
             card.totals.netGrosze.signum() > 0 -> green
             card.totals.netGrosze.signum() < 0 -> red
             else -> MaterialTheme.colorScheme.onSurface
@@ -114,11 +143,19 @@ private fun SummaryAmounts(card: SummaryPeriodCard, income: String, expense: Str
 }
 
 @Composable
-private fun SummaryAmount(label: String, value: String, color: Color, tag: String) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelMedium)
+private fun SummaryAmount(symbol: ImageVector, label: String, value: String, color: Color, tag: String) {
+    val description = stringResource(R.string.summary_metric_description, label, value)
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag("$tag-row").semantics(mergeDescendants = true) {
+            contentDescription = description
+        },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(symbol, contentDescription = null, tint = color,
+            modifier = Modifier.size(20.dp).testTag("$tag-symbol"))
         Text(value, color = color, fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag(tag))
+            style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).testTag(tag))
     }
 }
 

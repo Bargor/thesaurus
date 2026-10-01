@@ -21,6 +21,30 @@ import pl.bargor.thesaurus.ui.entries.EntryListItem
 
 class SummaryScreenTest {
     @get:Rule val compose = createComposeRule()
+    @Test fun compactMetricRowsAlignSymbolsWithExactAmountsAndKeepPolishAccessibilityInOverviewAndDetail() {
+        val card = fixture().cards.last()
+        var state by mutableStateOf(fixture().copy(cards = listOf(card)))
+        compose.setContent { ThesaurusTheme { SummaryScreen(state, {}, {}, {}, onOpenPeriod = {
+            state = state.copy(detailCard = card)
+        }) } }
+        assertCompactMetricRows("month-2026-9")
+        val description = compose.onNodeWithTag("summary-card-month-2026-9")
+            .fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString()
+        listOf("Przychody: ${summaryCurrency(400.toBigInteger())}",
+            "Wydatki: ${summaryCurrency((-100).toBigInteger())}",
+            "Bilans: ${summaryCurrency(300.toBigInteger())}").forEach { meaning ->
+            assertTrue("Overview must announce $meaning", description.contains(meaning))
+        }
+        assertNoStandaloneMetricCaptions()
+        compose.onNodeWithText("Przychody: 80,0%", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Wydatki: 20,0%", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("summary-card-month-2026-9").performClick()
+        compose.onNodeWithTag("summary-detail-period").assertIsDisplayed()
+        assertCompactMetricRows("month-2026-9")
+        assertNoStandaloneMetricCaptions()
+        compose.onNodeWithText("Przychody: 80,0%", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Wydatki: 20,0%", useUnmergedTree = true).assertIsDisplayed()
+    }
     @Test fun overviewCardsHaveExactSignedTotalsChartDescriptionsAndFutureMonthsAreAbsent() {
         compose.setContent { ThesaurusTheme { SummaryScreen(fixture(), {}, {}, {}) } }
         compose.onNodeWithTag("summary-period").assertTextContains("2026")
@@ -193,10 +217,39 @@ class SummaryScreenTest {
                     for (line in 0 until r.lineCount) assertTrue(r.getLineRight(line) <= r.size.width + 1f)
                 }
             }
+            val symbol = compose.onNodeWithTag("$tag-symbol", true).getUnclippedBoundsInRoot()
+            val value = compose.onNodeWithTag(tag, true).getUnclippedBoundsInRoot()
+            assertTrue("$kind symbol must remain beside the complete amount", symbol.right <= value.left)
         }
         val amount = compose.onNodeWithTag("summary-balance-month-2026-9", true).getUnclippedBoundsInRoot()
         val chart = compose.onNodeWithTag("summary-chart-month-2026-9", true).getUnclippedBoundsInRoot()
         assertTrue(amount.bottom <= chart.top)
+    }
+    private fun assertCompactMetricRows(periodTag: String) {
+        var symbolLeft: Float? = null
+        var amountLeft: Float? = null
+        for ((kind, label, amount) in listOf(
+            Triple("income", "Przychody", 400), Triple("expense", "Wydatki", -100),
+            Triple("balance", "Bilans", 300),
+        )) {
+            val tag = "summary-$kind-$periodTag"
+            val value = summaryCurrency(amount.toBigInteger())
+            compose.onNodeWithTag("$tag-row", true).assertContentDescriptionEquals("$label: $value")
+            val symbol = compose.onNodeWithTag("$tag-symbol", true).assertIsDisplayed().fetchSemanticsNode()
+            val amountNode = compose.onNodeWithTag(tag, true).assertIsDisplayed().assertTextEquals(value).fetchSemanticsNode()
+            assertNull("Decorative symbol must not replace its localized meaning", symbol.config.getOrNull(SemanticsProperties.ContentDescription))
+            assertTrue("$kind symbol must precede amount on the same row", symbol.boundsInRoot.right <= amountNode.boundsInRoot.left)
+            assertEquals("$kind symbol and amount must be vertically aligned", symbol.boundsInRoot.center.y, amountNode.boundsInRoot.center.y, 1f)
+            symbolLeft?.let { assertEquals("Symbols must share a column", it, symbol.boundsInRoot.left, 1f) }
+            amountLeft?.let { assertEquals("Amounts must share a column", it, amountNode.boundsInRoot.left, 1f) }
+            symbolLeft = symbol.boundsInRoot.left
+            amountLeft = amountNode.boundsInRoot.left
+        }
+    }
+    private fun assertNoStandaloneMetricCaptions() {
+        listOf("Przychody", "Wydatki", "Bilans").forEach {
+            compose.onAllNodesWithText(it, useUnmergedTree = true).assertCountEquals(0)
+        }
     }
     private fun fixture(): SummaryUiState = SummaryUiState(YearMonth.of(2026, 9), Year.of(2026), cards = prepareSummaryOverview(listOf(entry("expense", -100), entry("income", 400)), "home", Year.of(2026), SummaryPeriodMode.MONTH, LocalDate.of(2026, 9, 15)), isLoading = false)
     private fun entry(id: String, amount: Long) = LedgerEntry(id, "home", amount, LocalDate.of(2026, 9, 12), categoryId = "food", authorId = "actor", updatedById = "actor")

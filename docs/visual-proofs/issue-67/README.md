@@ -9,7 +9,22 @@ production Firebase data was accessed. The existing entries were preserved.
 
 ![Previous minimal Summary screen](before-summary.png)
 
-## After
+## Review update — compact metric symbols
+
+Income, expense and balance captions have been replaced with aligned `↑`, `↓`
+and `∑` symbols beside the exact amounts. Polish metric names remain available
+to screen readers, including the non-clickable detail header. Chart legends
+retain their labels so their colours are not the only way to identify them.
+
+![Compact monthly card](compact-month.png)
+
+![Compact yearly card](compact-year.png)
+
+![Compact detail header](compact-detail.png)
+
+![Compact card at 180% text size](compact-large-text.png)
+
+## Original implementation
 
 ![Monthly overview including empty months](after-months.png)
 
