@@ -62,7 +62,7 @@ class OfflineScreenCoverageTest {
         )
     }
 
-    @Test fun minimalSummaryKeepsPeriodPositionUnderGlobalOfflineIndicator() {
+    @Test fun summaryKeepsPeriodPositionUnderGlobalOfflineIndicator() {
         var online by mutableStateOf(true)
         rule.setContent { ThesaurusTheme { OfflineStatusHost(online, "summary-period") {
             SummaryScreen(SummaryUiState(YearMonth.of(2026, 9), Year.of(2026)), {}, {}, {})

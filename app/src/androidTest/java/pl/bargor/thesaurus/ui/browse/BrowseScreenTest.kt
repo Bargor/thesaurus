@@ -29,8 +29,7 @@ import pl.bargor.thesaurus.ThesaurusTheme
 import pl.bargor.thesaurus.data.model.*
 import pl.bargor.thesaurus.ui.entries.EntryListItem
 import pl.bargor.thesaurus.ui.summary.SummaryPeriodMode
-import pl.bargor.thesaurus.ui.summary.SummaryScreen
-import pl.bargor.thesaurus.ui.summary.SummaryUiState
+import pl.bargor.thesaurus.ui.summary.SummaryPeriodHeader
 
 class BrowseScreenTest {
     @get:Rule val compose = createComposeRule()
@@ -156,7 +155,7 @@ class BrowseScreenTest {
         compose.onNodeWithTag("browse-category-food").assertIsDisplayed()
     }
 
-    @Test fun browseAndSummarySharePeriodTextStateAndToggleAction() {
+    @Test fun browseRetainsSharedCalendarPeriodHeaderTextStateAndToggleAction() {
         var showBrowse by mutableStateOf(true)
         var mode by mutableStateOf(SummaryPeriodMode.MONTH)
         var month by mutableStateOf(YearMonth.of(2026, 9))
@@ -172,7 +171,7 @@ class BrowseScreenTest {
         }
         compose.setContent { ThesaurusTheme {
             if (showBrowse) BrowseScreen(fixture().copy(mode = mode, month = month, year = year), { mode = it }, { move(-1) }, { move(1) }, {}, {}, {})
-            else SummaryScreen(SummaryUiState(month, year, mode = mode), { mode = it }, { move(-1) }, { move(1) })
+            else SummaryPeriodHeader(month, year, mode, { mode = it }, { move(-1) }, { move(1) })
         } }
         val browse = compose.onNodeWithTag("browse-period")
         browse.assertTextContains("Wrzesień 2026")

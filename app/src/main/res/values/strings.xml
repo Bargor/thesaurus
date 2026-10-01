@@ -34,6 +34,17 @@
     <string name="summary_income">Przychody</string>
     <string name="summary_expense">Wydatki</string>
     <string name="summary_net">Bilans</string>
+    <string name="summary_all_years">Wszystkie lata</string>
+    <string name="summary_top_expense">Największe wydatki: %1$s</string>
+    <string name="summary_no_expenses">Brak wydatków</string>
+    <string name="summary_no_entries">Brak wpisów</string>
+    <string name="summary_open_period">Pokaż wpisy okresu</string>
+    <string name="summary_back_overview">Wróć do podsumowania</string>
+    <string name="summary_card_description">%1$s. Przychody: %2$s. Wydatki: %3$s. Bilans: %4$s. %5$s.</string>
+    <string name="summary_chart_description">Udział przychodów i wydatków. Przychody: %1$s. Wydatki: %2$s.</string>
+    <string name="summary_chart_income">Przychody: %1$s%%</string>
+    <string name="summary_chart_expense">Wydatki: %1$s%%</string>
+    <string name="summary_load_error">Nie udało się wczytać podsumowania. Spróbuj ponownie po odzyskaniu połączenia.</string>
     <string name="summary_sync_pending">Zmiany oczekują na synchronizację. Kwoty uwzględniają lokalne wpisy.</string>
     <string name="empty_reports">Brak wpisów w wybranym okresie.</string>
     <string name="reports_mode_month">Miesiąc</string>
