@@ -83,11 +83,17 @@ weakened to accommodate the redraw timeout.
 The first GitHub run passed 98/99 instrumentation cases, including all Browse
 tests. Its sole failure was the navigation baseline fixture requesting 411 dp
 inside a narrower CI viewport and unexpectedly wrapping to 80 dp. The fixture
-now scales only its local density to fit that logical width; strict 64 dp and
-16 dp height-reduction assertions are retained. The separate 320 dp wrapping
+now scales only its local density to fit that logical width. The first scale
+fix used 320/411 on CI, causing accumulated pixel rounding (65.50312 dp rather
+than 64 dp). It now selects binary density steps so the baseline measurements
+are exact integer pixels: assertions require 64 dp, 80 dp and their 16 dp
+difference with zero pixel tolerance. A dedicated 320-physical-pixel fixture
+requires density 0.5 and exact 32/40 px bar heights. The separate 320 dp wrapping
 test and accessibility/clip checks remain unchanged. Navigation tests also
 assert the requested rendered left-to-right order.
 
 After the review update, local verification passed all 115 JVM tests,
 six BottomNavigation tests, and 12 NavigationSmoke tests. Debug lint and
 DEV APK assembly passed; the updated APK is installed on the visible emulator.
+After the CI rounding fix, the seven-test BottomNavigation class passed 7/7,
+including the dedicated small-physical-viewport regression; debug lint passed.

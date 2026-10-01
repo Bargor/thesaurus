@@ -49,13 +49,32 @@ class BottomNavigationTest {
 
     @Test
     fun normalBarIs16DpShorterThanThePreviousMaterialBar() {
+        assertCompactBaseline()
+    }
+
+    @Test
+    fun compactBaselineFits320PhysicalPixelsAtHalfDensityWithoutRoundingDrift() {
+        val density = assertCompactBaseline(viewportWidthPx = 320)
+        assertEquals(0.5f, density, 0f)
+        assertEquals(320f, bounds("baseline-viewport").width, 0f)
+        assertEquals(32f, bounds("bottom-navigation").height, 0f)
+        assertEquals(40f, bounds("previous-navigation").height, 0f)
+    }
+
+    private fun assertCompactBaseline(viewportWidthPx: Int? = null): Float {
         var density = 1f
         compose.setContent {
-            BoxWithConstraints {
-                val deviceDensity = LocalDensity.current.density
-                // A requested width alone is clamped by a narrow CI viewport. Scale only this
-                // baseline fixture so its full 411 dp fits the available physical pixels.
-                val fixtureDensity = minOf(deviceDensity, constraints.maxWidth / 411f)
+            val deviceDensity = LocalDensity.current.density
+            val viewportModifier = if (viewportWidthPx == null) Modifier else
+                Modifier.width((viewportWidthPx / deviceDensity).dp)
+            BoxWithConstraints(viewportModifier.testTag("baseline-viewport")) {
+                // Keep the logical 411 dp fixture within the actual viewport. Binary density
+                // steps make 64/80 dp heights and 16 dp label lines exact integer pixels;
+                // an arbitrary scale such as 320/411 accumulates component rounding errors.
+                val maximumDensity = minOf(deviceDensity, constraints.maxWidth / 411f)
+                var fixtureDensity = 1f
+                while (fixtureDensity > maximumDensity) fixtureDensity /= 2f
+                while (fixtureDensity * 2f <= maximumDensity) fixtureDensity *= 2f
                 CompositionLocalProvider(LocalDensity provides Density(fixtureDensity, fontScale = 1f)) {
                     density = fixtureDensity
                     ThesaurusTheme {
@@ -77,9 +96,11 @@ class BottomNavigationTest {
         }
         val compact = bounds("bottom-navigation")
         val previous = bounds("previous-navigation")
-        assertEquals(64f, compact.height / density, 1f)
-        assertEquals(16f, (previous.height - compact.height) / density, 1f)
+        assertEquals(64f * density, compact.height, 0f)
+        assertEquals(80f * density, previous.height, 0f)
+        assertEquals(16f * density, previous.height - compact.height, 0f)
         assertContentFits(density)
+        return density
     }
 
     @Test
