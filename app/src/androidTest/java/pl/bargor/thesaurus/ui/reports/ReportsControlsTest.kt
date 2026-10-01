@@ -53,16 +53,16 @@ class ReportsControlsTest {
                 onSelectSort = model::selectSort, onToggleSortDirection = model::toggleSortDirection, onClearControls = model::clearControls)
         } }
         compose.onNodeWithTag("reports-filter-subcategory").assertIsNotEnabled()
-        compose.onNodeWithTag("reports-net").performScrollTo().assertTextContains("-15,00", substring = true)
+        compose.onNodeWithTag("reports-net", useUnmergedTree = true).performScrollTo().assertTextContains("-15,00", substring = true)
         choose("reports-filter-category", "food")
         compose.onNodeWithTag("reports-filter-subcategory").assertIsEnabled()
-        compose.onNodeWithTag("reports-net").performScrollTo().assertTextContains("-12,00", substring = true)
+        compose.onNodeWithTag("reports-net", useUnmergedTree = true).performScrollTo().assertTextContains("-12,00", substring = true)
         compose.onNodeWithTag("report-entry-car").assertDoesNotExist()
         compose.onNodeWithTag("reports-category-row-car", useUnmergedTree = true).assertDoesNotExist()
         choose("reports-filter-subcategory", "shop")
-        compose.onNodeWithTag("reports-income").performScrollTo().assertTextContains("2,00", substring = true)
-        compose.onNodeWithTag("reports-expense").assertTextContains("10,00", substring = true)
-        compose.onNodeWithTag("reports-net").assertTextContains("-8,00", substring = true)
+        compose.onNodeWithTag("reports-income", useUnmergedTree = true).performScrollTo().assertTextContains("2,00", substring = true)
+        compose.onNodeWithTag("reports-expense", useUnmergedTree = true).assertTextContains("10,00", substring = true)
+        compose.onNodeWithTag("reports-net", useUnmergedTree = true).assertTextContains("-8,00", substring = true)
         compose.onNodeWithTag("reports-category-amount-food", useUnmergedTree = true).assertTextEquals("12,00 zł")
         compose.onNodeWithTag("reports-category-chart").performScrollTo().assertContentDescriptionEquals("Wykres pierścieniowy kategorii: Jedzenie: 12,00 zł (100%)")
         compose.onNodeWithTag("report-entry-cafe").assertDoesNotExist()
@@ -74,13 +74,13 @@ class ReportsControlsTest {
         compose.onNodeWithTag("reports-clear-controls").performScrollTo().performClick()
         compose.onNodeWithTag("reports-filter-category").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Wszystkie kategorie"))
         compose.onNodeWithTag("reports-filter-subcategory").assertIsNotEnabled()
-        compose.onNodeWithTag("reports-net").performScrollTo().assertTextContains("-15,00", substring = true)
+        compose.onNodeWithTag("reports-net", useUnmergedTree = true).performScrollTo().assertTextContains("-15,00", substring = true)
         compose.onNodeWithTag("report-entry-car").performScrollTo().assertIsDisplayed()
         choose("reports-sort", "AMOUNT")
         assertEquals(listOf("shop-income", "car", "cafe", "shop-expense"), vm.state.value.entries.map { it.entry.id })
         compose.onNodeWithTag("reports-sort-direction").performScrollTo().performClick()
         assertEquals(listOf("shop-expense", "cafe", "car", "shop-income"), vm.state.value.entries.map { it.entry.id })
-        compose.onNodeWithTag("reports-net").performScrollTo().assertTextContains("-15,00", substring = true)
+        compose.onNodeWithTag("reports-net", useUnmergedTree = true).performScrollTo().assertTextContains("-15,00", substring = true)
     }
 
     @Test fun compactControlsOfferOnlyDateAndAmountAndDispatchDirectionAndClearIcons() {
@@ -125,7 +125,7 @@ class ReportsControlsTest {
                 onSelectCategory = model::selectCategory, onSelectSubcategory = model::selectSubcategory,
                 onSelectSort = model::selectSort, onToggleSortDirection = model::toggleSortDirection, onClearControls = model::clearControls)
         } }
-        compose.onNodeWithTag("reports-net").performScrollTo().assertTextContains("-15,00", substring = true)
+        compose.onNodeWithTag("reports-net", useUnmergedTree = true).performScrollTo().assertTextContains("-15,00", substring = true)
         choose("reports-filter-category", "food")
         choose("reports-filter-subcategory", "empty-shop")
         assertEmptyScope("Jedzenie", "Pusty sklep")
@@ -137,7 +137,7 @@ class ReportsControlsTest {
         compose.onNodeWithTag("reports-filter-category").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Wszystkie kategorie"))
         compose.onNodeWithTag("reports-filter-subcategory").assertIsNotEnabled()
         compose.onNodeWithTag("reports-empty").assertDoesNotExist()
-        compose.onNodeWithTag("reports-net").performScrollTo().assertTextContains("-15,00", substring = true)
+        compose.onNodeWithTag("reports-net", useUnmergedTree = true).performScrollTo().assertTextContains("-15,00", substring = true)
         compose.onNodeWithTag("reports-category-chart").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("report-entry-car").performScrollTo().assertIsDisplayed()
     }
@@ -146,7 +146,7 @@ class ReportsControlsTest {
         compose.onNodeWithTag("reports-filter-category").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, category))
         compose.onNodeWithTag("reports-filter-subcategory").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, subcategory))
         compose.onNodeWithTag("reports-empty").performScrollTo().assertIsDisplayed()
-        listOf("reports-income", "reports-expense", "reports-net").forEach { compose.onNodeWithTag(it).assertTextContains("0,00", substring = true) }
+        listOf("reports-income", "reports-expense", "reports-net").forEach { compose.onNodeWithTag(it, useUnmergedTree = true).assertTextContains("0,00", substring = true) }
         listOf("reports-category-chart", "reports-trend-chart", "report-entry-car", "report-entry-cafe", "report-entry-shop-income", "report-entry-shop-expense").forEach { compose.onNodeWithTag(it).assertDoesNotExist() }
         compose.onNodeWithTag("reports-category-row-food", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithTag("reports-category-row-car", useUnmergedTree = true).assertDoesNotExist()
