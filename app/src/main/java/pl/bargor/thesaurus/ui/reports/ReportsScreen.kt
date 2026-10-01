@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -34,8 +36,20 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -52,6 +66,8 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -85,6 +101,11 @@ fun ReportsScreen(
     onOpenEntry: (String) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    onSelectCategory: (String?) -> Unit = {},
+    onSelectSubcategory: (String?) -> Unit = {},
+    onSelectSort: (ReportEntrySort) -> Unit = {},
+    onToggleSortDirection: () -> Unit = {},
+    onClearControls: () -> Unit = {},
 ) {
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -97,6 +118,7 @@ fun ReportsScreen(
             PeriodNavigator(state, onPreviousPeriod, onNextPeriod)
         }
         TypeSelector(state.typeFilter, onSelectType)
+        ReportControls(state, onSelectCategory, onSelectSubcategory, onSelectSort, onToggleSortDirection, onClearControls)
         if (state.isLoading) {
             CircularProgressIndicator(Modifier.testTag("reports-loading"))
             return@Column
@@ -140,6 +162,98 @@ fun ReportsScreen(
         )
         state.entries.forEach { item ->
             ReportEntryCard(item, onOpenEntry)
+        }
+    }
+}
+
+@Composable
+private fun ReportControls(
+    state: ReportsUiState,
+    onCategory: (String?) -> Unit,
+    onSubcategory: (String?) -> Unit,
+    onSort: (ReportEntrySort) -> Unit,
+    onDirection: () -> Unit,
+    onClear: () -> Unit,
+) {
+    ReportChoice(
+        stringResource(R.string.reports_filter_category),
+        state.categories.firstOrNull { it.id == state.selectedCategoryId }?.name
+            ?: stringResource(R.string.reports_all_categories),
+        listOf(null to stringResource(R.string.reports_all_categories)) + state.categories.map { it.id to it.name },
+        "reports-filter-category", onSelect = onCategory,
+    )
+    ReportChoice(
+        stringResource(R.string.reports_filter_subcategory),
+        state.subcategories.firstOrNull { it.id == state.selectedSubcategoryId }?.name
+            ?: stringResource(R.string.reports_all_subcategories),
+        listOf(null to stringResource(R.string.reports_all_subcategories)) + state.subcategories.map { it.id to it.name },
+        "reports-filter-subcategory", enabled = state.selectedCategoryId != null, onSelect = onSubcategory,
+    )
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        ReportChoice(
+            stringResource(R.string.reports_sort), reportSortLabel(state.sort),
+            ReportEntrySort.entries.map { it.name to reportSortLabel(it) }, "reports-sort",
+            modifier = Modifier.weight(1f),
+            onSelect = { name -> name?.let { onSort(ReportEntrySort.valueOf(it)) } },
+        )
+        val directionDescription = stringResource(if (state.direction == ReportSortDirection.DESCENDING)
+            R.string.reports_sort_descending else R.string.reports_sort_ascending)
+        IconButton(onClick = onDirection, modifier = Modifier.size(48.dp).testTag("reports-sort-direction")
+            .semantics { contentDescription = directionDescription }) {
+            Icon(if (state.direction == ReportSortDirection.DESCENDING) Icons.Filled.ArrowDownward
+                else Icons.Filled.ArrowUpward, contentDescription = null)
+        }
+        val clearDescription = stringResource(R.string.reports_clear_controls)
+        IconButton(onClick = onClear, modifier = Modifier.size(48.dp).testTag("reports-clear-controls")
+            .semantics { contentDescription = clearDescription }) {
+            Icon(Icons.Filled.RestartAlt, contentDescription = null)
+        }
+    }
+}
+
+@Composable
+private fun reportSortLabel(sort: ReportEntrySort): String = stringResource(when (sort) {
+    ReportEntrySort.DATE -> R.string.reports_sort_date
+    ReportEntrySort.AMOUNT -> R.string.reports_sort_amount
+})
+
+@Composable
+private fun ReportChoice(
+    label: String,
+    selected: String,
+    options: List<Pair<String?, String>>,
+    tag: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onSelect: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        // Reserve a usable dropdown beside the label even when the adjacent icons and
+        // enlarged fonts leave the sort selector much less space than a category row.
+        val labelLimit = (maxWidth - 64.dp - 8.dp).coerceAtLeast(0.dp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.widthIn(max = labelLimit), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.weight(1f)) {
+                OutlinedButton(onClick = { expanded = true }, enabled = enabled,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(tag).semantics {
+                        contentDescription = label
+                        stateDescription = selected
+                    }) {
+                    Text(selected, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+                    options.forEach { (id, name) ->
+                        DropdownMenuItem(text = { Text(name) }, onClick = {
+                            expanded = false
+                            onSelect(id)
+                        }, modifier = Modifier.testTag("$tag-option-${id ?: "all"}"))
+                    }
+                }
+            }
         }
     }
 }
@@ -471,7 +585,7 @@ private fun TrendChart(values: List<ReportTrendValue>, type: ReportTypeFilter) {
 @Composable
 private fun ReportEntryCard(item: ReportEntryItem, onOpen: (String) -> Unit) {
     val entry = item.entry
-    val label = listOfNotNull(item.categoryName, entry.normalizedTitle, entry.amountGrosze.signedCurrency()).joinToString(", ")
+    val label = listOfNotNull(item.categoryName, item.subcategoryName, entry.normalizedTitle, entry.amountGrosze.signedCurrency()).joinToString(", ")
     val openDescription = stringResource(R.string.reports_open_entry, label)
     val accent = categoryAccentColor(entry.categoryId, item.categoryColor)
     val surface = MaterialTheme.colorScheme.surface
@@ -491,6 +605,7 @@ private fun ReportEntryCard(item: ReportEntryItem, onOpen: (String) -> Unit) {
             )
             Column(Modifier.padding(12.dp).weight(1f)) {
                 Text(item.categoryName, style = MaterialTheme.typography.labelLarge)
+                item.subcategoryName?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
                 entry.normalizedTitle?.let { Text(it) }
                 Text("${entry.date.format(reportsDateFormatter)} · ${entry.amountGrosze.signedCurrency()}")
             }

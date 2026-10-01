@@ -172,7 +172,7 @@ class BrowseScreenTest {
         }
         compose.setContent { ThesaurusTheme {
             if (showBrowse) BrowseScreen(fixture().copy(mode = mode, month = month, year = year), { mode = it }, { move(-1) }, { move(1) }, {}, {}, {})
-            else SummaryScreen(SummaryUiState(month, year, mode = mode, isLoading = false), { mode = it }, { move(-1) }, { move(1) }, {})
+            else SummaryScreen(SummaryUiState(month, year, mode = mode), { mode = it }, { move(-1) }, { move(1) })
         } }
         val browse = compose.onNodeWithTag("browse-period")
         browse.assertTextContains("Wrzesień 2026")

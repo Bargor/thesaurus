@@ -2,7 +2,7 @@
 
 Thesaurus is a Polish-language Android app for a shared household ledger. It keeps income and expenses in Firestore, works from Firestore's persistent local cache, and synchronizes queued changes once a connection returns. The visible app UI is intentionally Polish.
 
-The **Wpisy** tab is the ledger. Tap the period heading in **Podsumowanie** to switch between a month and its year; returning to the monthly view keeps the last selected month in the selected year, including after state restoration. **Raporty** supports month, year, or custom dates, signed type filters, category shares, trends, and an entry drill-down. Household owners can invite a person by email and manage membership.
+The **Wpisy** tab is the ledger. **Podsumowanie** intentionally contains only its period navigator. Tap the period heading to switch between a month and its year; returning to the monthly view keeps the last selected month in the selected year, including after state restoration. **Raporty** supports month, year, or custom dates, income/expense type filters, category and subcategory filters, category shares, trends, and an entry drill-down sorted by accounting date or signed amount in either direction. Report filters define one scope for the totals, charts, trends, and entry list. Household owners can invite a person by email and manage membership.
 
 The **Przegląd** tab uses the same month/year navigator as **Podsumowanie**. Category tiles use saved category colors and show signed net totals; expand a category, then a subcategory to inspect its dated entries. Entries without a subcategory and historical entries with missing taxonomy remain visible. Owners and entry authors can open editable entries. Cached data and pending local writes work offline.
 

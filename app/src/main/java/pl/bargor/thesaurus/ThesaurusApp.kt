@@ -168,8 +168,8 @@ internal fun HouseholdApp(
             onEditEntry = onEditEntry,
         )
     },
-    summaryContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
-        SummaryRoute(householdId, onOpenEntry)
+    summaryContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { _ ->
+        SummaryRoute()
     },
     reportsContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
         ReportsRoute(householdId, onOpenEntry)
@@ -348,11 +348,8 @@ private fun BrowseRoute(
 
 @Composable
 private fun SummaryRoute(
-    householdId: String,
-    onOpenEntry: (String) -> Unit,
     summaryViewModel: SummaryViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(householdId) { summaryViewModel.start(householdId) }
     val state by summaryViewModel.state.collectAsState()
     SummaryScreen(
         state = state,
@@ -365,14 +362,6 @@ private fun SummaryRoute(
             if (state.mode == SummaryPeriodMode.MONTH) summaryViewModel.nextMonth()
             else summaryViewModel.nextYear()
         },
-        onRetry = summaryViewModel::retry,
-        onSelectCategory = summaryViewModel::selectCategory,
-        onSelectSubcategory = summaryViewModel::selectSubcategory,
-        onSelectTag = summaryViewModel::selectTag,
-        onSelectSort = summaryViewModel::selectSort,
-        onToggleSortDirection = summaryViewModel::toggleSortDirection,
-        onClearControls = summaryViewModel::clearControls,
-        onOpenEntry = onOpenEntry,
     )
 }
 
@@ -395,6 +384,11 @@ private fun ReportsRoute(
         onApplyCustomPeriod = reportsViewModel::applyCustomPeriod,
         onOpenEntry = onOpenEntry,
         onRetry = reportsViewModel::retry,
+        onSelectCategory = reportsViewModel::selectCategory,
+        onSelectSubcategory = reportsViewModel::selectSubcategory,
+        onSelectSort = reportsViewModel::selectSort,
+        onToggleSortDirection = reportsViewModel::toggleSortDirection,
+        onClearControls = reportsViewModel::clearControls,
     )
 }
 

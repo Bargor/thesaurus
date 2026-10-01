@@ -1,6 +1,7 @@
 package pl.bargor.thesaurus.ui.reports
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Clock
@@ -9,10 +10,12 @@ import java.time.Year
 import java.time.YearMonth
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
@@ -22,9 +25,10 @@ import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.ReportAggregation
 import pl.bargor.thesaurus.data.model.ReportTypeFilter
 import pl.bargor.thesaurus.data.model.SummaryPeriod
+import pl.bargor.thesaurus.data.model.Subcategory
+import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.aggregateReportEntries
-import pl.bargor.thesaurus.data.model.filterReportEntries
 
 enum class ReportPeriodMode { MONTH, YEAR, CUSTOM }
 
@@ -32,6 +36,7 @@ data class ReportEntryItem(
     val entry: LedgerEntry,
     val categoryName: String,
     val categoryColor: String? = null,
+    val subcategoryName: String? = null,
 )
 
 data class ReportsUiState(
@@ -48,7 +53,14 @@ data class ReportsUiState(
     val isLoading: Boolean = true,
     val syncState: SyncState = SyncState.SYNCED,
     val hasError: Boolean = false,
+    val categories: List<Category> = emptyList(),
+    val subcategories: List<Subcategory> = emptyList(),
+    val selectedCategoryId: String? = null,
+    val selectedSubcategoryId: String? = null,
+    val sort: ReportEntrySort = ReportEntrySort.DATE,
+    val direction: ReportSortDirection = ReportSortDirection.DESCENDING,
 ) {
+    val hasActiveFilters: Boolean get() = selectedCategoryId != null || selectedSubcategoryId != null
     /** Current and future calendar periods never make the report claim dates after today. */
     fun period(): SummaryPeriod = when (mode) {
         ReportPeriodMode.MONTH -> boundedPeriod(month.atDay(1), month.atEndOfMonth(), today)
@@ -71,43 +83,139 @@ class ReportsViewModel @Inject constructor(
     private val ledgerRepository: LedgerRepository,
     private val taxonomyRepository: TaxonomyRepository,
     clock: Clock,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val today = LocalDate.now(clock)
     private val mutableState = MutableStateFlow(
-        ReportsUiState(today = today, month = YearMonth.from(today), year = Year.from(today)),
+        ReportsUiState(today = today, month = YearMonth.from(today), year = Year.from(today),
+            sort = ReportEntrySort.entries.firstOrNull { it.name == savedStateHandle.get<String>("reports.sort") }
+                ?: ReportEntrySort.DATE,
+            direction = ReportSortDirection.entries.firstOrNull { it.name == savedStateHandle.get<String>("reports.direction") }
+                ?: ReportSortDirection.DESCENDING),
     )
     val state: StateFlow<ReportsUiState> = mutableState.asStateFlow()
     private var householdId: String? = null
     private var observeJob: Job? = null
     private var latestEntries: List<LedgerEntry>? = null
+    private var latestEntriesSource: List<LedgerEntry>? = null
+    private var historicalCategoryIds: Set<String> = emptySet()
     private var latestCategories: List<Category> = emptyList()
+    private val latestSubcategories = mutableMapOf<String, List<Subcategory>>()
+    private val subcategoryJobs = mutableMapOf<String, Job>()
+    private val observations = mutableMapOf<String, SyncObservation<*>>()
+    private var entriesObserved = false
+    private var appliedCustomPeriod = SummaryPeriod(today.withDayOfMonth(1), today)
+    private var cachedEntries: List<LedgerEntry>? = null
+    private var cachedSelection: ReportSelection? = null
+    private var cachedSelectedEntries: List<LedgerEntry> = emptyList()
+    private var cachedAggregation = ReportAggregation()
+
+    init {
+        savedStateHandle.keys().filter { it.contains("tag", ignoreCase = true) }.forEach {
+            savedStateHandle.remove<Any?>(it)
+        }
+        saveSort()
+    }
 
     fun start(householdId: String) {
         if (this.householdId == householdId && observeJob?.isActive == true) return
-        this.householdId = householdId
+        val changed = this.householdId != householdId
         observeJob?.cancel()
-        latestEntries = null
-        latestCategories = emptyList()
-        mutableState.update { it.copy(isLoading = true, hasError = false, aggregation = ReportAggregation(), entries = emptyList()) }
-        observeJob = viewModelScope.launch {
-            combine(
-                ledgerRepository.observeEntries(householdId),
-                taxonomyRepository.observeCategories(householdId),
-            ) { entries, categories -> entries to categories }.collect { (entryObservation, categoryObservation) ->
-                entryObservation.value?.let { latestEntries = it }
-                categoryObservation.value?.let { latestCategories = it }
-                mutableState.update { old ->
-                    val sync = reportSyncState(entryObservation.state, categoryObservation.state)
-                    old.recalculated(
-                        entries = latestEntries.orEmpty(),
-                        categories = latestCategories,
-                        isLoading = false,
-                        syncState = sync,
-                        hasError = entryObservation.error != null || categoryObservation.error != null || sync == SyncState.ERROR,
-                    )
+        subcategoryJobs.clear()
+        this.householdId = householdId
+        if (changed) {
+            latestEntries = null; latestCategories = emptyList(); latestSubcategories.clear()
+            latestEntriesSource = null; historicalCategoryIds = emptySet()
+            cachedEntries = null; cachedSelection = null
+            cachedSelectedEntries = emptyList(); cachedAggregation = ReportAggregation()
+            observations.clear(); entriesObserved = false
+            mutableState.update { it.copy(isLoading = true, hasError = false, syncState = SyncState.SYNCED,
+                aggregation = ReportAggregation(), entries = emptyList(), categories = emptyList(), subcategories = emptyList(),
+                selectedCategoryId = null, selectedSubcategoryId = null) }
+        }
+        observeJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            launch {
+                ledgerRepository.observeEntries(householdId).withReportErrors().collect { observation ->
+                    observations["entries"] = observation
+                    observation.value?.let { values ->
+                        if (values !== latestEntriesSource && values != latestEntriesSource) {
+                            latestEntriesSource = values
+                            latestEntries = values.filter { entry -> entry.householdId == householdId }
+                            historicalCategoryIds = latestEntries.orEmpty().asSequence().filterNot { it.deleted }
+                                .map { it.categoryId }.toSet()
+                        }
+                    }
+                    entriesObserved = true
+                    reconcileSubcategories(householdId)
+                    refresh()
+                }
+            }
+            launch {
+                taxonomyRepository.observeCategories(householdId).withReportErrors().collect { observation ->
+                    observations["categories"] = observation
+                    observation.value?.let { latestCategories = it.filter { category -> category.householdId == householdId } }
+                    reconcileSubcategories(householdId)
+                    refresh()
                 }
             }
         }
+        observeJob?.start()
+    }
+
+    private fun reconcileSubcategories(householdId: String) {
+        val required = latestCategories.mapTo(mutableSetOf()) { it.id }
+        required.addAll(historicalCategoryIds)
+        (subcategoryJobs.keys - required).forEach { id ->
+            subcategoryJobs.remove(id)?.cancel(); latestSubcategories.remove(id); observations.remove("sub:$id")
+        }
+        val parent = observeJob ?: return
+        required.filterNot { it in subcategoryJobs }.forEach { id ->
+            subcategoryJobs[id] = viewModelScope.launch(parent) {
+                taxonomyRepository.observeSubcategories(householdId, id).withReportErrors().collect { observation ->
+                    observations["sub:$id"] = observation
+                    observation.value?.let { values -> latestSubcategories[id] = values.filter {
+                        it.householdId == householdId && it.categoryId == id
+                    } }
+                    refresh()
+                }
+            }
+        }
+    }
+
+    private fun refresh() = mutableState.update { old ->
+        val states = observations.values.map { it.state }
+        old.recalculated(latestEntries.orEmpty(), latestCategories, isLoading = !entriesObserved,
+            syncState = reportSyncState(states),
+            hasError = observations.values.any { it.error != null || it.state == SyncState.ERROR })
+    }
+
+    fun selectCategory(id: String?) = mutableState.update { old ->
+        old.copy(selectedCategoryId = id?.takeIf { value -> latestCategories.any { it.id == value } },
+            selectedSubcategoryId = null).recalculated(latestEntries.orEmpty(), latestCategories)
+    }
+    fun selectSubcategory(id: String?) = mutableState.update { old ->
+        old.copy(selectedSubcategoryId = id?.takeIf { value -> latestSubcategories[old.selectedCategoryId]
+            .orEmpty().any { it.id == value } }).recalculated(latestEntries.orEmpty(), latestCategories)
+    }
+    fun selectSort(sort: ReportEntrySort) {
+        mutableState.update { it.copy(sort = sort).recalculated(latestEntries.orEmpty(), latestCategories) }
+        saveSort()
+    }
+    fun toggleSortDirection() {
+        mutableState.update { it.copy(direction = if (it.direction == ReportSortDirection.DESCENDING)
+            ReportSortDirection.ASCENDING else ReportSortDirection.DESCENDING)
+            .recalculated(latestEntries.orEmpty(), latestCategories) }
+        saveSort()
+    }
+    fun clearControls() {
+        mutableState.update { it.copy(selectedCategoryId = null, selectedSubcategoryId = null,
+            sort = ReportEntrySort.DATE, direction = ReportSortDirection.DESCENDING)
+            .recalculated(latestEntries.orEmpty(), latestCategories) }
+        saveSort()
+    }
+    private fun saveSort() {
+        savedStateHandle["reports.sort"] = mutableState.value.sort.name
+        savedStateHandle["reports.direction"] = mutableState.value.direction.name
     }
 
     fun selectPeriodMode(mode: ReportPeriodMode) = mutableState.update { old ->
@@ -142,8 +250,10 @@ class ReportsViewModel @Inject constructor(
 
     fun applyCustomPeriod() = mutableState.update { old ->
         val parsed = runCatching { old.period() }.getOrNull()
-        if (parsed == null) old.copy(customDateError = true) else old.copy(customDateError = false)
-            .recalculated(latestEntries.orEmpty(), latestCategories)
+        if (parsed == null) old.copy(customDateError = true) else {
+            appliedCustomPeriod = parsed
+            old.copy(customDateError = false).recalculated(latestEntries.orEmpty(), latestCategories)
+        }
     }
 
     fun retry() { householdId?.let { id -> observeJob?.cancel(); observeJob = null; start(id) } }
@@ -155,24 +265,41 @@ class ReportsViewModel @Inject constructor(
         syncState: SyncState = this.syncState,
         hasError: Boolean = this.hasError,
     ): ReportsUiState {
-        val period = runCatching { period() }.getOrNull() ?: return copy(isLoading = isLoading, syncState = syncState, hasError = hasError)
-        val bucket: (LocalDate) -> LocalDate = if (mode == ReportPeriodMode.YEAR) { date -> date.withDayOfMonth(1) } else { date -> date }
-        val rawAggregation = aggregateReportEntries(entries, period, typeFilter, bucket)
-        // A chart's vertical scale is easier to read for a one-direction filter. Totals remain
-        // signed (net is negative for expenses); only the expense trend uses magnitudes.
-        val aggregation = if (typeFilter == ReportTypeFilter.EXPENSE) rawAggregation.copy(
-            trend = rawAggregation.trend.map { it.copy(amountGrosze = it.amountGrosze.abs()) },
-        ) else rawAggregation
+        val period = if (mode == ReportPeriodMode.CUSTOM) appliedCustomPeriod else period()
+        val categoryId = selectedCategoryId?.takeIf { id -> categories.any { it.id == id } }
+        val availableSubs = latestSubcategories[categoryId].orEmpty()
+        val subcategoryId = selectedSubcategoryId?.takeIf { id -> availableSubs.any { it.id == id } }
+        val selection = ReportSelection(householdId.orEmpty(), period, typeFilter, categoryId, subcategoryId,
+            sort, direction, mode == ReportPeriodMode.YEAR)
+        if (entries !== cachedEntries || selection != cachedSelection) {
+            cachedEntries = entries
+            cachedSelection = selection
+            cachedSelectedEntries = selectReportEntries(entries, selection.householdId, period, typeFilter,
+                categoryId, subcategoryId, sort, direction)
+            val bucket: (LocalDate) -> LocalDate = if (selection.monthlyTrend) {
+                date -> date.withDayOfMonth(1)
+            } else { date -> date }
+            val rawAggregation = aggregateReportEntries(cachedSelectedEntries, period, typeFilter, bucket)
+            // Expense trends use magnitudes while totals keep the signed balance.
+            cachedAggregation = if (typeFilter == ReportTypeFilter.EXPENSE) rawAggregation.copy(
+                trend = rawAggregation.trend.map { it.copy(amountGrosze = it.amountGrosze.abs()) },
+            ) else rawAggregation
+        }
         val taxonomy = categories.associateBy { it.id }
         return copy(
-            aggregation = aggregation,
-            entries = filterReportEntries(entries, period, typeFilter)
-                .sortedWith(compareByDescending<LedgerEntry> { it.date }.thenBy { it.id })
-                .map { entry ->
+            categories = categories.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }),
+            subcategories = availableSubs.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }),
+            selectedCategoryId = categoryId,
+            selectedSubcategoryId = subcategoryId,
+            aggregation = cachedAggregation,
+            entries = cachedSelectedEntries.map { entry ->
                     ReportEntryItem(
                         entry = entry,
                         categoryName = taxonomy[entry.categoryId]?.name ?: entry.categoryId,
                         categoryColor = taxonomy[entry.categoryId]?.color,
+                        subcategoryName = entry.subcategoryId?.let { id ->
+                            latestSubcategories[entry.categoryId].orEmpty().firstOrNull { it.id == id }?.name ?: id
+                        },
                     )
                 },
             isLoading = isLoading,
@@ -182,9 +309,23 @@ class ReportsViewModel @Inject constructor(
     }
 }
 
-private fun reportSyncState(first: SyncState, second: SyncState): SyncState = when {
-    first == SyncState.ERROR || second == SyncState.ERROR -> SyncState.ERROR
-    first == SyncState.PENDING || second == SyncState.PENDING -> SyncState.PENDING
-    first == SyncState.OFFLINE || second == SyncState.OFFLINE -> SyncState.OFFLINE
+private fun reportSyncState(states: List<SyncState>): SyncState = when {
+    SyncState.ERROR in states -> SyncState.ERROR
+    SyncState.PENDING in states -> SyncState.PENDING
+    SyncState.OFFLINE in states -> SyncState.OFFLINE
     else -> SyncState.SYNCED
 }
+
+private data class ReportSelection(
+    val householdId: String,
+    val period: SummaryPeriod,
+    val type: ReportTypeFilter,
+    val categoryId: String?,
+    val subcategoryId: String?,
+    val sort: ReportEntrySort,
+    val direction: ReportSortDirection,
+    val monthlyTrend: Boolean,
+)
+
+private fun <T> Flow<SyncObservation<T>>.withReportErrors(): Flow<SyncObservation<T>> =
+    catch { emit(SyncObservation(state = SyncState.ERROR, error = it)) }
