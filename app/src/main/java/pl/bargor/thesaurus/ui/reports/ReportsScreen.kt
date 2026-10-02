@@ -31,9 +31,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenu
@@ -41,6 +38,16 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Checkbox
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -106,62 +113,90 @@ fun ReportsScreen(
     onSelectSort: (ReportEntrySort) -> Unit = {},
     onToggleSortDirection: () -> Unit = {},
     onClearControls: () -> Unit = {},
+    onOpenFilters: () -> Unit = {},
+    onDismissFilters: () -> Unit = {},
+    onApplyFilters: () -> Unit = {},
+    onResetFilters: () -> Unit = {},
+    onSelectMembers: (Set<String>?) -> Unit = {},
 ) {
+    // Dialog drafts belong to this screen instance and are discarded when it leaves composition.
+    DisposableEffect(Unit) { onDispose { onDismissFilters() } }
+    state.filterDraft?.let { draft ->
+        ReportFilterDialog(state, draft, onSelectPeriodMode, onPreviousPeriod, onNextPeriod,
+            onSelectType, onCustomFromChange, onCustomToChange, onSelectCategory,
+            onSelectSubcategory, onSelectMembers, onDismissFilters, onApplyFilters, onResetFilters)
+    }
     Column(
-        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        modifier = modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ReportPeriodSelector(state.mode, onSelectPeriodMode)
-        if (state.mode == ReportPeriodMode.CUSTOM) {
-            CustomPeriodFields(state, onCustomFromChange, onCustomToChange, onApplyCustomPeriod)
-        } else {
-            PeriodNavigator(state, onPreviousPeriod, onNextPeriod)
-        }
-        TypeSelector(state.typeFilter, onSelectType)
-        ReportControls(state, onSelectCategory, onSelectSubcategory, onSelectSort, onToggleSortDirection, onClearControls)
-        if (state.isLoading) {
-            CircularProgressIndicator(Modifier.testTag("reports-loading"))
-            return@Column
-        }
-        if (state.hasError) {
-            Text(
-                stringResource(R.string.reports_load_error),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag("reports-error"),
-            )
-            Button(onClick = onRetry, modifier = Modifier.testTag("reports-retry")) {
-                Text(stringResource(R.string.auth_retry))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.navigation_reports), style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f).semantics { heading() })
+            val description = stringResource(R.string.reports_open_filters)
+            val active = stringResource(if (state.hasActiveFilters) R.string.reports_filters_active else R.string.reports_filters_default)
+            IconButton(onClick = onOpenFilters, modifier = Modifier.size(48.dp).testTag("reports-open-filters")
+                .semantics { contentDescription = description; stateDescription = active }) {
+                Box {
+                    Icon(Icons.Filled.FilterList, contentDescription = null)
+                    if (state.hasActiveFilters) Box(Modifier.align(Alignment.TopEnd).size(8.dp)
+                        .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
+                        .testTag("reports-filters-active"))
+                }
             }
         }
-        when (state.syncState) {
-            SyncState.PENDING -> Text(stringResource(R.string.reports_sync_pending), Modifier.testTag("reports-pending"))
-            else -> Unit
-        }
-        if (state.hasError && state.aggregation.totals.isEmpty) return@Column
-        ReportsTotalCards(state.aggregation.totals)
-        if (state.aggregation.totals.isEmpty) {
-            Text(stringResource(R.string.empty_reports), Modifier.testTag("reports-empty"))
-            return@Column
-        }
-        val categories = state.aggregation.categories.map { value ->
-            NamedCategoryValue(
-                state.entries.firstOrNull { it.entry.categoryId == value.categoryId }?.categoryName
-                    ?: stringResource(R.string.reports_unknown_category),
-                state.entries.firstOrNull { it.entry.categoryId == value.categoryId }?.categoryColor,
-                value,
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) content@ {
+            Text(when (state.mode) {
+                ReportPeriodMode.MONTH -> state.month.format(reportsMonthFormatter)
+                ReportPeriodMode.YEAR -> state.year.toString()
+                ReportPeriodMode.CUSTOM -> "${state.customFromInput} – ${state.customToInput}"
+            }, modifier = Modifier.testTag("reports-period"))
+            ReportControls(state, onSelectSort, onToggleSortDirection, onClearControls)
+            if (state.isLoading) {
+                CircularProgressIndicator(Modifier.testTag("reports-loading"))
+                return@content
+            }
+            if (state.hasError) {
+                Text(
+                    stringResource(R.string.reports_load_error),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("reports-error"),
+                )
+                Button(onClick = onRetry, modifier = Modifier.testTag("reports-retry")) {
+                    Text(stringResource(R.string.auth_retry))
+                }
+            }
+            when (state.syncState) {
+                SyncState.PENDING -> Text(stringResource(R.string.reports_sync_pending), Modifier.testTag("reports-pending"))
+                else -> Unit
+            }
+            if (state.hasError && state.aggregation.totals.isEmpty) return@content
+            ReportsTotalCards(state.aggregation.totals)
+            if (state.aggregation.totals.isEmpty) {
+                Text(stringResource(R.string.empty_reports), Modifier.testTag("reports-empty"))
+                return@content
+            }
+            val categories = state.aggregation.categories.map { value ->
+                NamedCategoryValue(
+                    state.entries.firstOrNull { it.entry.categoryId == value.categoryId }?.categoryName
+                        ?: stringResource(R.string.reports_unknown_category),
+                    state.entries.firstOrNull { it.entry.categoryId == value.categoryId }?.categoryColor,
+                    value,
+                )
+            }
+            CategoryDonutChart(categories)
+            if (state.mode == ReportPeriodMode.YEAR) {
+                TrendChart(state.aggregation.trend, state.typeFilter)
+            }
+            Text(
+                stringResource(R.string.reports_entries_heading),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.semantics { heading() },
             )
-        }
-        CategoryDonutChart(categories)
-        if (state.mode == ReportPeriodMode.YEAR) {
-            TrendChart(state.aggregation.trend, state.typeFilter)
-        }
-        Text(
-            stringResource(R.string.reports_entries_heading),
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.semantics { heading() },
-        )
-        state.entries.forEach { item ->
-            ReportEntryCard(item, onOpenEntry)
+            state.entries.forEach { item ->
+                ReportEntryCard(item, onOpenEntry)
+            }
         }
     }
 }
@@ -169,26 +204,10 @@ fun ReportsScreen(
 @Composable
 private fun ReportControls(
     state: ReportsUiState,
-    onCategory: (String?) -> Unit,
-    onSubcategory: (String?) -> Unit,
     onSort: (ReportEntrySort) -> Unit,
     onDirection: () -> Unit,
     onClear: () -> Unit,
 ) {
-    ReportChoice(
-        stringResource(R.string.reports_filter_category),
-        state.categories.firstOrNull { it.id == state.selectedCategoryId }?.name
-            ?: stringResource(R.string.reports_all_categories),
-        listOf(null to stringResource(R.string.reports_all_categories)) + state.categories.map { it.id to it.name },
-        "reports-filter-category", onSelect = onCategory,
-    )
-    ReportChoice(
-        stringResource(R.string.reports_filter_subcategory),
-        state.subcategories.firstOrNull { it.id == state.selectedSubcategoryId }?.name
-            ?: stringResource(R.string.reports_all_subcategories),
-        listOf(null to stringResource(R.string.reports_all_subcategories)) + state.subcategories.map { it.id to it.name },
-        "reports-filter-subcategory", enabled = state.selectedCategoryId != null, onSelect = onSubcategory,
-    )
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         ReportChoice(
@@ -259,17 +278,126 @@ private fun ReportChoice(
 }
 
 @Composable
-private fun ReportPeriodSelector(selected: ReportPeriodMode, onSelect: (ReportPeriodMode) -> Unit) {
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().testTag("reports-period-selector")) {
-        ReportPeriodMode.entries.forEachIndexed { index, mode ->
-            SegmentedButton(
-                selected = selected == mode,
-                onClick = { onSelect(mode) },
-                label = { Text(stringResource(mode.labelRes())) },
-                shape = SegmentedButtonDefaults.itemShape(index, ReportPeriodMode.entries.size),
-                modifier = Modifier.testTag("reports-mode-${mode.name.lowercase()}"),
-            )
+private fun ReportFilterDialog(
+    state: ReportsUiState,
+    draft: ReportFilterDraft,
+    onMode: (ReportPeriodMode) -> Unit,
+    previous: () -> Unit,
+    next: () -> Unit,
+    onType: (ReportTypeFilter) -> Unit,
+    onFrom: (String) -> Unit,
+    onTo: (String) -> Unit,
+    onCategory: (String?) -> Unit,
+    onSubcategory: (String?) -> Unit,
+    onMembers: (Set<String>?) -> Unit,
+    dismiss: () -> Unit,
+    apply: () -> Unit,
+    reset: () -> Unit,
+) {
+    val presentation = state.copy(mode = draft.mode, month = draft.month, year = draft.year,
+        typeFilter = draft.typeFilter, customFromInput = draft.customFromInput,
+        customToInput = draft.customToInput, customDateError = draft.customDateError,
+        selectedCategoryId = draft.selectedCategoryId, selectedSubcategoryId = draft.selectedSubcategoryId)
+    val subcategories = state.allSubcategories.filter { it.categoryId == draft.selectedCategoryId }.sortedBy { it.name.lowercase() }
+    val categoryOptions = state.categories.map { it.id to it.name }.toMutableList()
+    listOfNotNull(state.selectedCategoryId, draft.selectedCategoryId).distinct()
+        .filter { id -> categoryOptions.none { it.first == id } }.forEach { id ->
+        categoryOptions.add(id to stringResource(R.string.reports_missing_category, id))
+    }
+    val subcategoryOptions = subcategories.map { it.id to it.name }.toMutableList()
+    listOfNotNull(draft.selectedSubcategoryId, state.selectedSubcategoryId.takeIf {
+        draft.selectedCategoryId != null && draft.selectedCategoryId == state.selectedCategoryId
+    }).distinct().filter { id -> subcategoryOptions.none { it.first == id } }.forEach { id ->
+        subcategoryOptions.add(id to stringResource(R.string.reports_missing_subcategory, id))
+    }
+    Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        BoxWithConstraints(Modifier.fillMaxSize().pointerInput(dismiss) {
+            detectTapGestures { dismiss() }
+        }.padding(16.dp), contentAlignment = Alignment.Center) {
+            Surface(shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp,
+                modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().heightIn(max = maxHeight)
+                    .testTag("reports-filter-dialog").pointerInput(Unit) { detectTapGestures { } }) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.reports_filter_title), style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.semantics { heading() })
+                    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+                        .testTag("reports-filter-content"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ReportChoice(stringResource(R.string.reports_filter_period), stringResource(draft.mode.labelRes()),
+                            ReportPeriodMode.entries.map { it.name to stringResource(it.labelRes()) }, "reports-period-selector",
+                            onSelect = { it?.let { name -> onMode(ReportPeriodMode.valueOf(name)) } })
+                        if (draft.mode == ReportPeriodMode.CUSTOM) {
+                            CustomPeriodFields(presentation, onFrom, onTo)
+                        } else PeriodNavigator(presentation, previous, next)
+                        ReportChoice(stringResource(R.string.reports_filter_type), stringResource(draft.typeFilter.labelRes()),
+                            ReportTypeFilter.entries.map { it.name to stringResource(it.labelRes()) }, "reports-type-selector",
+                            onSelect = { it?.let { name -> onType(ReportTypeFilter.valueOf(name)) } })
+                        ReportChoice(stringResource(R.string.reports_filter_category),
+                            categoryOptions.firstOrNull { it.first == draft.selectedCategoryId }?.second ?: stringResource(R.string.reports_all_categories),
+                            listOf(null to stringResource(R.string.reports_all_categories)) + categoryOptions,
+                            "reports-filter-category", onSelect = onCategory)
+                        ReportChoice(stringResource(R.string.reports_filter_subcategory),
+                            subcategoryOptions.firstOrNull { it.first == draft.selectedSubcategoryId }?.second ?: stringResource(R.string.reports_all_subcategories),
+                            listOf(null to stringResource(R.string.reports_all_subcategories)) + subcategoryOptions,
+                            "reports-filter-subcategory", enabled = draft.selectedCategoryId != null, onSelect = onSubcategory)
+                        MemberSectionHeader { onMembers(emptySet()) }
+                        MemberFilterRow(stringResource(R.string.reports_members_all), draft.selectedMemberIds == null,
+                            "reports-members-all") { selected -> onMembers(if (selected) null else emptySet()) }
+                        state.members.forEach { member ->
+                            val label = if (member.former) stringResource(R.string.reports_member_former, member.name) else member.name
+                            MemberFilterRow(label, draft.selectedMemberIds == null || member.id in draft.selectedMemberIds,
+                                "reports-member-${member.id}") { selected ->
+                                val ids = draft.selectedMemberIds ?: state.members.mapTo(mutableSetOf()) { it.id }
+                                onMembers(if (selected) ids + member.id else ids - member.id)
+                            }
+                        }
+                    }
+                    TextButton(onClick = reset, modifier = Modifier.testTag("reports-reset-filters")) {
+                        Text(stringResource(R.string.reports_reset_filters))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = dismiss, modifier = Modifier.weight(1f).testTag("reports-cancel-filters")) {
+                            Text(stringResource(R.string.reports_cancel_filters))
+                        }
+                        Button(onClick = apply, modifier = Modifier.weight(1f).testTag("reports-apply-filters")) {
+                            Text(stringResource(R.string.reports_apply_filters))
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun MemberSectionHeader(clear: () -> Unit) {
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 360.dp || fontScale > 1.3f) {
+            Column(Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.reports_filter_members), style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.semantics { heading() })
+                TextButton(onClick = clear, modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)
+                    .testTag("reports-members-clear")) { Text(stringResource(R.string.reports_members_clear)) }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.reports_filter_members), style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f).semantics { heading() })
+                TextButton(onClick = clear, modifier = Modifier.heightIn(min = 48.dp)
+                    .testTag("reports-members-clear")) { Text(stringResource(R.string.reports_members_clear)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemberFilterRow(label: String, selected: Boolean, tag: String, change: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(tag)
+        .toggleable(value = selected, role = Role.Checkbox, onValueChange = change),
+        verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = selected, onCheckedChange = null)
+        Text(label, modifier = Modifier.weight(1f).padding(start = 8.dp))
     }
 }
 
@@ -298,6 +426,11 @@ private fun PeriodNavigator(state: ReportsUiState, previous: () -> Unit, next: (
         Text(label, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).testTag("reports-period"))
         TextButton(
             onClick = next,
+            enabled = when (state.mode) {
+                ReportPeriodMode.MONTH -> state.month < java.time.YearMonth.from(state.today)
+                ReportPeriodMode.YEAR -> state.year < java.time.Year.from(state.today)
+                ReportPeriodMode.CUSTOM -> false
+            },
             modifier = Modifier.testTag("reports-next-period").semantics {
                 contentDescription = nextDescription
             },
@@ -310,7 +443,6 @@ private fun CustomPeriodFields(
     state: ReportsUiState,
     onFrom: (String) -> Unit,
     onTo: (String) -> Unit,
-    onApply: () -> Unit,
 ) {
     OutlinedTextField(
         value = state.customFromInput,
@@ -332,24 +464,6 @@ private fun CustomPeriodFields(
         singleLine = true,
         modifier = Modifier.fillMaxWidth().testTag("reports-custom-to"),
     )
-    Button(onClick = onApply, modifier = Modifier.testTag("reports-apply-custom")) {
-        Text(stringResource(R.string.reports_apply_period))
-    }
-}
-
-@Composable
-private fun TypeSelector(selected: ReportTypeFilter, onSelect: (ReportTypeFilter) -> Unit) {
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        ReportTypeFilter.entries.forEachIndexed { index, type ->
-            SegmentedButton(
-                selected = selected == type,
-                onClick = { onSelect(type) },
-                label = { Text(stringResource(type.labelRes())) },
-                shape = SegmentedButtonDefaults.itemShape(index, ReportTypeFilter.entries.size),
-                modifier = Modifier.testTag("reports-type-${type.name.lowercase()}"),
-            )
-        }
-    }
 }
 
 private fun ReportTypeFilter.labelRes() = when (this) {

@@ -41,7 +41,7 @@ class ReportsViewModelTest {
     @Test fun customRangeRejectsReversedDatesCapsFutureAndExpenseTrendUsesMagnitude() = runTest {
         val ledger = FakeLedger(listOf(entry("expense", -500, LocalDate.of(2026, 2, 15))))
         val taxonomy = FakeTaxonomy()
-        val vm = ReportsViewModel(ledger, taxonomy, clock, SavedStateHandle())
+        val vm = ReportsViewModel(ledger, taxonomy, clock, SavedStateHandle(), ReportHouseholds())
         vm.start("home")
         advanceUntilIdle()
         vm.selectPeriodMode(ReportPeriodMode.CUSTOM)
@@ -51,6 +51,9 @@ class ReportsViewModelTest {
         assertTrue(vm.state.value.customDateError)
         vm.updateCustomFrom("2026-02-01")
         vm.updateCustomTo("2027-01-01")
+        vm.applyCustomPeriod()
+        assertTrue(vm.state.value.customDateError)
+        vm.updateCustomTo("2026-02-15")
         vm.applyCustomPeriod()
         assertFalse(vm.state.value.customDateError)
         assertEquals(LocalDate.of(2026, 2, 15), vm.state.value.period().to)
@@ -62,7 +65,7 @@ class ReportsViewModelTest {
 
     @Test fun nextPeriodDoesNotPassCurrentMonthOrYearAndOfflineDataStaysVisible() = runTest {
         val ledger = FakeLedger(listOf(entry("current", 400, LocalDate.of(2026, 2, 1))), SyncState.OFFLINE)
-        val vm = ReportsViewModel(ledger, FakeTaxonomy(), clock, SavedStateHandle())
+        val vm = ReportsViewModel(ledger, FakeTaxonomy(), clock, SavedStateHandle(), ReportHouseholds())
         vm.start("home")
         advanceUntilIdle()
         vm.nextPeriod()

@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -224,7 +225,8 @@ class NavigationSmokeTest {
         composeTestRule.onNodeWithTag(Destination.Reports.navigationTestTag).assertIsSelected()
         composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsNotSelected()
         composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).assertIsNotSelected()
-        composeTestRule.onAllNodesWithText("Raporty", useUnmergedTree = true).assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag("navigation-reports-label", useUnmergedTree = true).assertCountEquals(1)
+        composeTestRule.onNodeWithTag("reports-open-filters").assertIsDisplayed()
     }
 
     @Test

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -53,41 +54,29 @@ import pl.bargor.thesaurus.data.model.SyncState
 class ReportsScreenTest {
     @get:Rule val composeRule = createComposeRule()
 
-    @Test fun reportControlsStartAtTheTopAtLargeFontScale() {
+    @Test fun reportHeaderAndFilterButtonStayAtTopAtLargeFontScale() {
         composeRule.setContent {
+            var state by remember { mutableStateOf(ReportsUiState(LocalDate.of(2026, 9, 30), YearMonth.of(2026, 9), Year.of(2026), isLoading = false)) }
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.8f)) {
                 ThesaurusTheme {
                     Box(Modifier.width(320.dp).fillMaxHeight().testTag("reports-fixture")) {
-                        ReportsScreen(
-                            state = ReportsUiState(
-                                today = LocalDate.of(2026, 9, 30), month = YearMonth.of(2026, 9),
-                                year = Year.of(2026), isLoading = false,
-                            ),
-                            onSelectPeriodMode = {}, onPreviousPeriod = {}, onNextPeriod = {},
-                            onSelectType = {}, onCustomFromChange = {}, onCustomToChange = {},
-                            onApplyCustomPeriod = {}, onOpenEntry = {}, onRetry = {},
-                        )
+                        FilterScreen(state) { state = it }
                     }
                 }
             }
         }
-
-        composeRule.onAllNodesWithText("Raporty").assertCountEquals(0)
-        val month = composeRule.onNodeWithTag("reports-mode-month").assertIsDisplayed().getUnclippedBoundsInRoot()
-        val custom = composeRule.onNodeWithTag("reports-mode-custom").assertIsDisplayed().getUnclippedBoundsInRoot()
-        val period = composeRule.onNodeWithTag("reports-period").assertIsDisplayed().getUnclippedBoundsInRoot()
+        composeRule.onAllNodesWithText("Raporty").assertCountEquals(1)
+        val button = composeRule.onNodeWithTag("reports-open-filters").assertIsDisplayed().getUnclippedBoundsInRoot()
         val fixture = composeRule.onNodeWithTag("reports-fixture").getUnclippedBoundsInRoot()
-        val selector = composeRule.onNodeWithTag("reports-period-selector").getUnclippedBoundsInRoot()
-        // At large font sizes the taller custom button vertically centers the month button.
-        // Measure the row itself relative to its fixture to verify the actual top padding.
-        val topPadding = selector.top - fixture.top
-        assertTrue(
-            "Report selector must start at the 16 dp content padding: $topPadding",
-            topPadding >= 15.dp && topPadding <= 17.dp,
-        )
-        assertTrue("Period modes must fit on a compact screen", month.left >= 0.dp && custom.right <= 320.dp)
-        assertTrue("Period navigation must follow the entire mode selector", period.top >= selector.bottom)
+        val topPadding = button.top - fixture.top
+        assertTrue(topPadding >= 15.dp && topPadding <= 17.dp)
+        assertTrue(button.right <= 320.dp && button.right - button.left >= 48.dp)
+        composeRule.onNodeWithTag("reports-filter-category").assertDoesNotExist()
+        composeRule.onNodeWithTag("reports-open-filters").performClick()
+        composeRule.onNodeWithTag("reports-filter-dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("reports-cancel-filters").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("reports-filter-dialog").assertDoesNotExist()
     }
 
     @Test fun monthlyReportExposesCategoryLegendAndEntryDrillDownWithoutTrend() {
@@ -157,16 +146,16 @@ class ReportsScreenTest {
         ))
         composeRule.setContent {
             ThesaurusTheme {
-                ReportsScreen(state, { state = state.copy(mode = it) }, {}, {}, {}, {}, {}, {}, {}, {})
+                FilterScreen(state) { state = it }
             }
         }
 
         composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
-        composeRule.onNodeWithTag("reports-mode-year").performClick()
+        chooseMode("YEAR")
         composeRule.onAllNodesWithText("Trend miesięczny").assertCountEquals(1)
         composeRule.onNodeWithContentDescription("Trend miesięczny: lut: +12,50 zł").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("reports-trend-summary").assertTextContains("lut: +12,50", substring = true)
-        composeRule.onNodeWithTag("reports-mode-custom").performScrollTo().performClick()
+        chooseMode("CUSTOM")
         composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
         composeRule.onNodeWithTag("reports-trend-summary").assertDoesNotExist()
     }
@@ -178,15 +167,18 @@ class ReportsScreenTest {
         ))
         composeRule.setContent {
             ThesaurusTheme {
-                ReportsScreen(state, { state = state.copy(mode = it) }, {}, {}, {}, {}, {}, {}, {}, {})
+                FilterScreen(state) { state = it }
             }
         }
         composeRule.onNodeWithTag("reports-offline").assertDoesNotExist()
-        composeRule.onAllNodesWithText("Podaj daty w formacie RRRR-MM-DD. Data „od” nie może być późniejsza od daty „do”.").assertCountEquals(1)
-        composeRule.onNodeWithTag("reports-mode-month").performScrollTo().performClick()
+        composeRule.onNodeWithTag("reports-open-filters").performClick()
+        composeRule.onAllNodesWithText("Podaj daty w formacie RRRR-MM-DD, nie późniejsze niż dzisiaj. Data „od” nie może być późniejsza od daty „do”.").assertCountEquals(1)
+        composeRule.onNodeWithTag("reports-cancel-filters").performClick()
+        composeRule.onNodeWithTag("reports-open-filters").performClick()
+        chooseDialogMode("MONTH")
         composeRule.onNodeWithContentDescription("Poprzedni miesiąc").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Następny miesiąc").assertIsDisplayed()
-        composeRule.onNodeWithTag("reports-mode-year").performClick()
+        chooseDialogMode("YEAR")
         composeRule.onNodeWithContentDescription("Poprzedni rok").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Następny rok").assertIsDisplayed()
     }
@@ -251,6 +243,26 @@ class ReportsScreenTest {
         val viewportBounds = viewport.getUnclippedBoundsInRoot()
         assertTrue("Długie nazwy powinny być dostępne po przewinięciu w poziomie", contentBounds.right - contentBounds.left > viewportBounds.right - viewportBounds.left)
         assertTrue(viewport.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].maxValue() > 0f)
+    }
+
+
+    private fun chooseDialogMode(mode: String) {
+        composeRule.onNodeWithTag("reports-period-selector").performScrollTo().performClick()
+        composeRule.onNodeWithTag("reports-period-selector-option-$mode").performClick()
+    }
+    private fun chooseMode(mode: String) {
+        composeRule.onNodeWithTag("reports-open-filters").performClick()
+        chooseDialogMode(mode)
+        composeRule.onNodeWithTag("reports-apply-filters").performClick()
+    }
+    @androidx.compose.runtime.Composable
+    private fun FilterScreen(state: ReportsUiState, update: (ReportsUiState) -> Unit) {
+        ReportsScreen(state, { mode -> update(state.copy(filterDraft = state.filterDraft?.copy(mode = mode))) },
+            {}, {}, {}, {}, {}, {}, {}, {},
+            onOpenFilters = { update(state.copy(filterDraft = ReportFilterDraft(state.mode, state.month, state.year,
+                state.typeFilter, state.customFromInput, state.customToInput, customDateError = state.customDateError))) },
+            onDismissFilters = { update(state.copy(filterDraft = null)) },
+            onApplyFilters = { state.filterDraft?.let { update(state.copy(mode = it.mode, filterDraft = null)) } })
     }
 
     private fun SemanticsNodeInteraction.revealInReport(): SemanticsNodeInteraction {

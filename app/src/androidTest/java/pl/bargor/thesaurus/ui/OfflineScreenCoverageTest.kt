@@ -7,10 +7,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -39,6 +44,7 @@ import pl.bargor.thesaurus.ui.family.FamilyUiState
 import pl.bargor.thesaurus.ui.family.FamilyError
 import pl.bargor.thesaurus.ui.reports.ReportsScreen
 import pl.bargor.thesaurus.ui.reports.ReportsUiState
+import pl.bargor.thesaurus.ui.reports.ReportFilterDraft
 import pl.bargor.thesaurus.ui.summary.SummaryScreen
 import pl.bargor.thesaurus.ui.summary.SummaryUiState
 import pl.bargor.thesaurus.ui.taxonomy.CategoryWithSubcategories
@@ -78,11 +84,41 @@ class OfflineScreenCoverageTest {
         assertEquals(marker, rule.onNodeWithTag("summary-period").fetchSemanticsNode().boundsInRoot)
     }
 
-    @Test fun reportsKeepPeriodPositionAndPendingAndErrors() = verifyScreen(
-        "reports-mode-month", R.string.reports_sync_pending, R.string.reports_load_error,
-    ) { sync, error ->
-        ReportsScreen(ReportsUiState(LocalDate.of(2026, 9, 15), YearMonth.of(2026, 9), Year.of(2026), isLoading = false,
-            syncState = sync, hasError = error), {}, {}, {}, {}, {}, {}, {}, {}, {})
+    @Test fun reportsKeepPeriodPositionAndPendingAndErrors() {
+        var draft by mutableStateOf<ReportFilterDraft?>(null)
+        verifyScreen("reports-period", R.string.reports_sync_pending, R.string.reports_load_error,
+            onOffline = {
+                rule.onNodeWithTag("reports-period").assertTextEquals("wrzesień 2026")
+                val period = rule.onNodeWithTag("reports-period").fetchSemanticsNode().boundsInRoot
+                val filter = rule.onNodeWithTag("reports-open-filters").assertIsDisplayed()
+                    .assertHasClickAction().assertContentDescriptionEquals("Otwórz filtry raportów").fetchSemanticsNode().boundsInRoot
+                val indicator = rule.onNodeWithTag("offline-indicator").fetchSemanticsNode().boundsInRoot
+                assertTrue(indicator.bottom <= filter.top)
+                rule.onNodeWithTag("reports-open-filters").performClick()
+                rule.onNodeWithTag("reports-filter-dialog").assertIsDisplayed()
+                rule.onNodeWithTag("reports-period-selector").performScrollTo().performClick()
+                listOf("MONTH", "YEAR", "CUSTOM").forEach {
+                    rule.onNodeWithTag("reports-period-selector-option-$it").assertIsDisplayed()
+                }
+                rule.onNodeWithTag("reports-period-selector-option-MONTH").performClick()
+                rule.onNodeWithTag("reports-previous-period").performScrollTo().assertIsDisplayed()
+                rule.onNodeWithTag("reports-next-period").assertIsDisplayed()
+                rule.onNodeWithTag("reports-cancel-filters").performClick()
+                rule.onNodeWithTag("reports-filter-dialog").assertDoesNotExist()
+                assertEquals(filter, rule.onNodeWithTag("reports-open-filters").fetchSemanticsNode().boundsInRoot)
+                assertEquals(period, rule.onNodeWithTag("reports-period").fetchSemanticsNode().boundsInRoot)
+            },
+        ) { sync, error ->
+            val report = ReportsUiState(LocalDate.of(2026, 9, 15), YearMonth.of(2026, 9), Year.of(2026), isLoading = false)
+            ReportsScreen(report.copy(syncState = sync, hasError = error, filterDraft = draft),
+                onSelectPeriodMode = { mode -> draft = draft?.copy(mode = mode) },
+                onPreviousPeriod = {}, onNextPeriod = {}, onSelectType = {},
+                onCustomFromChange = {}, onCustomToChange = {}, onApplyCustomPeriod = {},
+                onOpenEntry = {}, onRetry = {},
+                onOpenFilters = { draft = ReportFilterDraft(report.mode, report.month, report.year,
+                    report.typeFilter, report.customFromInput, report.customToInput) },
+                onDismissFilters = { draft = null })
+        }
     }
 
     @Test fun taxonomyKeepsActionsPositionAndPendingAndValidationError() = verifyScreen(
@@ -110,6 +146,7 @@ class OfflineScreenCoverageTest {
         markerTag: String,
         @StringRes pendingMessage: Int,
         @StringRes errorMessage: Int,
+        onOffline: () -> Unit = {},
         content: @Composable (SyncState, Boolean) -> Unit,
     ) {
         var online by mutableStateOf(true)
@@ -122,6 +159,7 @@ class OfflineScreenCoverageTest {
         assertTrue(indicator.bottom <= marker.top)
         assertEquals(marker, rule.onNodeWithTag(markerTag).fetchSemanticsNode().boundsInRoot)
         rule.onAllNodes(hasText("Tryb offline", substring = true)).assertCountEquals(0)
+        onOffline()
         rule.runOnIdle { online = true; sync = SyncState.SYNCED }
         rule.onNodeWithTag("offline-indicator").assertDoesNotExist()
         assertEquals(marker, rule.onNodeWithTag(markerTag).fetchSemanticsNode().boundsInRoot)
