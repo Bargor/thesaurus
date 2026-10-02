@@ -161,7 +161,7 @@ class SummaryEntryAuthorTest {
         val cards = prepareSummaryOverview(items.map { it.entry }, "home", Year.of(2026),
             SummaryPeriodMode.MONTH, LocalDate.of(2026, 9, 30))
         return SummaryUiState(YearMonth.of(2026, 9), Year.of(2026), cards = cards, isLoading = false,
-            detailCard = cards.last(), detailEntries = items)
+            detailCard = cards.first(), detailEntries = items)
     }
 
     private fun item(id: String, author: String, color: String, day: Int = 16) = EntryListItem(

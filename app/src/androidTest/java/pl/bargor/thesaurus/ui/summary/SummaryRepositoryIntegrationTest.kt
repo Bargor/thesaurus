@@ -51,21 +51,21 @@ class SummaryRepositoryIntegrationTest {
                     store.put("summary", vm); vm.start(home, uid)
                 }
                 suspend fun state(predicate: (SummaryUiState) -> Boolean) = withTimeout(15_000) { vm.state.first(predicate) }
-                val initial = state { !it.isLoading && it.syncState == SyncState.SYNCED && it.cards.lastOrNull()?.entries?.size == 2 && it.cards.last().highestExpenseCategory != null }
+                val initial = state { !it.isLoading && it.syncState == SyncState.SYNCED && it.cards.firstOrNull()?.entries?.size == 2 && it.cards.first().highestExpenseCategory != null }
                 assertEquals(9, initial.cards.size)
-                val key = initial.cards.last().key
+                val key = initial.cards.first().key
                 instrumentation.runOnMainSync { vm.openPeriod(key) }
                 val detail = state { it.detailEntries.size == 2 }
                 assertEquals(setOf(expense.id, income.id), detail.detailEntries.map { it.entry.id }.toSet())
-                assertEquals(detail.cards.last().totals, detail.detailCard!!.totals)
+                assertEquals(detail.cards.first().totals, detail.detailCard!!.totals)
                 firestore.disableNetwork().await(); state { it.syncState == SyncState.OFFLINE }
                 val local = entry("local", -500)
                 val writes = listOf(async { repository.save(local) }, async { repository.save(food.copy(name = "Żywność lokalna", updatedById = uid)) })
                 try {
                     val pending = state { it.syncState == SyncState.PENDING && it.detailEntries.size == 3 && it.detailEntries.all { item -> item.categoryName == "Żywność lokalna" } }
                     assertEquals(1500.toBigInteger(), pending.detailCard!!.totals.netGrosze)
-                    assertEquals(pending.cards.last().totals, pending.detailCard!!.totals)
-                    assertEquals("Żywność lokalna", pending.cards.last().highestExpenseCategory!!.name)
+                    assertEquals(pending.cards.first().totals, pending.detailCard!!.totals)
+                    assertEquals("Żywność lokalna", pending.cards.first().highestExpenseCategory!!.name)
                     instrumentation.runOnMainSync { vm.closePeriod(); vm.selectPeriodMode(SummaryPeriodMode.YEAR) }
                     val annual = state { it.mode == SummaryPeriodMode.YEAR && it.cards.singleOrNull()?.entries?.size == 4 }
                     assertEquals(1000.toBigInteger(), annual.cards.single().totals.netGrosze)
@@ -78,8 +78,8 @@ class SummaryRepositoryIntegrationTest {
                 repository.tombstone(home, local.id, uid)
                 val deleted = state { it.syncState == SyncState.SYNCED && it.detailEntries.size == 2 && it.detailEntries.none { item -> item.entry.id == local.id } }
                 assertEquals(2000.toBigInteger(), deleted.detailCard!!.totals.netGrosze)
-                assertEquals(deleted.cards.last().entries.map { it.id }.toSet(), deleted.detailEntries.map { it.entry.id }.toSet())
-                assertEquals(deleted.cards.last().totals, deleted.detailCard!!.totals)
+                assertEquals(deleted.cards.first().entries.map { it.id }.toSet(), deleted.detailEntries.map { it.entry.id }.toSet())
+                assertEquals(deleted.cards.first().totals, deleted.detailCard!!.totals)
             }
         } finally {
             instrumentation.runOnMainSync { store.clear() }

@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import java.time.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.*
 import org.junit.After
@@ -43,12 +44,62 @@ class SummaryViewModelTest {
         assertEquals(Year.of(2027), vm.state.value.year)
         assertEquals(listOf("today"), vm.state.value.cards.single().entries.map { it.id })
     }
+    @Test fun yearAndModeChangesImmediatelyPublishOnlyCardsForTheNewScopeNewestFirst() = runTest {
+        val vm = vm(FakeLedger(listOf(entry("current", -100), entry("previous", -50, "2025-12-31"), entry("old", 200, "2023-01-01"))))
+        vm.start("home", "actor"); advanceUntilIdle()
+        assertEquals((9 downTo 1).toList(), vm.state.value.cards.map { it.key.month })
+        val emissions = mutableListOf<SummaryUiState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            vm.state.collect { emissions += it }
+        }
+        vm.previousYear()
+        assertEquals(Year.of(2025), vm.state.value.year)
+        assertEquals((12 downTo 1).toList(), vm.state.value.cards.map { it.key.month })
+        assertTrue(vm.state.value.cards.all { it.key.year == 2025 && it.key.mode == SummaryPeriodMode.MONTH })
+        vm.selectPeriodMode(SummaryPeriodMode.YEAR)
+        assertEquals(listOf(2026, 2025, 2023), vm.state.value.cards.map { it.key.year })
+        assertTrue(vm.state.value.cards.all { it.key.mode == SummaryPeriodMode.YEAR && it.key.month == null })
+        vm.selectPeriodMode(SummaryPeriodMode.MONTH)
+        assertEquals((12 downTo 1).toList(), vm.state.value.cards.map { it.key.month })
+        assertTrue(vm.state.value.cards.all { it.key.year == 2025 && it.key.mode == SummaryPeriodMode.MONTH })
+        vm.nextYear()
+        assertEquals((9 downTo 1).toList(), vm.state.value.cards.map { it.key.month })
+        assertTrue(vm.state.value.cards.all { it.key.year == 2026 })
+        assertEquals("Initial state plus one coherent publication for each scope change", 5, emissions.size)
+        emissions.forEach { published ->
+            assertTrue("Every card must match the published mode", published.cards.all { it.key.mode == published.mode })
+            if (published.mode == SummaryPeriodMode.MONTH) {
+                assertTrue("No stale year cards may accompany a new selected year", published.cards.all { it.key.year == published.year.value })
+                val lastMonth = if (published.year.value == 2026) 9 else 12
+                assertEquals((lastMonth downTo 1).toList(), published.cards.map { it.key.month })
+            } else {
+                assertEquals(listOf(2026, 2025, 2023), published.cards.map { it.key.year })
+            }
+        }
+    }
+
+    @Test fun warsawDecemberAndJanuaryClockBoundarySelectsTheNewestEligiblePeriod() = runTest {
+        for ((instant, expectedYear, months) in listOf(
+            Triple("2026-12-31T22:30:00Z", 2026, (12 downTo 1).toList()),
+            Triple("2026-12-31T23:30:00Z", 2027, listOf(1)),
+        )) {
+            val ledger = FakeLedger(listOf(entry("december", -100, "2026-12-31"), entry("january", -200, "2027-01-01")))
+            val vm = SummaryViewModel(ledger, FakeTaxonomy(), FakeHousehold(), Clock.fixed(Instant.parse(instant), ZoneId.of("Europe/Warsaw")), SavedStateHandle())
+            vm.start("home", "actor"); advanceUntilIdle()
+            assertEquals(Year.of(expectedYear), vm.state.value.year)
+            assertEquals(months, vm.state.value.cards.map { it.key.month })
+            assertEquals(listOf(if (expectedYear == 2026) "december" else "january"), vm.state.value.cards.first().entries.map { it.id })
+            vm.selectPeriodMode(SummaryPeriodMode.YEAR)
+            assertEquals(if (expectedYear == 2026) listOf(2026) else listOf(2027, 2026), vm.state.value.cards.map { it.key.year })
+        }
+    }
+
     @Test fun exactDetailUpdatesWithPendingWritesRenameAndTombstoneThenCloses() = runTest {
         val ledger = FakeLedger(listOf(entry("expense", -100), entry("income", 400), entry("august", -50, "2026-08-31"), entry("future", -999, "2026-09-16")))
         val taxonomy = FakeTaxonomy()
         val vm = vm(ledger, taxonomy)
         vm.start("home", "actor"); advanceUntilIdle()
-        val card = vm.state.value.cards.last(); vm.openPeriod(card.key)
+        val card = vm.state.value.cards.first(); vm.openPeriod(card.key)
         assertEquals(setOf("expense", "income"), vm.state.value.detailEntries.map { it.entry.id }.toSet())
         assertEquals(card.totals, vm.state.value.detailCard!!.totals)
         ledger.home.value = SyncObservation(listOf(entry("expense", -300), entry("income", 400), entry("local", -20)), SyncState.PENDING)
@@ -60,7 +111,7 @@ class SummaryViewModelTest {
         ledger.home.value = SyncObservation(listOf(entry("expense", -300).copy(deleted = true, deletedById = "actor"), entry("income", 400)), SyncState.SYNCED)
         advanceUntilIdle()
         assertEquals(listOf("income"), vm.state.value.detailEntries.map { it.entry.id })
-        assertEquals(vm.state.value.cards.last().totals, vm.state.value.detailCard!!.totals)
+        assertEquals(vm.state.value.cards.first().totals, vm.state.value.detailCard!!.totals)
         vm.closePeriod(); assertNull(vm.state.value.detailCard)
         assertTrue(vm.state.value.detailEntries.isEmpty()); assertEquals(Year.of(2026), vm.state.value.year)
     }
@@ -68,7 +119,7 @@ class SummaryViewModelTest {
         val ledger = FakeLedger(listOf(entry("cached", -100)))
         val taxonomy = FakeTaxonomy(); val vm = vm(ledger, taxonomy)
         vm.start("home", "actor"); advanceUntilIdle()
-        vm.openPeriod(vm.state.value.cards.last().key)
+        vm.openPeriod(vm.state.value.cards.first().key)
         vm.start("home", "actor"); advanceUntilIdle(); assertEquals(1, ledger.subscriptions)
         ledger.home.value = SyncObservation(state = SyncState.OFFLINE)
         taxonomy.categories.value = SyncObservation(state = SyncState.ERROR, error = IllegalStateException("unavailable"))
@@ -79,14 +130,14 @@ class SummaryViewModelTest {
         taxonomy.categories.value = SyncObservation(listOf(category()), SyncState.SYNCED)
         advanceUntilIdle(); assertFalse(vm.state.value.hasError)
         assertTrue(vm.state.value.detailEntries.isEmpty())
-        assertEquals(0.toBigInteger(), vm.state.value.cards.last().totals.netGrosze)
+        assertEquals(0.toBigInteger(), vm.state.value.cards.first().totals.netGrosze)
     }
     @Test fun identityResetClearsDetailAndRecalculatesOwnerAuthorPermissions() = runTest {
         val ledger = FakeLedger(listOf(entry("owner", -100), entry("member", -50).copy(authorId = "member", updatedById = "member")))
         val vm = vm(ledger); vm.start("home", "actor"); advanceUntilIdle()
-        vm.openPeriod(vm.state.value.cards.last().key); assertTrue(vm.state.value.detailEntries.all { it.canManage })
+        vm.openPeriod(vm.state.value.cards.first().key); assertTrue(vm.state.value.detailEntries.all { it.canManage })
         vm.start("home", "member"); assertNull(vm.state.value.detailCard); assertTrue(vm.state.value.detailEntries.isEmpty())
-        advanceUntilIdle(); vm.openPeriod(vm.state.value.cards.last().key)
+        advanceUntilIdle(); vm.openPeriod(vm.state.value.cards.first().key)
         assertFalse(vm.state.value.detailEntries.single { it.entry.id == "owner" }.canManage)
         assertTrue(vm.state.value.detailEntries.single { it.entry.id == "member" }.canManage)
         assertEquals("Anna", vm.state.value.detailEntries.single { it.entry.id == "owner" }.authorName)
@@ -124,7 +175,7 @@ class SummaryViewModelTest {
         assertTrue(vm.state.value.cards.isEmpty()); assertTrue(vm.state.value.detailEntries.isEmpty())
         taxonomy.categories.value = SyncObservation(listOf(category()), SyncState.SYNCED)
         source.emit(SyncObservation(listOf(entry("cached", -250)), SyncState.SYNCED))
-        advanceUntilIdle(); vm.openPeriod(vm.state.value.cards.last().key)
+        advanceUntilIdle(); vm.openPeriod(vm.state.value.cards.first().key)
         val cards = vm.state.value.cards
         val detail = vm.state.value.detailCard
         source.emit(SyncObservation(state = SyncState.ERROR, error = IllegalStateException("later read failed")))

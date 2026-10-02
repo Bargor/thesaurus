@@ -22,7 +22,7 @@ import pl.bargor.thesaurus.ui.entries.EntryListItem
 class SummaryScreenTest {
     @get:Rule val compose = createComposeRule()
     @Test fun compactMetricRowsAlignSymbolsWithExactAmountsAndKeepPolishAccessibilityInOverviewAndDetail() {
-        val card = fixture().cards.last()
+        val card = fixture().cards.first()
         var state by mutableStateOf(fixture().copy(cards = listOf(card)))
         compose.setContent { ThesaurusTheme { SummaryScreen(state, {}, {}, {}, onOpenPeriod = {
             state = state.copy(detailCard = card)
@@ -50,7 +50,7 @@ class SummaryScreenTest {
         compose.onNodeWithTag("summary-period").assertTextContains("2026")
         compose.onNodeWithTag("summary-next-period").assertIsNotEnabled()
         compose.onNodeWithTag("summary-list").performScrollToNode(hasTestTag("summary-card-month-2026-9"))
-        val card = fixture().cards.last()
+        val card = fixture().cards.first()
         compose.onNodeWithTag("summary-income-month-2026-9", true).assertTextEquals(summaryCurrency(400.toBigInteger()))
         compose.onNodeWithTag("summary-expense-month-2026-9", true).assertTextEquals(summaryCurrency((-100).toBigInteger()))
         compose.onNodeWithTag("summary-balance-month-2026-9", true).assertTextEquals(summaryCurrency(300.toBigInteger()))
@@ -61,24 +61,54 @@ class SummaryScreenTest {
         compose.onNodeWithTag("summary-card-month-2026-10").assertDoesNotExist()
     }
     @Test fun tapCardOpensExactEntriesAndBackRestoresScrolledCard() {
-        var state by mutableStateOf(fixture())
+        val augustEntries = listOf(entry("expense", -100), entry("income", 400)).map { it.copy(date = LocalDate.of(2026, 8, 12)) }
+        var state by mutableStateOf(fixture().copy(cards = prepareSummaryOverview(augustEntries, "home", Year.of(2026), SummaryPeriodMode.MONTH, LocalDate.of(2026, 9, 15))))
         compose.setContent { ThesaurusTheme { SummaryScreen(state, {}, {}, {}, onOpenPeriod = { key ->
             val card = state.cards.single { it.key == key }
             state = state.copy(detailCard = card, detailEntries = card.entries.map { EntryListItem(it, "Jedzenie", null, "Anna") })
         }, onClosePeriod = { state = state.copy(detailCard = null, detailEntries = emptyList()) }) } }
-        compose.onNodeWithTag("summary-list").performScrollToNode(hasTestTag("summary-card-month-2026-9"))
-        val before = compose.onNodeWithTag("summary-card-month-2026-9").fetchSemanticsNode().boundsInRoot
-        compose.onNodeWithTag("summary-card-month-2026-9").performClick()
+        compose.onNodeWithTag("summary-list").performScrollToNode(hasTestTag("summary-card-month-2026-8"))
+        val before = compose.onNodeWithTag("summary-card-month-2026-8").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("summary-card-month-2026-8").performClick()
         compose.onNodeWithTag("summary-detail-period").assertIsDisplayed()
-        compose.onNodeWithTag("summary-heading-month-2026-9", true).assertTextContains("Wrzesień 2026")
+        compose.onNodeWithTag("summary-heading-month-2026-8", true).assertTextContains("Sierpień 2026")
         compose.onNodeWithTag("summary-detail-list").performScrollToNode(hasTestTag("entry-expense"))
         compose.onNodeWithTag("entry-expense").assertIsDisplayed()
         compose.onNodeWithTag("summary-detail-list").performScrollToNode(hasTestTag("entry-income"))
         compose.onNodeWithTag("entry-income").assertIsDisplayed()
         compose.onNodeWithTag("summary-detail-back").performClick()
-        compose.onNodeWithTag("summary-card-month-2026-9").assertIsDisplayed()
-        assertEquals(before, compose.onNodeWithTag("summary-card-month-2026-9").fetchSemanticsNode().boundsInRoot)
+        compose.onNodeWithTag("summary-card-month-2026-8").assertIsDisplayed()
+        assertEquals(before, compose.onNodeWithTag("summary-card-month-2026-8").fetchSemanticsNode().boundsInRoot)
     }
+    @Test fun changingYearAndModeShowsNewestCardAfterScrollingAndKeepsNumericPolishMonthOrder() {
+        val today = LocalDate.of(2026, 9, 15)
+        val entries = listOf(entry("current", -100), entry("previous", -100).copy(date = LocalDate.of(2025, 12, 31)), entry("old", -100).copy(date = LocalDate.of(2023, 1, 1)))
+        var state by mutableStateOf(fixture().copy(cards = prepareSummaryOverview(entries, "home", Year.of(2026), SummaryPeriodMode.MONTH, today)))
+        fun change(mode: SummaryPeriodMode = state.mode, year: Year = state.year) {
+            state = state.copy(mode = mode, year = year, cards = prepareSummaryOverview(entries, "home", year, mode, today))
+        }
+        compose.setContent { ThesaurusTheme { SummaryScreen(state, { change(mode = it) }, { change(year = state.year.minusYears(1)) }, { change(year = state.year.plusYears(1)) }) } }
+        compose.onNodeWithTag("summary-card-month-2026-9").assertIsDisplayed()
+        assertEarlierOnList("month-2026-9", "month-2026-8")
+        compose.onNodeWithTag("summary-list").performScrollToNode(hasTestTag("summary-card-month-2026-2"))
+        compose.onNodeWithTag("summary-previous-period").performClick()
+        compose.onNodeWithTag("summary-period").assertTextContains("2025")
+        compose.onNodeWithTag("summary-card-month-2025-12").assertIsDisplayed()
+        assertEarlierOnList("month-2025-12", "month-2025-11")
+        compose.onNodeWithTag("summary-list").performScrollToNode(hasTestTag("summary-card-month-2025-10"))
+        assertEarlierOnList("month-2025-10", "month-2025-9")
+        compose.onNodeWithTag("summary-period").performClick()
+        compose.onNodeWithTag("summary-card-year-2026").assertIsDisplayed()
+        assertEarlierOnList("year-2026", "year-2025")
+        compose.onNodeWithTag("summary-list").performScrollToNode(hasTestTag("summary-card-year-2023"))
+        compose.onNodeWithTag("summary-period").performClick()
+        compose.onNodeWithTag("summary-card-month-2025-12").assertIsDisplayed()
+        compose.onNodeWithTag("summary-next-period").performClick()
+        compose.onNodeWithTag("summary-card-month-2026-9").assertIsDisplayed()
+        compose.onNodeWithTag("summary-next-period").assertIsNotEnabled()
+        compose.onNodeWithTag("summary-card-month-2026-10").assertDoesNotExist()
+    }
+
     @Test fun loadingEmptyRetryAndCachedCardsRemainVisibleInTheirRespectiveStates() {
         var state by mutableStateOf(fixture().copy(cards = emptyList(), isLoading = true))
         var retries = 0
@@ -147,7 +177,7 @@ class SummaryScreenTest {
         var selected: SummaryPeriodKey? = null
         compose.setContent { ThesaurusTheme { SummaryScreen(fixture().copy(mode = SummaryPeriodMode.YEAR, cards = cards), {}, {}, {}, onOpenPeriod = { selected = it }) } }
         compose.onNodeWithTag("summary-period").assertTextContains("Wszystkie lata")
-        compose.onNodeWithTag("summary-card-year-2023").assertIsDisplayed()
+        compose.onNodeWithTag("summary-card-year-2026").assertIsDisplayed()
         for ((year, amount) in listOf(2023 to -200, 2025 to 700, 2026 to -100)) {
             compose.onNodeWithTag("summary-list").performScrollToNode(hasTestTag("summary-card-year-$year"))
             compose.onNodeWithTag("summary-heading-year-$year", true).assertTextEquals(year.toString())
@@ -159,7 +189,7 @@ class SummaryScreenTest {
     }
     @Test fun zeroIncomeOnlyAndExpenseOnlyChartsExposeExactAmountsAndSingleColorArcs() {
         val today = LocalDate.of(2026, 9, 15)
-        fun card(entries: List<LedgerEntry>) = prepareSummaryOverview(entries, "home", Year.of(2026), SummaryPeriodMode.MONTH, today).last()
+        fun card(entries: List<LedgerEntry>) = prepareSummaryOverview(entries, "home", Year.of(2026), SummaryPeriodMode.MONTH, today).first()
         var state by mutableStateOf(fixture().copy(cards = listOf(card(emptyList()))))
         var neutral = Color.Unspecified
         compose.setContent { ThesaurusTheme {
@@ -190,7 +220,7 @@ class SummaryScreenTest {
     }
     @Test fun narrowLargeFontRetainsAllAmountDigitsAndCardTextDoesNotOverlapChart() {
         val entries = listOf(entry("big", Long.MIN_VALUE), entry("income", Long.MAX_VALUE))
-        val card = prepareSummaryOverview(entries, "home", Year.of(2026), SummaryPeriodMode.MONTH, LocalDate.of(2026, 9, 15)).last().copy(
+        val card = prepareSummaryOverview(entries, "home", Year.of(2026), SummaryPeriodMode.MONTH, LocalDate.of(2026, 9, 15)).first().copy(
             highestExpenseCategory = Category("food", "home", "Bardzo długa nazwa kategorii obejmującej codzienne zakupy", authorId = "actor", updatedById = "actor"))
         compose.setContent {
             val density = LocalDensity.current
@@ -225,6 +255,13 @@ class SummaryScreenTest {
         val chart = compose.onNodeWithTag("summary-chart-month-2026-9", true).getUnclippedBoundsInRoot()
         assertTrue(amount.bottom <= chart.top)
     }
+    private fun assertEarlierOnList(first: String, second: String) {
+        compose.onNodeWithTag("summary-list").performScrollToNode(hasTestTag("summary-card-$first"))
+        val firstNode = compose.onNodeWithTag("summary-card-$first").fetchSemanticsNode()
+        val secondNode = compose.onNodeWithTag("summary-card-$second").fetchSemanticsNode()
+        assertTrue("$first must precede $second", firstNode.boundsInRoot.top < secondNode.boundsInRoot.top)
+    }
+
     private fun assertCompactMetricRows(periodTag: String) {
         var symbolLeft: Float? = null
         var amountLeft: Float? = null

@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
@@ -64,9 +65,13 @@ fun SummaryScreen(
     onOpenEntry: (String) -> Unit = {},
     onRetry: () -> Unit = {},
 ) {
-    // Both list states stay in composition while details are open. Their built-in Saver
-    // also restores the position after an edit route or recreation.
-    val overviewListState = rememberLazyListState()
+    // Changing the overview scope starts at its newest card. Details and data refreshes
+    // keep the same scope and saved position, including after an edit or recreation.
+    val overviewListState = rememberSaveable(
+        state.mode,
+        if (state.mode == SummaryPeriodMode.MONTH) state.year.value else null,
+        saver = LazyListState.Saver,
+    ) { LazyListState() }
     val detailListState = rememberLazyListState()
     val detail = state.detailCard
     var detailScrollKey by rememberSaveable { mutableStateOf<String?>(null) }

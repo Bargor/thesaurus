@@ -36,11 +36,11 @@ internal fun prepareSummaryOverview(
         SummaryPeriodMode.MONTH -> {
             if (selectedYear.value > today.year) return emptyList()
             val lastMonth = if (selectedYear.value == today.year) today.monthValue else 12
-            (1..lastMonth).map { month ->
+            (lastMonth downTo 1).map { month ->
                 SummaryPeriodKey(mode, selectedYear.value, month) to YearMonth.of(selectedYear.value, month).summaryPeriod()
             }
         }
-        SummaryPeriodMode.YEAR -> relevant.map { it.date.year }.distinct().sorted().map { year ->
+        SummaryPeriodMode.YEAR -> relevant.map { it.date.year }.distinct().sortedDescending().map { year ->
             SummaryPeriodKey(mode, year) to Year.of(year).summaryPeriod()
         }
     }

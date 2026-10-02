@@ -192,9 +192,9 @@ class SummaryViewModel @Inject constructor(
     }
 
     private fun updatePeriod(transform: (SummaryUiState) -> SummaryUiState) {
-        mutableState.update(transform)
+        // Publish the new scope together with its cards, never with the previous list.
+        recalculate(transform(mutableState.value))
         savePeriod()
-        recalculate()
     }
 
     private fun savePeriod() {
@@ -222,8 +222,11 @@ class SummaryViewModel @Inject constructor(
         savedStateHandle["summary.detailHousehold"] = if (detailKey != null) identity?.first else null
     }
 
-    private fun recalculate() {
-        val (householdId, actorId) = identity ?: return
+    private fun recalculate(period: SummaryUiState = mutableState.value) {
+        val (householdId, actorId) = identity ?: run {
+            mutableState.value = period
+            return
+        }
         val today = LocalDate.now(clock)
         if (entries !== preparedSource || today != preparedToday) {
             preparedSource = entries
@@ -236,7 +239,7 @@ class SummaryViewModel @Inject constructor(
             }
         val categoryById = categories.associateBy { it.id }
         fun bind(card: SummaryPeriodCard) = card.copy(highestExpenseCategory = categoryById[card.highestExpenseCategoryId])
-        val old = mutableState.value
+        val old = period
         val overview = if (entriesLoaded) cards(old.mode, old.year.value).map(::bind) else emptyList()
         val detail = if (entriesLoaded) detailKey?.let { key ->
             cards(key.mode, key.year).firstOrNull { it.key == key }?.let(::bind)
@@ -262,9 +265,9 @@ class SummaryViewModel @Inject constructor(
             SyncState.OFFLINE in states -> SyncState.OFFLINE
             else -> SyncState.SYNCED
         }
-        mutableState.update { it.copy(cards = overview, detailCard = detail, detailEntries = items,
+        mutableState.value = old.copy(cards = overview, detailCard = detail, detailEntries = items,
             isLoading = !entriesObserved, syncState = sync, currentYear = today.year,
-            hasError = observations.values.any { observation -> observation.error != null || observation.state == SyncState.ERROR }) }
+            hasError = observations.values.any { observation -> observation.error != null || observation.state == SyncState.ERROR })
     }
 
     private fun decodeKey(encoded: String?): SummaryPeriodKey? = runCatching {
