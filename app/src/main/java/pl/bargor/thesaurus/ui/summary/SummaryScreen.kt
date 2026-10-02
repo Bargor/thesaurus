@@ -145,12 +145,7 @@ fun SummaryScreen(
                         is EntryListRow.DateHeading -> Text(row.date.format(PolishDateFormatter),
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier.testTag(row.key).semantics { heading() })
-                        is EntryListRow.Entry -> Column {
-                            EntryCard(row.item, onOpenEntry)
-                            Text(stringResource(R.string.browse_entry_author, row.item.authorName),
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(start = 14.dp, top = 4.dp))
-                        }
+                        is EntryListRow.Entry -> EntryCard(row.item, onOpenEntry, showAuthor = true)
                     }
                 }
             }

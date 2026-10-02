@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -259,6 +260,7 @@ internal fun EntryCard(
     onEditEntry: (String) -> Unit,
     modifier: Modifier = Modifier,
     onOpenActions: (() -> Unit)? = null,
+    showAuthor: Boolean = false,
 ) {
     val entry = item.entry
     val amountColor = if (entry.amountGrosze > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -273,6 +275,9 @@ internal fun EntryCard(
         .fillMaxWidth()
         .heightIn(min = 48.dp)
         .testTag("entry-${entry.id}")
+        .let { base ->
+            if (showAuthor) base.semantics(mergeDescendants = true) {} else base
+        }
         .let { base ->
             if (item.canManage) base.combinedClickable(
                 onClickLabel = editLabel,
@@ -309,6 +314,14 @@ internal fun EntryCard(
                 if (entry.normalizedTags.isNotEmpty()) Text(
                     entry.normalizedTags.joinToString(" ") { "#$it" },
                     style = MaterialTheme.typography.bodyMedium,
+                )
+                if (showAuthor) Text(
+                    text = stringResource(R.string.browse_entry_author, item.authorName),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        .testTag("entry-author-${entry.id}"),
                 )
             }
         }
