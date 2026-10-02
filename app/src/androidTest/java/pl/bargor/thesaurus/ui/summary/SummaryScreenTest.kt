@@ -109,6 +109,28 @@ class SummaryScreenTest {
         compose.onNodeWithTag("summary-card-month-2026-10").assertDoesNotExist()
     }
 
+    @Test fun compactViewportKeepsNumericPolishMonthOrderWhenFollowingCardIsClipped() {
+        val today = LocalDate.of(2026, 9, 15)
+        val state = fixture().copy(year = Year.of(2025), cards = prepareSummaryOverview(
+            emptyList(), "home", Year.of(2025), SummaryPeriodMode.MONTH, today))
+        compose.setContent {
+            ThesaurusTheme {
+                Box(Modifier.width(320.dp).height(320.dp)) {
+                    SummaryScreen(state, {}, {}, {})
+                }
+            }
+        }
+        compose.onNodeWithTag("summary-list")
+            .performScrollToNode(hasTestTag("summary-card-month-2025-10"))
+        compose.onNodeWithTag("summary-card-month-2025-10").assertIsDisplayed()
+        compose.onNodeWithTag("summary-heading-month-2025-10", true)
+            .assertTextEquals("Październik 2025")
+        compose.onNodeWithTag("summary-card-month-2025-9").assertIsNotDisplayed()
+        assertEarlierOnList("month-2025-10", "month-2025-9")
+        compose.onNodeWithTag("summary-heading-month-2025-9", true)
+            .assertTextEquals("Wrzesień 2025")
+    }
+
     @Test fun loadingEmptyRetryAndCachedCardsRemainVisibleInTheirRespectiveStates() {
         var state by mutableStateOf(fixture().copy(cards = emptyList(), isLoading = true))
         var retries = 0
@@ -256,10 +278,23 @@ class SummaryScreenTest {
         assertTrue(amount.bottom <= chart.top)
     }
     private fun assertEarlierOnList(first: String, second: String) {
-        compose.onNodeWithTag("summary-list").performScrollToNode(hasTestTag("summary-card-$first"))
-        val firstNode = compose.onNodeWithTag("summary-card-$first").fetchSemanticsNode()
-        val secondNode = compose.onNodeWithTag("summary-card-$second").fetchSemanticsNode()
-        assertTrue("$first must precede $second", firstNode.boundsInRoot.top < secondNode.boundsInRoot.top)
+        val list = compose.onNodeWithTag("summary-list")
+        val indexForKey = list.fetchSemanticsNode().config[SemanticsProperties.IndexForKey]
+        // Resolve order from the rendered LazyColumn's item provider. Offscreen items
+        // may be prefetched but unplaced, so even unclipped bounds can be zero.
+        compose.runOnIdle {
+            val firstIndex = indexForKey(first)
+            val secondIndex = indexForKey(second)
+            assertTrue("$first must be an item in the rendered list", firstIndex >= 0)
+            assertTrue("$second must be an item in the rendered list", secondIndex >= 0)
+            assertTrue("$first must precede $second", firstIndex < secondIndex)
+        }
+        for (period in listOf(first, second)) {
+            list.performScrollToNode(hasTestTag("summary-card-$period"))
+            val bounds = compose.onNodeWithTag("summary-card-$period")
+                .assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertTrue("$period must have a measured height", bounds.bottom > bounds.top)
+        }
     }
 
     private fun assertCompactMetricRows(periodTag: String) {
