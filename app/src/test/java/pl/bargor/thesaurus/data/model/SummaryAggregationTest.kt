@@ -19,16 +19,16 @@ class SummaryAggregationTest {
             entry("foreign", -999, today).copy(householdId = "other"),
             entry("deleted", -999, today, deleted = true),
         ), "home", Year.of(2028), SummaryPeriodMode.MONTH, today)
-        assertEquals(listOf(1, 2), cards.map { it.key.month })
-        assertTrue(cards.first().totals.isEmpty)
-        assertEquals(listOf("leap"), cards.last().entries.map { it.id })
-        assertEquals(200.toBigInteger(), cards.last().totals.expenseGrosze)
-        assertEquals(today, cards.last().period.to)
+        assertEquals(listOf(2, 1), cards.map { it.key.month })
+        assertTrue(cards.last().totals.isEmpty)
+        assertEquals(listOf("leap"), cards.first().entries.map { it.id })
+        assertEquals(200.toBigInteger(), cards.first().totals.expenseGrosze)
+        assertEquals(today, cards.first().period.to)
         assertEquals(12, prepareSummaryOverview(emptyList(), "home", Year.of(2027), SummaryPeriodMode.MONTH, today).size)
         assertTrue(prepareSummaryOverview(emptyList(), "home", Year.of(2029), SummaryPeriodMode.MONTH, today).isEmpty())
     }
 
-    @Test fun annualOverviewUsesOnlyRelevantYearsInAscendingOrderAndMatchesMonthlyTotals() {
+    @Test fun annualOverviewUsesOnlyRelevantYearsNewestFirstAndMatchesMonthlyTotals() {
         val today = LocalDate.of(2026, 9, 15)
         val entries = listOf(entry("old", -100, LocalDate.of(2023, 12, 31)),
             entry("old-income", 100, LocalDate.of(2025, 1, 1)),
@@ -36,12 +36,38 @@ class SummaryAggregationTest {
             entry("expense", -250, today), entry("future", -999, today.plusDays(1)),
             entry("deleted-year", -99, LocalDate.of(2024, 1, 1), deleted = true))
         val years = prepareSummaryOverview(entries, "home", Year.of(2026), SummaryPeriodMode.YEAR, today)
-        assertEquals(listOf(2023, 2025, 2026), years.map { it.key.year })
+        assertEquals(listOf(2026, 2025, 2023), years.map { it.key.year })
         val months = prepareSummaryOverview(entries, "home", Year.of(2026), SummaryPeriodMode.MONTH, today)
-        assertEquals(years.last().totals.incomeGrosze, months.fold(BigInteger.ZERO) { sum, card -> sum + card.totals.incomeGrosze })
-        assertEquals(years.last().totals.expenseGrosze, months.fold(BigInteger.ZERO) { sum, card -> sum + card.totals.expenseGrosze })
-        assertEquals(setOf("income", "expense"), years.last().entries.map { it.id }.toSet())
+        assertEquals(years.first().totals.incomeGrosze, months.fold(BigInteger.ZERO) { sum, card -> sum + card.totals.incomeGrosze })
+        assertEquals(years.first().totals.expenseGrosze, months.fold(BigInteger.ZERO) { sum, card -> sum + card.totals.expenseGrosze })
+        assertEquals(setOf("income", "expense"), years.first().entries.map { it.id }.toSet())
         assertTrue(prepareSummaryOverview(emptyList(), "home", Year.of(2026), SummaryPeriodMode.YEAR, today).isEmpty())
+    }
+
+    @Test fun emptyHistoricalMonthsUseNumericOrderAcrossSingleAndDoubleDigitMonths() {
+        val cards = prepareSummaryOverview(emptyList(), "home", Year.of(2025), SummaryPeriodMode.MONTH, LocalDate.of(2026, 1, 1))
+        assertEquals((12 downTo 1).toList(), cards.map { it.key.month })
+        assertTrue(cards.all { it.totals.isEmpty && it.entries.isEmpty() })
+        assertEquals(LocalDate.of(2025, 12, 1), cards.first().period.from)
+        assertEquals(LocalDate.of(2025, 1, 31), cards.last().period.to)
+        val current = prepareSummaryOverview(emptyList(), "home", Year.of(2026), SummaryPeriodMode.MONTH, LocalDate.of(2026, 1, 1))
+        assertEquals(listOf(1), current.map { it.key.month })
+    }
+
+    @Test fun annualOrderIsNumericRegardlessOfInputAndExcludesForeignDeletedAndFutureOnlyYears() {
+        val entries = listOf(
+            entry("old", -100, LocalDate.of(999, 12, 31)),
+            entry("new", 200, LocalDate.of(2026, 1, 1)),
+            entry("middle", -50, LocalDate.of(1000, 1, 1)),
+            entry("future", 999, LocalDate.of(2027, 1, 1)),
+            entry("foreign", 999, LocalDate.of(2025, 1, 1)).copy(householdId = "other"),
+            entry("deleted", 999, LocalDate.of(2024, 1, 1), deleted = true),
+        )
+        for (input in listOf(entries, entries.reversed())) {
+            val cards = prepareSummaryOverview(input, "home", Year.of(2020), SummaryPeriodMode.YEAR, LocalDate.of(2026, 12, 31))
+            assertEquals(listOf(2026, 1000, 999), cards.map { it.key.year })
+            assertEquals(listOf("new", "middle", "old"), cards.flatMap { it.entries }.map { it.id })
+        }
     }
 
     @Test fun topCategoryUsesNegativeExpensesWithStableIdTieBreakAndOverflowSafeMagnitude() {
