@@ -314,4 +314,14 @@
     <string name="reports_balance_axis_billion">%1$s mld zł</string>
     <string name="reports_balance_axis_trillion">%1$s bln zł</string>
     <string name="reports_balance_axis_scientific">%1$sE%2$d zł</string>
+    <string name="global_account_balance_label">Saldo konta</string>
+    <string name="global_account_balance_loading">Wczytywanie salda…</string>
+    <string name="global_account_balance_error">Nie udało się wczytać salda.</string>
+    <string name="global_account_balance_retry">Ponów</string>
+    <string name="global_account_balance_positive">Saldo dodatnie</string>
+    <string name="global_account_balance_negative">Saldo ujemne</string>
+    <string name="global_account_balance_zero">Saldo zerowe</string>
+    <string name="global_account_balance_pending">Uwzględnia zmiany oczekujące na synchronizację</string>
+    <string name="global_account_balance_cached">Saldo z danych zapisanych na urządzeniu</string>
+    <string name="global_account_balance_scroll_hint">Przesuń kwotę, aby zobaczyć całość</string>
 </resources>

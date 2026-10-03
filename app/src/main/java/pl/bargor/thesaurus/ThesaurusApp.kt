@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -75,6 +78,9 @@ import pl.bargor.thesaurus.ui.reports.ReportsScreen
 import pl.bargor.thesaurus.ui.reports.ReportsViewModel
 import pl.bargor.thesaurus.ui.browse.BrowseScreen
 import pl.bargor.thesaurus.ui.browse.BrowseViewModel
+import pl.bargor.thesaurus.ui.balance.GlobalAccountBalanceBar
+import pl.bargor.thesaurus.ui.balance.GlobalAccountBalanceUiState
+import pl.bargor.thesaurus.ui.balance.GlobalAccountBalanceViewModel
 
 enum class Destination(
     @param:StringRes val labelRes: Int,
@@ -101,7 +107,8 @@ fun ThesaurusApp(
     OfflineStatusHost(isOnline = isOnline, screenKey = Pair(authState::class, pendingInvitation)) {
         when (val state = authState) {
             is AuthUiState.Ready -> if (pendingInvitation == null) {
-                HouseholdApp(state.identity.uid, state.householdId, onSignOut = authViewModel::signOut)
+                HouseholdApp(state.identity.uid, state.householdId, onSignOut = authViewModel::signOut,
+                    balanceState = null)
             } else if (pendingInvitation?.householdId == state.householdId) {
                 InvitationAcceptRoute(
                     link = pendingInvitation!!,
@@ -181,6 +188,9 @@ internal fun HouseholdApp(
     browseContent: @Composable (onOpenEntry: (String) -> Unit) -> Unit = { onOpenEntry ->
         BrowseRoute(householdId, actorId, onOpenEntry)
     },
+    // Preview/navigation fixtures stay independent of Hilt; production requests the live source explicitly.
+    balanceState: GlobalAccountBalanceUiState? = GlobalAccountBalanceUiState(),
+    familyContent: (@Composable (onBack: () -> Unit) -> Unit)? = null,
 ) {
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
@@ -188,9 +198,14 @@ internal fun HouseholdApp(
     LaunchedEffect(currentBackStackEntry) { dismissOfflineTooltip() }
 
     Scaffold(
+        // Move the shared footer and scrollable screen together above the keyboard.
+        // Insets are consumed here, so navigation does not add its bottom inset twice.
+        modifier = Modifier.imePadding(),
         bottomBar = {
             Column {
                 DeveloperToolsContent(onSignOut)
+                if (balanceState != null) GlobalAccountBalanceBar(balanceState)
+                else GlobalAccountBalanceRoute(householdId, actorId)
                 HouseholdNavigationBar(currentRoute = currentRoute, onNavigate = { destination ->
                     // Settings is a temporary screen above Entries, not a saved tab.
                     if (currentRoute == "settings") {
@@ -217,7 +232,8 @@ internal fun HouseholdApp(
             startDestination = Destination.Entries.route,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .consumeWindowInsets(padding),
         ) {
             composable(Destination.Entries.route) {
                 entriesContent(
@@ -242,10 +258,11 @@ internal fun HouseholdApp(
                 )
             }
             composable("family") {
-                FamilyRoute(
+                val onBack = { navController.popBackStack(); Unit }
+                if (familyContent != null) familyContent(onBack) else FamilyRoute(
                     householdId = householdId,
                     actorId = actorId,
-                    onBack = { navController.popBackStack() },
+                    onBack = onBack,
                 )
             }
             composable("add-entry") {
@@ -278,6 +295,22 @@ internal fun HouseholdApp(
             }
         }
     }
+}
+
+@Composable
+private fun GlobalAccountBalanceRoute(
+    householdId: String,
+    actorId: String,
+    // Called above NavHost: one app-scoped listener survives destination navigation.
+    viewModel: GlobalAccountBalanceViewModel = hiltViewModel(key = "global-account-balance"),
+) {
+    val observed by viewModel.state.collectAsState()
+    LaunchedEffect(viewModel, householdId, actorId) { viewModel.start(householdId, actorId) }
+    DisposableEffect(viewModel) { onDispose { viewModel.stop() } }
+    // Effects run after composition; gate the first frame of an account change too.
+    val visible = if (observed.householdId == householdId && observed.actorId == actorId) observed
+        else GlobalAccountBalanceUiState(householdId = householdId, actorId = actorId)
+    GlobalAccountBalanceBar(visible, onRetry = viewModel::retry)
 }
 
 @Composable
