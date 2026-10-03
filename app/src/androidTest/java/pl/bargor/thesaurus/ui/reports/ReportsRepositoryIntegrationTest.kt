@@ -64,8 +64,9 @@ class ReportsRepositoryIntegrationTest {
                 repository.save(expense); repository.save(refund); repository.save(excluded); repository.save(paycheck)
                 repository.save(entry("august", -900, date = "2026-08-31"))
                 lateinit var vm: ReportsViewModel
+                val saved = SavedStateHandle()
                 instrumentation.runOnMainSync {
-                    vm = ReportsViewModel(repository, repository, Clock.fixed(Instant.parse("2026-09-30T12:00:00Z"), ZoneOffset.UTC), SavedStateHandle(), repository)
+                    vm = ReportsViewModel(repository, repository, Clock.fixed(Instant.parse("2026-09-30T12:00:00Z"), ZoneOffset.UTC), saved, repository)
                     store.put("reports", vm); vm.start(home)
                 }
                 suspend fun state(stage: String, predicate: (ReportsUiState) -> Boolean): ReportsUiState {
@@ -90,7 +91,38 @@ class ReportsRepositoryIntegrationTest {
                 assertEquals(1100.toBigInteger(), scoped.aggregation.categories.single().amountGrosze)
                 assertEquals(setOf(expense.id, refund.id), scoped.entries.map { it.entry.id }.toSet())
                 firestore.disableNetwork().await()
-                state("disable network") { it.syncState == SyncState.OFFLINE }
+                val cached = state("disable network") { it.syncState == SyncState.OFFLINE }
+                instrumentation.runOnMainSync { vm.openFilters(); vm.selectSort(ReportEntrySort.AMOUNT); vm.toggleSortDirection() }
+                assertEquals(cached.entries, vm.state.value.entries)
+                assertEquals(cached.aggregation, vm.state.value.aggregation)
+                instrumentation.runOnMainSync { vm.dismissFilters(); vm.openFilters() }
+                assertEquals(ReportEntrySort.DATE, vm.state.value.filterDraft!!.sort)
+                instrumentation.runOnMainSync { vm.selectSort(ReportEntrySort.AMOUNT); vm.toggleSortDirection(); vm.applyFilters() }
+                val sortedCached = state("commit offline cached sorting") {
+                    it.syncState == SyncState.OFFLINE && it.sort == ReportEntrySort.AMOUNT &&
+                        it.direction == ReportSortDirection.ASCENDING && it.filterDraft == null
+                }
+                assertEquals(listOf(expense.id, refund.id), sortedCached.entries.map { it.entry.id })
+                assertEquals(cached.aggregation, sortedCached.aggregation)
+                instrumentation.runOnMainSync {
+                    vm.openFilters(); vm.resetFilters()
+                    val restoredState = SavedStateHandle(saved.keys().associateWith { saved.get<Any?>(it) })
+                    store.clear()
+                    vm = ReportsViewModel(repository, repository,
+                        Clock.fixed(Instant.parse("2026-09-30T12:00:00Z"), ZoneOffset.UTC), restoredState, repository)
+                    store.put("reports", vm); vm.start(home)
+                }
+                val restoredCached = state("restore applied sorting and scope from offline cache") {
+                    !it.isLoading && it.syncState == SyncState.OFFLINE && it.entries.size == 2 &&
+                        it.selectedSubcategoryId == shop.id && it.filterDraft == null
+                }
+                assertEquals(ReportEntrySort.AMOUNT, restoredCached.sort)
+                assertEquals(ReportSortDirection.ASCENDING, restoredCached.direction)
+                assertEquals(sortedCached.entries.map { it.entry.id }, restoredCached.entries.map { it.entry.id })
+                assertEquals(sortedCached.aggregation, restoredCached.aggregation)
+                instrumentation.runOnMainSync { vm.openFilters() }
+                assertEquals(ReportEntrySort.AMOUNT, vm.state.value.filterDraft!!.sort)
+                instrumentation.runOnMainSync { vm.dismissFilters() }
                 val local = entry("local", -500)
                 val writes = listOf(async { repository.save(local) }, async { repository.save(food.copy(name = "Jedzenie lokalne", updatedById = uid)) }, async { repository.save(shop.copy(name = "Sklep lokalny", updatedById = uid)) })
                 try {

@@ -508,6 +508,95 @@ class ReportsScopeViewModelTest {
         assertEquals(listOf("shop"), vm.state.value.entries.map { it.entry.id })
     }
 
+    @Test fun allSortDirectionsKeepMembershipAggregationsAndEqualKeyTiesStable() = runTest {
+        val ledger = Ledger(listOf(entry("z", -100, date = "2026-09-12"),
+            entry("a", -100, date = "2026-09-12"), entry("early", 300, date = "2026-09-01"),
+            entry("late", -200, date = "2026-09-25")))
+        val vm = ReportsViewModel(ledger, Taxonomy(), clock, SavedStateHandle(), ReportHouseholds())
+        vm.start("home"); advanceUntilIdle()
+        val original = vm.state.value
+        val orders = listOf(
+            Triple(ReportEntrySort.DATE, ReportSortDirection.ASCENDING, listOf("early", "a", "z", "late")),
+            Triple(ReportEntrySort.DATE, ReportSortDirection.DESCENDING, listOf("late", "a", "z", "early")),
+            Triple(ReportEntrySort.AMOUNT, ReportSortDirection.ASCENDING, listOf("late", "a", "z", "early")),
+            Triple(ReportEntrySort.AMOUNT, ReportSortDirection.DESCENDING, listOf("early", "a", "z", "late")))
+        for ((sort, direction, expected) in orders) {
+            vm.openFilters(); vm.selectSort(sort)
+            if (vm.state.value.filterDraft!!.direction != direction) vm.toggleSortDirection()
+            assertEquals(original.aggregation, vm.state.value.aggregation)
+            vm.applyFilters()
+            assertEquals(expected, vm.state.value.entries.map { it.entry.id })
+            assertEquals(original.entries.map { it.entry.id }.toSet(), vm.state.value.entries.map { it.entry.id }.toSet())
+            assertEquals(original.aggregation, vm.state.value.aggregation)
+        }
+        ledger.home.value = SyncObservation(ledger.home.value.value!!.reversed(), SyncState.PENDING)
+        advanceUntilIdle()
+        assertEquals(listOf("early", "a", "z", "late"), vm.state.value.entries.map { it.entry.id })
+    }
+
+    @Test fun sortingDraftCancelResetAndRestoreRetainOnlyAppliedSort() = runTest {
+        val saved = SavedStateHandle()
+        val ledger = Ledger(listOf(entry("a", -100), entry("b", 200)))
+        val vm = ReportsViewModel(ledger, Taxonomy(), clock, saved, ReportHouseholds())
+        vm.start("home"); advanceUntilIdle()
+        val original = vm.state.value
+        vm.openFilters(); vm.selectSort(ReportEntrySort.AMOUNT); vm.toggleSortDirection()
+        assertEquals(original.entries, vm.state.value.entries)
+        assertEquals(original.aggregation, vm.state.value.aggregation)
+        assertFalse(vm.state.value.hasActiveFilters)
+        assertEquals("DATE", saved.get<String>("reports.sort"))
+        vm.dismissFilters(); vm.openFilters()
+        assertEquals(ReportEntrySort.DATE, vm.state.value.filterDraft!!.sort)
+        assertEquals(ReportSortDirection.DESCENDING, vm.state.value.filterDraft!!.direction)
+        vm.selectSort(ReportEntrySort.AMOUNT); vm.toggleSortDirection(); vm.applyFilters()
+        assertTrue(vm.state.value.hasActiveFilters)
+        assertEquals(listOf("a", "b"), vm.state.value.entries.map { it.entry.id })
+        vm.openFilters(); vm.resetFilters()
+        assertEquals(ReportEntrySort.DATE, vm.state.value.filterDraft!!.sort)
+        assertEquals(ReportSortDirection.DESCENDING, vm.state.value.filterDraft!!.direction)
+        assertEquals(ReportEntrySort.AMOUNT, vm.state.value.sort)
+        assertEquals(ReportSortDirection.ASCENDING, vm.state.value.direction)
+        val restored = ReportsViewModel(ledger, Taxonomy(), clock, copied(saved), ReportHouseholds())
+        restored.start("home"); advanceUntilIdle()
+        assertNull(restored.state.value.filterDraft)
+        assertEquals(ReportEntrySort.AMOUNT, restored.state.value.sort)
+        assertEquals(ReportSortDirection.ASCENDING, restored.state.value.direction)
+        assertEquals(vm.state.value.entries, restored.state.value.entries)
+        vm.dismissFilters(); vm.openFilters()
+        assertEquals(ReportEntrySort.AMOUNT, vm.state.value.filterDraft!!.sort)
+        vm.resetFilters(); vm.applyFilters()
+        assertFalse(vm.state.value.hasActiveFilters)
+        vm.openFilters(); vm.toggleSortDirection(); vm.applyFilters()
+        assertTrue("Ascending date alone activates the funnel", vm.state.value.hasActiveFilters)
+    }
+
+    @Test fun offlineSortAndFiltersCommitTogetherAndInvalidRangeKeepsAppliedReport() = runTest {
+        val ledger = Ledger(listOf(entry("expense", -100, "shop"), entry("income", 200, "shop"),
+            entry("car", -300, "fuel", "car")))
+        val vm = ReportsViewModel(ledger, Taxonomy(), clock, SavedStateHandle(), ReportHouseholds())
+        vm.start("home"); advanceUntilIdle()
+        ledger.home.value = SyncObservation(state = SyncState.OFFLINE); advanceUntilIdle()
+        val original = vm.state.value
+        vm.openFilters(); vm.selectSort(ReportEntrySort.AMOUNT); vm.toggleSortDirection()
+        vm.selectCategory("food"); vm.selectSubcategory("shop"); vm.selectMembers(setOf("actor"))
+        vm.selectPeriodMode(ReportPeriodMode.CUSTOM); vm.updateCustomFrom("bad")
+        vm.applyFilters()
+        assertTrue(vm.state.value.filterDraft!!.customDateError)
+        assertEquals(original.entries, vm.state.value.entries)
+        assertEquals(original.aggregation, vm.state.value.aggregation)
+        assertEquals(ReportEntrySort.DATE, vm.state.value.sort)
+        vm.updateCustomFrom("2026-09-01"); vm.updateCustomTo("2026-09-30"); vm.applyFilters()
+        assertNull(vm.state.value.filterDraft)
+        assertEquals(SyncState.OFFLINE, vm.state.value.syncState)
+        assertEquals(listOf("expense", "income"), vm.state.value.entries.map { it.entry.id })
+        assertEquals(100.toBigInteger(), vm.state.value.aggregation.totals.netGrosze)
+        assertEquals(listOf(ReportCategoryValue("food", 300.toBigInteger())), vm.state.value.aggregation.categories)
+        assertEquals(100.toBigInteger(), vm.state.value.aggregation.trend.sumOfBig { it.amountGrosze })
+        assertEquals(setOf("actor"), vm.state.value.selectedMemberIds)
+        assertEquals(ReportEntrySort.AMOUNT, vm.state.value.sort)
+        assertEquals(ReportSortDirection.ASCENDING, vm.state.value.direction)
+    }
+
     private fun copied(saved: SavedStateHandle) =
         SavedStateHandle(saved.keys().associateWith { saved.get<Any?>(it) })
     private fun <T> List<T>.sumOfBig(value: (T) -> BigInteger) = fold(BigInteger.ZERO) { sum, item -> sum + value(item) }

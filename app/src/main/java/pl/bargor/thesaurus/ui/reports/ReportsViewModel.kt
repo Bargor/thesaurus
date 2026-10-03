@@ -47,6 +47,8 @@ data class ReportFilterDraft(
     val selectedCategoryId: String? = null,
     val selectedSubcategoryId: String? = null,
     val selectedMemberIds: Set<String>? = null,
+    val sort: ReportEntrySort = ReportEntrySort.DATE,
+    val direction: ReportSortDirection = ReportSortDirection.DESCENDING,
 )
 
 data class ReportEntryItem(
@@ -82,7 +84,8 @@ data class ReportsUiState(
     val allSubcategories: List<Subcategory> = emptyList(),
 ) {
     val hasActiveFilters: Boolean get() = mode != ReportPeriodMode.MONTH || month != YearMonth.from(today) ||
-        typeFilter != ReportTypeFilter.ALL || selectedCategoryId != null || selectedSubcategoryId != null || selectedMemberIds != null
+        typeFilter != ReportTypeFilter.ALL || selectedCategoryId != null || selectedSubcategoryId != null || selectedMemberIds != null ||
+        sort != ReportEntrySort.DATE || direction != ReportSortDirection.DESCENDING
     /** Current and future calendar periods never make the report claim dates after today. */
     fun period(): SummaryPeriod = when (mode) {
         ReportPeriodMode.MONTH -> boundedPeriod(month.atDay(1), month.atEndOfMonth(), today)
@@ -255,16 +258,20 @@ class ReportsViewModel @Inject constructor(
         saveFilters()
     }
     fun selectSort(sort: ReportEntrySort) {
+        if (editDraft { it.copy(sort = sort) }) return
         mutableState.update { it.copy(sort = sort).recalculated(latestEntries.orEmpty(), latestCategories) }
         saveSort()
     }
     fun toggleSortDirection() {
+        if (editDraft { it.copy(direction = if (it.direction == ReportSortDirection.DESCENDING)
+            ReportSortDirection.ASCENDING else ReportSortDirection.DESCENDING) }) return
         mutableState.update { it.copy(direction = if (it.direction == ReportSortDirection.DESCENDING)
             ReportSortDirection.ASCENDING else ReportSortDirection.DESCENDING)
             .recalculated(latestEntries.orEmpty(), latestCategories) }
         saveSort()
     }
     fun clearControls() {
+        if (editDraft { it.copy(sort = ReportEntrySort.DATE, direction = ReportSortDirection.DESCENDING) }) return
         mutableState.update { it.copy(sort = ReportEntrySort.DATE, direction = ReportSortDirection.DESCENDING)
             .recalculated(latestEntries.orEmpty(), latestCategories) }
         saveSort()
@@ -348,7 +355,8 @@ class ReportsViewModel @Inject constructor(
 
     private fun ReportsUiState.toDraft() = ReportFilterDraft(mode, month, year, typeFilter,
         customFromInput, customToInput, selectedCategoryId = selectedCategoryId,
-        selectedSubcategoryId = selectedSubcategoryId, selectedMemberIds = selectedMemberIds)
+        selectedSubcategoryId = selectedSubcategoryId, selectedMemberIds = selectedMemberIds,
+        sort = sort, direction = direction)
 
     fun openFilters() { mutableState.update { it.copy(filterDraft = it.toDraft()) } }
     fun dismissFilters() {
@@ -396,9 +404,10 @@ class ReportsViewModel @Inject constructor(
             typeFilter = draft.typeFilter, customFromInput = draft.customFromInput,
             customToInput = draft.customToInput, customDateError = false,
             selectedCategoryId = draft.selectedCategoryId, selectedSubcategoryId = draft.selectedSubcategoryId,
-            selectedMemberIds = draft.selectedMemberIds, filterDraft = null)
+            selectedMemberIds = draft.selectedMemberIds, sort = draft.sort, direction = draft.direction, filterDraft = null)
             .recalculated(latestEntries.orEmpty(), latestCategories) }
         saveFilters()
+        saveSort()
         refresh()
     }
 

@@ -52,7 +52,7 @@ class ReportsControlsTest {
                         ReportsScreen(state, model::selectPeriodMode, model::previousPeriod, model::nextPeriod, model::selectType,
                             model::updateCustomFrom, model::updateCustomTo, model::applyCustomPeriod, {}, model::retry,
                             onSelectCategory = model::selectCategory, onSelectSubcategory = model::selectSubcategory,
-                            onSelectSort = model::selectSort, onToggleSortDirection = model::toggleSortDirection, onClearControls = model::clearControls,
+                            onSelectSort = model::selectSort, onToggleSortDirection = model::toggleSortDirection,
                             onOpenFilters = model::openFilters, onDismissFilters = model::dismissFilters, onApplyFilters = model::applyFilters,
                             onResetFilters = model::resetFilters, onSelectMembers = model::selectMembers)
                     }
@@ -94,7 +94,7 @@ class ReportsControlsTest {
         assertEquals(setOf("shop-income", "shop-expense"), vm.state.value.entries.map { it.entry.id }.toSet())
         open(); choose("reports-period-selector", "YEAR"); apply()
         compose.onNodeWithTag("reports-trend-summary").performScrollTo().assertTextContains("wrz: -8,00", substring = true)
-        compose.onNodeWithTag("reports-clear-controls").performScrollTo().performClick()
+        compose.onNodeWithTag("reports-clear-controls").assertDoesNotExist()
         assertEquals("shop", vm.state.value.selectedSubcategoryId)
         net("-8,00")
         open(); compose.onNodeWithTag("reports-reset-filters").performClick()
@@ -102,9 +102,9 @@ class ReportsControlsTest {
         compose.onNodeWithTag("reports-filter-subcategory").performScrollTo().assertIsNotEnabled()
         assertEquals("food", vm.state.value.selectedCategoryId)
         apply(); net("-15,00")
-        choose("reports-sort", "AMOUNT")
+        open(); choose("reports-sort", "AMOUNT"); apply()
         assertEquals(listOf("shop-income", "car", "cafe", "shop-expense"), vm.state.value.entries.map { it.entry.id })
-        compose.onNodeWithTag("reports-sort-direction").performScrollTo().performClick()
+        open(); compose.onNodeWithTag("reports-sort-direction").performScrollTo().performClick(); apply()
         assertEquals(listOf("shop-expense", "cafe", "car", "shop-income"), vm.state.value.entries.map { it.entry.id })
         net("-15,00")
     }
@@ -157,7 +157,8 @@ class ReportsControlsTest {
 
     @Test fun backAndOutsideTapDiscardDraftSelection() {
         render()
-        open(); choose("reports-filter-category", "food")
+        open(); choose("reports-filter-category", "food"); choose("reports-sort", "AMOUNT")
+        compose.onNodeWithTag("reports-sort-direction").performScrollTo().performClick()
         compose.waitForIdle()
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().waitForIdleSync()
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
@@ -165,11 +166,14 @@ class ReportsControlsTest {
         compose.waitUntil(timeoutMillis = 5_000) { vm.state.value.filterDraft == null }
         compose.onNodeWithTag("reports-filter-dialog").assertDoesNotExist()
         assertEquals(null, vm.state.value.selectedCategoryId)
-        open(); choose("reports-filter-category", "car")
+        assertEquals(ReportEntrySort.DATE, vm.state.value.sort)
+        assertEquals(ReportSortDirection.DESCENDING, vm.state.value.direction)
+        open(); choose("reports-filter-category", "car"); choose("reports-sort", "AMOUNT")
         compose.onAllNodes(isRoot()).onLast().performTouchInput { click(androidx.compose.ui.geometry.Offset(1f, 1f)) }
         compose.waitUntil(timeoutMillis = 5_000) { vm.state.value.filterDraft == null }
         compose.onNodeWithTag("reports-filter-dialog").assertDoesNotExist()
         assertEquals(null, vm.state.value.selectedCategoryId)
+        assertEquals(ReportEntrySort.DATE, vm.state.value.sort)
         net("-15,00")
     }
 
@@ -189,7 +193,7 @@ class ReportsControlsTest {
         }
         compose.onNodeWithTag("reports-open-filters")
             .assertContentDescriptionEquals("Otwórz filtry raportów")
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Aktywne filtry"))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Aktywne filtry lub sortowanie"))
         compose.onNodeWithTag("reports-filters-active", useUnmergedTree = true).assertExists()
         open()
         compose.onNodeWithTag("reports-filter-category").performScrollTo()
@@ -203,7 +207,7 @@ class ReportsControlsTest {
         compose.onNodeWithTag("reports-filter-category-option-missing-category").assertIsDisplayed().performClick()
         compose.onNodeWithTag("reports-cancel-filters").performClick()
         compose.onNodeWithTag("reports-open-filters")
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Aktywne filtry"))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Aktywne filtry lub sortowanie"))
     }
 
     @Test fun largeFontDialogControlsAndCustomInputRemainReachableAndSortOptionsAreLimited() {
@@ -220,23 +224,100 @@ class ReportsControlsTest {
         compose.onNodeWithTag("reports-custom-to").performScrollTo().performTextReplacement("2026-09-30")
         compose.onNodeWithTag("reports-reset-filters").assertIsDisplayed().assertHasClickAction()
         compose.onNodeWithTag("reports-cancel-filters").assertIsDisplayed().assertHasClickAction()
-        apply()
-        compose.onNodeWithTag("reports-filter-dialog").assertDoesNotExist()
         compose.onNodeWithTag("reports-sort").performScrollTo().performClick()
         compose.onNodeWithTag("reports-sort-option-DATE").assertIsDisplayed()
         compose.onNodeWithTag("reports-sort-option-AMOUNT").assertIsDisplayed()
         listOf("CATEGORY", "SUBCATEGORY", "TAGS").forEach { compose.onNodeWithTag("reports-sort-option-$it").assertDoesNotExist() }
         compose.onNodeWithTag("reports-sort-option-AMOUNT").performClick()
-        compose.onNodeWithTag("reports-sort-direction").assertContentDescriptionEquals("Sortowanie malejące. Zmień na rosnące").performClick()
+        compose.onNodeWithTag("reports-sort-direction").performScrollTo().assertContentDescriptionEquals("Sortowanie malejące. Zmień na rosnące").performClick()
             .assertContentDescriptionEquals("Sortowanie rosnące. Zmień na malejące")
-        listOf("reports-sort", "reports-sort-direction", "reports-clear-controls").forEach { tag ->
+        listOf("reports-sort", "reports-sort-direction").forEach { tag ->
             val bounds = compose.onNodeWithTag(tag).performScrollTo().assertIsDisplayed().assertHasClickAction().getUnclippedBoundsInRoot()
             assertTrue(bounds.right - bounds.left >= 48.dp && bounds.bottom - bounds.top >= 48.dp)
         }
-        compose.onNodeWithTag("reports-clear-controls").performClick()
         assertEquals(ReportEntrySort.DATE, vm.state.value.sort)
+        apply()
+        assertEquals(ReportEntrySort.AMOUNT, vm.state.value.sort)
         assertEquals(ReportPeriodMode.CUSTOM, vm.state.value.mode)
+        open(); compose.onNodeWithTag("reports-reset-filters").performClick()
+        assertEquals(ReportEntrySort.AMOUNT, vm.state.value.sort)
+        apply()
+        assertEquals(ReportEntrySort.DATE, vm.state.value.sort)
+        assertEquals(ReportPeriodMode.MONTH, vm.state.value.mode)
     }
+    @Test fun sortingOnlyLivesInDialogAndCancelReopenResetAndFunnelReflectAppliedSort() {
+        render()
+        listOf("reports-sort", "reports-sort-direction", "reports-clear-controls").forEach {
+            compose.onNodeWithTag(it).assertDoesNotExist()
+        }
+        compose.onNodeWithTag("reports-open-filters").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Domyślne filtry i sortowanie"))
+        open(); choose("reports-sort", "AMOUNT")
+        compose.onNodeWithTag("reports-sort-direction").performScrollTo().performClick()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Rosnąco"))
+        assertEquals(ReportEntrySort.DATE, vm.state.value.sort)
+        compose.onNodeWithTag("reports-cancel-filters").performClick()
+        open()
+        compose.onNodeWithTag("reports-sort").performScrollTo().assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Data księgowania"))
+        choose("reports-sort", "AMOUNT"); apply()
+        compose.onNodeWithTag("reports-sort").assertDoesNotExist()
+        compose.onNodeWithTag("reports-open-filters").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Aktywne filtry lub sortowanie"))
+        compose.onNodeWithTag("reports-filters-active", useUnmergedTree = true).assertExists()
+        open()
+        compose.onNodeWithTag("reports-sort").performScrollTo().assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Kwota"))
+        compose.onNodeWithTag("reports-reset-filters").performClick()
+        assertEquals(ReportEntrySort.AMOUNT, vm.state.value.sort)
+        compose.onNodeWithTag("reports-cancel-filters").performClick()
+        assertEquals(ReportEntrySort.AMOUNT, vm.state.value.sort)
+        open(); compose.onNodeWithTag("reports-reset-filters").performClick(); apply()
+        compose.onNodeWithTag("reports-open-filters").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Domyślne filtry i sortowanie"))
+        net("-15,00")
+    }
+
+    @Test fun hardwareKeyboardOpensSortSelectsDirectionAndDiscardsDialogWithBack() {
+        render(); open()
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        fun key(code: Int) { instrumentation.sendKeyDownUpSync(code); compose.waitForIdle() }
+        fun focus(tag: String) {
+            val node = compose.onNodeWithTag(tag).performScrollTo()
+            repeat(35) {
+                val config = node.fetchSemanticsNode().config
+                if (SemanticsProperties.Focused in config && config[SemanticsProperties.Focused]) return
+                key(android.view.KeyEvent.KEYCODE_TAB)
+            }
+            node.assertIsFocused()
+        }
+        focus("reports-sort"); key(android.view.KeyEvent.KEYCODE_ENTER)
+        compose.onNodeWithTag("reports-sort-option-DATE").assertIsDisplayed()
+        val amountOption = compose.onNodeWithTag("reports-sort-option-AMOUNT")
+        for (step in 0..3) {
+            val config = amountOption.fetchSemanticsNode().config
+            if (SemanticsProperties.Focused in config && config[SemanticsProperties.Focused]) break
+            key(android.view.KeyEvent.KEYCODE_DPAD_DOWN)
+        }
+        amountOption.assertIsFocused()
+        key(android.view.KeyEvent.KEYCODE_ENTER)
+        compose.waitUntil(5_000) { vm.state.value.filterDraft!!.sort == ReportEntrySort.AMOUNT }
+        focus("reports-sort-direction"); key(android.view.KeyEvent.KEYCODE_ENTER)
+        compose.onNodeWithTag("reports-sort-direction").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Rosnąco"))
+        assertEquals(ReportEntrySort.DATE, vm.state.value.sort)
+        key(android.view.KeyEvent.KEYCODE_BACK)
+        compose.waitUntil(5_000) { vm.state.value.filterDraft == null }
+        assertEquals(ReportEntrySort.DATE, vm.state.value.sort)
+        assertEquals(ReportSortDirection.DESCENDING, vm.state.value.direction)
+        open()
+        assertEquals(ReportEntrySort.DATE, vm.state.value.filterDraft!!.sort)
+        focus("reports-sort"); key(android.view.KeyEvent.KEYCODE_ENTER)
+        key(android.view.KeyEvent.KEYCODE_ESCAPE)
+        compose.onNodeWithTag("reports-sort-option-DATE").assertDoesNotExist()
+        compose.onNodeWithTag("reports-filter-dialog").assertIsDisplayed()
+    }
+
     private fun category(id: String, name: String) = Category(id, "home", name, authorId = "actor", updatedById = "actor")
     private fun sub(id: String, parent: String, name: String) = Subcategory(id, "home", parent, name, authorId = "actor", updatedById = "actor")
     private class Ledger : LedgerRepository {
