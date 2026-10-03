@@ -1,16 +1,21 @@
 package pl.bargor.thesaurus.ui.reports
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -30,7 +35,6 @@ import org.junit.Test
 import pl.bargor.thesaurus.ThesaurusTheme
 import pl.bargor.thesaurus.data.model.*
 
-@OptIn(ExperimentalTestApi::class)
 class ReportsBalanceChartTest {
     @get:Rule val compose = createComposeRule()
     private val period = SummaryPeriod(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3))
@@ -45,75 +49,67 @@ class ReportsBalanceChartTest {
         val legend = compose.onNodeWithTag("reports-category-legend", useUnmergedTree = true).getUnclippedBoundsInRoot()
         val balance = compose.onNodeWithTag("reports-balance-section", useUnmergedTree = true).getUnclippedBoundsInRoot()
         val annual = compose.onNodeWithTag("reports-trend-chart", useUnmergedTree = true).getUnclippedBoundsInRoot()
-        assertTrue("Balance follows the entire category legend", legend.bottom <= balance.top)
-        assertTrue("Existing annual trend remains after the balance", balance.bottom <= annual.top)
-        compose.onNodeWithTag("reports-balance-details").performScrollTo().assertIsDisplayed()
+        assertTrue(legend.bottom <= balance.top)
+        assertTrue(balance.bottom <= annual.top)
+        compose.onNodeWithTag("reports-balance-chart").performScrollTo().assertIsDisplayed()
+        assertRemovedControlsAbsent()
     }
 
-    @Test fun detailsExposeInitialZeroPositiveNegativeAndFinalExactBalanceWithKeyboardSelection() {
-        compose.setContent { ThesaurusTheme { ReportsBalanceChart(trend(listOf(entry("income", 100, 1), entry("expense", -200, 3)))) } }
-        compose.onNodeWithTag("reports-balance-details").performClick()
-        compose.onNodeWithText("Saldo: ${currency(BigInteger.ZERO)} (zerowe)").assertIsDisplayed()
-        compose.onNodeWithTag("reports-balance-previous").assertIsNotEnabled()
-        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
-        val next = compose.onNodeWithTag("reports-balance-next").performScrollTo()
-        for (step in 0 until 20) {
-            val config = next.fetchSemanticsNode().config
-            if (SemanticsProperties.Focused in config && config[SemanticsProperties.Focused]) break
-            instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_TAB)
-            compose.waitForIdle()
-        }
-        next.assertIsFocused()
-        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER)
-        compose.waitForIdle()
-        compose.onNodeWithText("Saldo: ${currency(100.toBigInteger())} (dodatnie)").assertIsDisplayed()
-        compose.onNodeWithText("Zmiana: ${currency(100.toBigInteger())}").assertIsDisplayed()
-        compose.onNodeWithTag("reports-balance-end").performScrollTo().performClick()
-        compose.onNodeWithText("Saldo: ${currency((-100).toBigInteger())} (ujemne)").assertIsDisplayed()
-        compose.onNodeWithText("Zmiana: ${currency((-200).toBigInteger())}").assertIsDisplayed()
-        compose.onNodeWithTag("reports-balance-next").assertIsNotEnabled()
-        compose.onNodeWithTag("reports-balance-start").performScrollTo().performClick()
-        compose.onNodeWithText("Saldo: ${currency(BigInteger.ZERO)} (zerowe)").assertIsDisplayed()
+    @Test fun chartSemanticsExposeExactOpeningDatesAndSignedDailyBalancesWithoutDetailsControls() {
+        val entries = listOf(entry("history", 250, 1).copy(date = LocalDate.of(2026, 8, 31)),
+            entry("income", 100, 1), entry("expense", -500, 3))
+        compose.setContent { ThesaurusTheme { ReportsBalanceChart(trend(entries)) } }
+        listOf(currency(250.toBigInteger()), currency(350.toBigInteger()), currency((-150).toBigInteger())).forEach(::assertChartDescriptionContains)
+        assertChartDescriptionContains("1 wrz 2026")
+        assertChartDescriptionContains("3 wrz 2026")
+        compose.onNodeWithTag("reports-balance-total").assertTextEquals("Końcowe saldo: ${currency((-150).toBigInteger())}")
+        assertRemovedControlsAbsent()
     }
 
-    @Test fun emptyHasExplicitMessageAndNoInventedLineOrDetails() {
-        val empty = trend(emptyList())
-        compose.setContent { ThesaurusTheme { ReportsBalanceChart(empty) } }
+    @Test fun trulyEmptyBeforeAnyHouseholdEntryHasExplicitMessageAndNoInventedLine() {
+        compose.setContent { ThesaurusTheme { ReportsBalanceChart(trend(listOf(entry("future", 100, 4)))) } }
         compose.onNodeWithTag("reports-balance-empty").assertIsDisplayed()
         compose.onNodeWithTag("reports-balance-chart").assertDoesNotExist()
-        compose.onNodeWithTag("reports-balance-details").assertDoesNotExist()
+        assertRemovedControlsAbsent()
     }
 
-    @Test fun allZeroTransactionsKeepExactNeutralSelection() {
-        compose.setContent { ThesaurusTheme { ReportsBalanceChart(trend(listOf(entry("income", 100, 2), entry("expense", -100, 2)))) } }
+    @Test fun inactiveViewportShowsFlatCarriedBalanceAndCancellingHistoryKeepsZeroChart() {
+        val history = listOf(entry("income", 100, 1).copy(date = LocalDate.of(2026, 8, 31)),
+            entry("expense", -100, 1).copy(date = LocalDate.of(2026, 8, 31)))
+        compose.setContent { ThesaurusTheme { ReportsBalanceChart(trend(history)) } }
         compose.onNodeWithTag("reports-balance-chart").assertExists()
-        compose.onNodeWithTag("reports-balance-details").performClick()
-        compose.onNodeWithTag("reports-balance-end").performScrollTo().performClick()
-        compose.onNodeWithText("Saldo: ${currency(BigInteger.ZERO)} (zerowe)").assertIsDisplayed()
+        compose.onNodeWithTag("reports-balance-empty").assertDoesNotExist()
+        compose.onNodeWithTag("reports-balance-total").assertTextEquals("Końcowe saldo: ${currency(BigInteger.ZERO)}")
+        assertChartDescriptionContains(currency(BigInteger.ZERO))
     }
 
-    @Test fun selectedExactDetailsSurviveSavedStateRestoration() {
+    @Test fun restoredCompositionRetainsGlobalOpeningAndExactFinalBalance() {
+        val history = listOf(entry("old", 100, 1).copy(date = LocalDate.of(2026, 8, 31)), entry("new", -25, 2))
         val restoration = StateRestorationTester(compose)
-        restoration.setContent { ThesaurusTheme { ReportsBalanceChart(trend(listOf(entry("income", 12345, 1)))) } }
-        compose.onNodeWithTag("reports-balance-details").performClick()
-        compose.onNodeWithTag("reports-balance-end").performScrollTo().performClick()
+        restoration.setContent { ThesaurusTheme { ReportsBalanceChart(trend(history)) } }
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithText("Saldo: ${currency(12345.toBigInteger())} (dodatnie)").assertIsDisplayed()
-        compose.onNodeWithTag("reports-balance-next").assertIsNotEnabled()
+        assertChartDescriptionContains(currency(100.toBigInteger()))
+        assertChartDescriptionContains(currency(75.toBigInteger()))
+        compose.onNodeWithTag("reports-balance-total").assertTextEquals("Końcowe saldo: ${currency(75.toBigInteger())}")
+        assertRemovedControlsAbsent()
     }
 
-    @Test fun narrowLightChartAndDetailsRemainReadableAtFontScale16() = assertNarrowLayout(false, 1.6f)
-    @Test fun narrowDarkChartAndDetailsRemainReadableAtFontScale18() = assertNarrowLayout(true, 1.8f)
+    @Test fun narrowLightChartHasReadableDateAndSignedPlnAxesAtFontScale16() = assertNarrowLayout(false, 1.6f)
+    @Test fun narrowDarkChartHasReadableDateAndSignedPlnAxesAtFontScale18() = assertNarrowLayout(true, 1.8f)
 
     private fun assertNarrowLayout(dark: Boolean, fontScale: Float) {
         val huge = BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.TEN)
+        var axisForeground = Color.Unspecified
         val series = ReportBalanceTrend(period, ReportBalanceGranularity.DAILY,
-            listOf(ReportBalanceBucket(period.from, period.to, huge, huge)), 10)
+            listOf(ReportBalanceBucket(period.from, period.to, -huge * BigInteger.valueOf(2), -huge)), 10,
+            startBalanceGrosze = huge)
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                 ThesaurusTheme(darkTheme = dark) {
-                    Box(Modifier.width(320.dp).fillMaxHeight().verticalScroll(rememberScrollState()).testTag("balance-fixture")) {
+                    axisForeground = MaterialTheme.colorScheme.onSurface
+                    Box(Modifier.width(320.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surface)
+                        .verticalScroll(rememberScrollState()).testTag("balance-fixture")) {
                         ReportsBalanceChart(series)
                     }
                 }
@@ -122,12 +118,52 @@ class ReportsBalanceChartTest {
         val fixture = compose.onNodeWithTag("balance-fixture", useUnmergedTree = true).getUnclippedBoundsInRoot()
         val chart = compose.onNodeWithTag("reports-balance-chart").performScrollTo().getUnclippedBoundsInRoot()
         assertTrue(chart.left >= fixture.left && chart.right <= fixture.right)
+        val chartPixels = compose.onNodeWithTag("reports-balance-chart").captureToImage().toPixelMap()
+        // The Y labels use onSurface; baseline/ticks use onSurfaceVariant and the balance
+        // uses primary. Matching foreground glyph pixels proves all three labels were painted.
+        val axisRight = (chartPixels.width * .38f).toInt()
+        for (band in 0 until 3) {
+            var foregroundPixels = 0
+            for (y in chartPixels.height * band / 3 until chartPixels.height * (band + 1) / 3) {
+                for (x in 0 until axisRight) {
+                    val pixel = chartPixels[x, y]
+                    if (kotlin.math.abs(pixel.red - axisForeground.red) < .03f &&
+                        kotlin.math.abs(pixel.green - axisForeground.green) < .03f &&
+                        kotlin.math.abs(pixel.blue - axisForeground.blue) < .03f) foregroundPixels++
+                }
+            }
+            assertTrue("Visible Y label glyphs are required in axis band $band ($foregroundPixels pixels)", foregroundPixels >= 8)
+        }
+        listOf("reports-balance-y-axis", "reports-balance-x-axis").forEach { tag ->
+            compose.onNodeWithTag(tag, useUnmergedTree = true).assertExists()
+            val bounds = compose.onNodeWithTag(tag, useUnmergedTree = true).getUnclippedBoundsInRoot()
+            assertTrue("Axis $tag must stay inside chart width", bounds.left >= fixture.left && bounds.right <= fixture.right)
+        }
+        compose.onNodeWithTag("reports-balance-y-axis", useUnmergedTree = true).assertContentDescriptionEquals(
+            "${currency(huge)}; ${currency(BigInteger.ZERO)}; ${currency(-huge)}")
+        val dateNodes = compose.onAllNodes(hasAnyAncestor(hasTestTag("reports-balance-x-axis")) and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.Text), useUnmergedTree = true).fetchSemanticsNodes()
+        assertEquals("Narrow axis must retain both endpoint dates", 2, dateNodes.size)
+        assertEquals(listOf("1 wrz 2026", "3 wrz 2026"), dateNodes.map { it.config[SemanticsProperties.Text].single().text })
+        assertTrue("Date label columns must not overlap", dateNodes[0].positionInRoot.x + dateNodes[0].size.width <= dateNodes[1].positionInRoot.x + 1f)
+        assertChartDescriptionContains(currency(huge))
+        assertChartDescriptionContains(currency(-huge))
+        compose.onNodeWithTag("reports-balance-total").performScrollTo().assertTextEquals("Końcowe saldo: ${currency(-huge)}")
         assertReadableTexts()
-        compose.onNodeWithTag("reports-balance-details").performScrollTo().performClick()
-        compose.onNodeWithTag("reports-balance-end").performScrollTo().performClick()
-        compose.onNodeWithText("Saldo: ${currency(huge)} (dodatnie)").assertExists()
-        assertReadableTexts()
-        compose.onNodeWithTag("reports-balance-close").performScrollTo().assertIsDisplayed().performClick()
+        assertRemovedControlsAbsent()
+    }
+
+    private fun assertRemovedControlsAbsent() {
+        listOf("reports-balance-details", "reports-balance-bucket", "reports-balance-previous", "reports-balance-next", "reports-balance-start", "reports-balance-end", "reports-balance-close").forEach {
+            compose.onNodeWithTag(it).assertDoesNotExist()
+        }
+        compose.onNodeWithText("Linia odniesienia: 0,00 zł", substring = true).assertDoesNotExist()
+    }
+
+    private fun assertChartDescriptionContains(value: String) {
+        compose.onNodeWithTag("reports-balance-chart").assert(SemanticsMatcher("chart describes $value") {
+            it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { description -> value in description }
+        })
     }
 
     private fun assertReadableTexts() {
@@ -137,7 +173,7 @@ class ReportsBalanceChartTest {
             compose.onNode(SemanticsMatcher("text node ${node.id}") { it.id == node.id }, useUnmergedTree = true)
                 .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action -> assertTrue(action(results)) }
             results.forEach { layout ->
-                assertFalse("Text must not overflow horizontally: ${layout.layoutInput.text}; allocated=${layout.size.width}px, paragraph=${layout.multiParagraph.width}px, intrinsic=${layout.multiParagraph.maxIntrinsicWidth}px, constraints=${layout.layoutInput.constraints}", layout.didOverflowWidth)
+                assertFalse("Text overflow: ${layout.layoutInput.text}; allocated=${layout.size.width}px, paragraph=${layout.multiParagraph.width}px", layout.didOverflowWidth)
                 assertFalse("Text must not overflow vertically: ${layout.layoutInput.text}", layout.didOverflowHeight)
                 assertTrue((0 until layout.lineCount).none(layout::isLineEllipsized))
             }

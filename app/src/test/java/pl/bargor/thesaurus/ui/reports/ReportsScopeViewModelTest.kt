@@ -598,23 +598,37 @@ class ReportsScopeViewModelTest {
         assertEquals(ReportSortDirection.ASCENDING, vm.state.value.direction)
     }
 
-    @Test fun balanceUsesCommittedScopeAndChronologyThroughDraftCancelResetRestoreAndPendingUpdates() = runTest {
+    @Test fun globalBalanceIgnoresCommittedFiltersAndSortButRestoresViewportAndUpdatesPendingHistory() = runTest {
         val saved = SavedStateHandle()
         val ledger = Ledger(listOf(entry("first", 500, "shop", date = "2026-09-01"),
             entry("last", -200, "shop", date = "2026-09-30"),
             entry("other-member", -700, "shop").copy(authorId = "second"),
-            entry("other-category", -900, "fuel", "car"), entry("august", -50, "shop", date = "2026-08-31")))
+            entry("other-category", -900, "fuel", "car"), entry("august", -50, "shop", date = "2026-08-31"),
+            entry("foreign-household", 9999).copy(householdId = "other"),
+            entry("deleted-history", 8888, date = "2026-08-01").copy(deleted = true, deletedById = "actor"),
+            entry("future", 7777, date = "2026-10-01")))
         val vm = ReportsViewModel(ledger, Taxonomy(), clock, saved, ReportHouseholds())
         vm.start("home"); advanceUntilIdle()
         fun assertExact(state: ReportsUiState) {
             val trend = requireNotNull(state.balanceTrend)
-            assertEquals(state.aggregation.totals.entryCount, trend.entryCount)
-            assertEquals(state.aggregation.totals.netGrosze, trend.endBalanceGrosze)
-            assertEquals(state.entries.fold(BigInteger.ZERO) { sum, item -> sum + BigInteger.valueOf(item.entry.amountGrosze) }, trend.endBalanceGrosze)
+            val all = ledger.home.value.value.orEmpty().filter { it.householdId == "home" && !it.deleted && it.date <= trend.period.to }
+            assertEquals(all.fold(BigInteger.ZERO) { sum, item -> sum + BigInteger.valueOf(item.amountGrosze) }, trend.endBalanceGrosze)
+            assertEquals(all.filter { it.date < trend.period.from }.fold(BigInteger.ZERO) { sum, item -> sum + BigInteger.valueOf(item.amountGrosze) }, trend.startBalanceGrosze)
             assertTrue(trend.buckets.zipWithNext().all { (a, b) -> a.to < b.from })
         }
         assertExact(vm.state.value)
         val original = vm.state.value.balanceTrend
+        assertEquals((-50).toBigInteger(), original!!.startBalanceGrosze)
+        assertEquals((-1350).toBigInteger(), original.endBalanceGrosze)
+        vm.selectCategory("food"); vm.selectSubcategory("shop"); vm.selectMembers(setOf("actor"))
+        ReportTypeFilter.entries.forEach { type ->
+            vm.selectType(type)
+            assertEquals("Report filters must not change household balance", original, vm.state.value.balanceTrend)
+        }
+        vm.selectMembers(emptySet())
+        assertTrue(vm.state.value.entries.isEmpty())
+        assertEquals("Even an empty report scope retains the household chart", original, vm.state.value.balanceTrend)
+        vm.selectMembers(setOf("actor"))
         vm.openFilters(); vm.selectCategory("food"); vm.selectSubcategory("shop"); vm.selectMembers(setOf("actor"))
         vm.selectType(ReportTypeFilter.EXPENSE); vm.selectPeriodMode(ReportPeriodMode.YEAR)
         assertEquals(original, vm.state.value.balanceTrend)
@@ -624,7 +638,8 @@ class ReportsScopeViewModelTest {
         vm.selectType(ReportTypeFilter.EXPENSE); vm.selectPeriodMode(ReportPeriodMode.CUSTOM)
         vm.updateCustomFrom("2026-08-31"); vm.updateCustomTo("2026-09-30"); vm.applyFilters()
         assertExact(vm.state.value)
-        assertEquals((-250).toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
+        assertEquals((-250).toBigInteger(), vm.state.value.aggregation.totals.netGrosze)
+        assertEquals((-1350).toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
         assertEquals(ReportBalanceGranularity.DAILY, vm.state.value.balanceTrend!!.granularity)
         val applied = vm.state.value.balanceTrend
         ReportEntrySort.entries.forEach { sort ->
@@ -637,18 +652,22 @@ class ReportsScopeViewModelTest {
         restored.start("home"); advanceUntilIdle()
         assertEquals(applied, restored.state.value.balanceTrend)
         assertNull(restored.state.value.filterDraft)
-        ledger.home.value = SyncObservation(ledger.home.value.value!! + entry("pending", -25, "shop", date = "2026-09-02"), SyncState.PENDING)
+        ledger.home.value = SyncObservation(ledger.home.value.value!! + entry("pending", -25, "fuel", "car", date = "2026-08-01").copy(authorId = "second"), SyncState.PENDING)
         advanceUntilIdle()
         assertExact(restored.state.value)
-        assertEquals((-275).toBigInteger(), restored.state.value.balanceTrend!!.endBalanceGrosze)
+        assertEquals((-1375).toBigInteger(), restored.state.value.balanceTrend!!.endBalanceGrosze)
+        assertEquals((-25).toBigInteger(), restored.state.value.balanceTrend!!.startBalanceGrosze)
+        assertEquals((-250).toBigInteger(), restored.state.value.aggregation.totals.netGrosze)
+        val pending = restored.state.value.balanceTrend
         ledger.home.value = SyncObservation(state = SyncState.OFFLINE); advanceUntilIdle()
-        assertExact(restored.state.value)
+        assertEquals(pending, restored.state.value.balanceTrend)
         vm.applyFilters()
-        assertExact(vm.state.value)
+        assertEquals((-1375).toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
         assertFalse(vm.state.value.hasActiveFilters)
         restored.start("other"); advanceUntilIdle()
-        assertExact(restored.state.value)
         assertEquals(0, restored.state.value.balanceTrend!!.entryCount)
+        assertEquals(BigInteger.ZERO, restored.state.value.balanceTrend!!.startBalanceGrosze)
+        assertEquals(BigInteger.ZERO, restored.state.value.balanceTrend!!.endBalanceGrosze)
     }
 
     @Test fun balanceDailyThresholdCountsInclusiveCustomDaysAndYearAlwaysUsesMonths() = runTest {
@@ -686,7 +705,8 @@ class ReportsScopeViewModelTest {
         assertEquals(29, west.state.value.balanceTrend!!.buckets.size)
         assertEquals(70.toBigInteger(), west.state.value.balanceTrend!!.endBalanceGrosze)
         assertEquals(LocalDate.of(2024, 3, 1), east.state.value.balanceTrend!!.buckets.single().from)
-        assertEquals(900.toBigInteger(), east.state.value.balanceTrend!!.endBalanceGrosze)
+        assertEquals(70.toBigInteger(), east.state.value.balanceTrend!!.startBalanceGrosze)
+        assertEquals(970.toBigInteger(), east.state.value.balanceTrend!!.endBalanceGrosze)
         for (vm in listOf(west, east)) {
             vm.openFilters(); vm.selectPeriodMode(ReportPeriodMode.CUSTOM)
             vm.updateCustomFrom("2024-02-28"); vm.updateCustomTo("2024-02-29"); vm.applyFilters()

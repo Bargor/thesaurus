@@ -23,15 +23,16 @@ class ReportBalanceTrendTest {
     @Test fun partialMonthlyBoundariesAndDecemberToJanuaryKeepExactCalendarDates() {
         val period = period("2023-12-29", "2024-02-29")
         val entries = listOf(entry("dec", 100, "2023-12-29"), entry("jan", -30, "2024-01-31"), entry("feb", 20, "2024-02-29"),
-            entry("before", 999, "2023-12-28"), entry("after", 999, "2024-03-01"), entry("deleted", 999, "2024-01-02").copy(deleted = true, deletedById = "actor"))
+            entry("before", -50, "2023-12-28"), entry("after", 999, "2024-03-01"), entry("deleted", 999, "2024-01-02").copy(deleted = true, deletedById = "actor"))
         val trend = buildReportBalanceTrend(entries, period, ReportBalanceGranularity.MONTHLY)
         assertEquals(listOf("2023-12-29", "2024-01-01", "2024-02-01"), trend.buckets.map { it.from.toString() })
         assertEquals(listOf("2023-12-31", "2024-01-31", "2024-02-29"), trend.buckets.map { it.to.toString() })
-        assertEquals(listOf(100, 70, 90).map(Int::toBigInteger), trend.buckets.map { it.balanceGrosze })
-        assertEquals(3, trend.entryCount)
+        assertEquals((-50).toBigInteger(), trend.startBalanceGrosze)
+        assertEquals(listOf(50, 20, 40).map(Int::toBigInteger), trend.buckets.map { it.balanceGrosze })
+        assertEquals(4, trend.entryCount)
     }
 
-    @Test fun incomeExpenseMixedAndZeroEntriesHaveExactEndBalanceEvenBeyondLongRange() {
+    @Test fun incomeExpenseMixedAndCancellingTransactionsHaveExactEndBalanceEvenBeyondLongRange() {
         val period = period("2026-09-12", "2026-09-12")
         for (amounts in listOf(listOf(125L), listOf(-125L), listOf(125L, -125L),
             listOf(Long.MAX_VALUE, Long.MAX_VALUE), listOf(Long.MIN_VALUE, Long.MIN_VALUE),
@@ -54,6 +55,24 @@ class ReportBalanceTrendTest {
         val zero = buildReportBalanceTrend(listOf(entry("income", 100, "2026-09-15"), entry("expense", -100, "2026-09-15")), period, ReportBalanceGranularity.DAILY)
         assertEquals(2, zero.entryCount)
         assertTrue(zero.buckets.all { it.changeGrosze == BigInteger.ZERO && it.balanceGrosze == BigInteger.ZERO })
+    }
+
+    @Test fun inactiveViewportCarriesGlobalHistoryAndIgnoresFutureAndTombstones() {
+        val period = period("2026-09-01", "2026-09-30")
+        val entries = listOf(entry("old-income", Long.MAX_VALUE, "2020-01-01"),
+            entry("old-income-two", Long.MAX_VALUE, "2020-01-02"), entry("old-expense", -100, "2026-08-31"),
+            entry("deleted-history", -999, "2020-01-03").copy(deleted = true, deletedById = "actor"),
+            entry("future", 999, "2026-10-01"))
+        val trend = buildReportBalanceTrend(entries, period, ReportBalanceGranularity.DAILY)
+        val expected = BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.valueOf(2)) - 100.toBigInteger()
+        assertEquals(3, trend.entryCount)
+        assertEquals(expected, trend.startBalanceGrosze)
+        assertEquals(expected, trend.endBalanceGrosze)
+        assertTrue(trend.buckets.all { it.changeGrosze == BigInteger.ZERO && it.balanceGrosze == expected })
+        val beforeHistory = buildReportBalanceTrend(entries, period("2019-01-01", "2019-01-31"), ReportBalanceGranularity.DAILY)
+        assertEquals(0, beforeHistory.entryCount)
+        assertEquals(BigInteger.ZERO, beforeHistory.endBalanceGrosze)
+        assertEquals(trend, buildReportBalanceTrend(entries.reversed(), period, ReportBalanceGranularity.DAILY))
     }
 
     @Test(timeout = 2_000) fun extremeCalendarRangeIsBoundedAndRetainsExactSparseChanges() {

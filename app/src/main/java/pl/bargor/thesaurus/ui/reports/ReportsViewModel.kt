@@ -476,7 +476,7 @@ class ReportsViewModel @Inject constructor(
                 date -> date.withDayOfMonth(1)
             } else { date -> date }
             val rawAggregation = aggregateReportEntries(cachedSelectedEntries, period, typeFilter, bucket)
-            cachedBalanceTrend = buildReportBalanceTrend(cachedSelectedEntries, period,
+            cachedBalanceTrend = buildReportBalanceTrend(entries, period,
                 if (mode == ReportPeriodMode.YEAR || (mode == ReportPeriodMode.CUSTOM &&
                     ChronoUnit.DAYS.between(period.from, period.to) >= 62)) ReportBalanceGranularity.MONTHLY
                 else ReportBalanceGranularity.DAILY)

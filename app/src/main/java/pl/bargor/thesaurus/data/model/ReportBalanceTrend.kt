@@ -21,13 +21,14 @@ data class ReportBalanceTrend(
     val buckets: List<ReportBalanceBucket>,
     val entryCount: Int,
     val sparse: Boolean = false,
+    val startBalanceGrosze: BigInteger = BigInteger.ZERO,
 ) {
-    val startBalanceGrosze: BigInteger get() = BigInteger.ZERO
-    val endBalanceGrosze: BigInteger get() = buckets.lastOrNull()?.balanceGrosze ?: BigInteger.ZERO
+    val endBalanceGrosze: BigInteger get() = buckets.lastOrNull()?.balanceGrosze ?: startBalanceGrosze
 }
 
 /**
- * Exact cumulative signed ledger amounts, independent of input order. Calendar dates stay local.
+ * Global cumulative signed ledger amounts, independent of report filters and input order.
+ * Entries before the viewport contribute its opening balance. Calendar dates stay local.
  * Ordinary ranges fill every bucket. More than 1200 months compress only empty runs; active
  * months remain exact, so memory and work depend on entries rather than an arbitrary year range.
  */
@@ -39,12 +40,16 @@ fun buildReportBalanceTrend(
     require(period.from <= period.to)
     val changes = sortedMapOf<LocalDate, BigInteger>()
     var count = 0
+    var opening = BigInteger.ZERO
     entries.forEach { entry ->
-        if (!entry.deleted && entry.date >= period.from && entry.date <= period.to) {
+        if (!entry.deleted && entry.date <= period.to) {
             count++
-            val key = if (granularity == ReportBalanceGranularity.DAILY) entry.date
-                else entry.date.withDayOfMonth(1)
-            changes[key] = (changes[key] ?: BigInteger.ZERO) + BigInteger.valueOf(entry.amountGrosze)
+            val amount = BigInteger.valueOf(entry.amountGrosze)
+            if (entry.date < period.from) opening += amount else {
+                val key = if (granularity == ReportBalanceGranularity.DAILY) entry.date
+                    else entry.date.withDayOfMonth(1)
+                changes[key] = (changes[key] ?: BigInteger.ZERO) + amount
+            }
         }
     }
     val first = if (granularity == ReportBalanceGranularity.DAILY) period.from else period.from.withDayOfMonth(1)
@@ -54,7 +59,7 @@ fun buildReportBalanceTrend(
     // Also bound defensive direct calls with extreme daily ranges.
     val sparse = units >= 1200
     val buckets = mutableListOf<ReportBalanceBucket>()
-    var balance = BigInteger.ZERO
+    var balance = opening
     fun end(key: LocalDate) = if (granularity == ReportBalanceGranularity.DAILY) key
         else YearMonth.from(key).atEndOfMonth()
     fun next(key: LocalDate) = if (granularity == ReportBalanceGranularity.DAILY) key.plusDays(1) else key.plusMonths(1)
@@ -80,5 +85,5 @@ fun buildReportBalanceTrend(
         if (changes.isEmpty()) add(first, period.to, BigInteger.ZERO)
         else if (changes.lastKey() < last) add(cursor, period.to, BigInteger.ZERO)
     }
-    return ReportBalanceTrend(period, granularity, buckets, count, sparse)
+    return ReportBalanceTrend(period, granularity, buckets, count, sparse, opening)
 }
