@@ -117,6 +117,56 @@ class EntryFormViewModelTest {
     }
 
     @Test
+    fun `unchanged owner edit is acknowledged only when the requested updater is observed`() = runTest {
+        val today = LocalDate.of(2026, 9, 16)
+        val createdAt = Instant.parse("2026-09-14T08:00:00Z")
+        val original = LedgerEntry("existing", "home", -500, today, title = "Zakupy",
+            categoryId = "food", tags = listOf("dom"), authorId = "author", updatedById = "author",
+            createdAt = createdAt)
+        val ledger = FakeLedgerRepository(holdSaveTask = true, initialEntries = listOf(original), emitSnapshotOnSave = false)
+        val taxonomy = FakeTaxonomyRepository(listOf(Category("food", "home", "Jedzenie", authorId = "author", updatedById = "author")))
+        val handle = SavedStateHandle()
+        val vm = EntryFormViewModel(ledger, taxonomy, handle)
+        vm.start("home", "owner", entryId = original.id, today = today)
+        advanceUntilIdle()
+        // Save the unchanged form: the write still requests the current owner as updater.
+        vm.save(today)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.saving)
+        assertEquals("owner", ledger.saved.single().updatedById)
+        val restored = EntryFormViewModel(ledger, taxonomy, SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) }))
+        restored.start("home", "owner", entryId = original.id, today = today)
+        advanceUntilIdle()
+        assertFalse("Matching user fields with the old updater cannot acknowledge the owner's write", restored.state.value.saved)
+        assertFalse(restored.state.value.queuedOffline)
+        restored.save(today)
+        advanceUntilIdle()
+        assertEquals(listOf(original.id, original.id), ledger.saved.map { it.id })
+        val retried = ledger.saved.last()
+        assertEquals(original.amountGrosze, retried.amountGrosze)
+        assertEquals(original.date, retried.date)
+        assertEquals(original.categoryId, retried.categoryId)
+        assertEquals(original.subcategoryId, retried.subcategoryId)
+        assertEquals(original.title, retried.title)
+        assertEquals(original.tags, retried.tags)
+        assertEquals("author", retried.authorId)
+        assertEquals(createdAt, retried.createdAt)
+        assertEquals("owner", retried.updatedById)
+        // Even another pending snapshot with matching fields but the old updater is insufficient.
+        ledger.publishSnapshot(listOf(original), SyncState.PENDING)
+        advanceUntilIdle()
+        assertFalse(restored.state.value.saved)
+        ledger.publishSnapshot(listOf(retried), SyncState.PENDING)
+        advanceUntilIdle()
+        assertTrue(restored.state.value.saved)
+        assertTrue(restored.state.value.queuedOffline)
+        assertFalse(restored.state.value.saving)
+        restored.save(today)
+        advanceUntilIdle()
+        assertEquals(2, ledger.saved.size)
+    }
+
+    @Test
     fun `old same ID edit snapshot cannot acknowledge a restored newer pending payload`() = runTest {
         val today = LocalDate.of(2026, 9, 16)
         val original = LedgerEntry("existing", "home", -500, today.minusDays(1), title = "Dawny tytuł",

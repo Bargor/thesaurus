@@ -174,7 +174,7 @@ class EntryFormViewModel @Inject constructor(
                     // An edit already exists under this ID before its write begins. Only a
                     // snapshot of this draft acknowledges a restored pending write.
                     val pendingVisible = pendingId?.let { id ->
-                        observation.value.orEmpty().any { it.id == id && it.matchesDraft(old) }
+                        observation.value.orEmpty().any { it.id == id && it.updatedById == actorId && it.matchesDraft(old) }
                     } == true
                     val becameUnavailable = entryId != null && editingEntry != null && stored == null && observation.error == null
                     if (becameUnavailable) editingEntry = null
