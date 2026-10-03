@@ -84,9 +84,13 @@ class EntryFormScreenTest {
         composeRule.onNodeWithTag("entry-amount").assertIsNotFocused()
         composeRule.onNodeWithTag("entry-category-income").performClick()
         composeRule.onNodeWithTag("entry-category-menu").assertDoesNotExist()
-        composeRule.onNodeWithTag("entry-subcategory-salary").performScrollTo().performClick()
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().performClick()
+        composeRule.onNodeWithTag("entry-subcategory-salary").performClick()
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
         composeRule.onNodeWithTag("entry-type-expense").performScrollTo().performClick()
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().performClick()
         composeRule.onNodeWithTag("entry-subcategory-salary").performScrollTo().assertIsSelected()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
 
         composeRule.onNodeWithText("Tytuł (opcjonalnie)").performScrollTo().assertIsDisplayed()
     }
@@ -126,6 +130,7 @@ class EntryFormScreenTest {
         }
 
         composeRule.onNodeWithTag("entry-category-food").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-picker").assertDoesNotExist()
         composeRule.onNodeWithTag("entry-category-picker").performScrollTo().performClick()
         composeRule.onNodeWithTag("entry-category-food").assertIsDisplayed()
         composeRule.onNodeWithTag("entry-category-other").assertIsDisplayed()
@@ -134,22 +139,30 @@ class EntryFormScreenTest {
 
         composeRule.onNodeWithTag("entry-category-food").performClick()
         composeRule.onNodeWithTag("entry-category-menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().performClick()
         composeRule.onNodeWithTag("entry-subcategory-none").assertIsSelected()
-        composeRule.onNodeWithTag("entry-subcategory-groceries").performScrollTo().performClick().assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-groceries").performScrollTo().performClick()
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-picker").assertTextContains("Zakupy").performClick()
+        composeRule.onNodeWithTag("entry-subcategory-groceries").assertIsSelected()
         composeRule.onNodeWithTag("entry-subcategory-old-sub").assertDoesNotExist()
         composeRule.runOnIdle { state = state.copy() }
         composeRule.onNodeWithTag("entry-subcategory-groceries").assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-none").performClick()
+        composeRule.runOnIdle { org.junit.Assert.assertNull(state.subcategoryId) }
+        composeRule.onNodeWithTag("entry-subcategory-picker").assertTextContains("Bez podkategorii")
 
         composeRule.onNodeWithTag("entry-category-picker").performScrollTo().performClick()
         composeRule.onNodeWithTag("entry-category-food").assertIsSelected()
         composeRule.onNodeWithTag("entry-category-other").performClick()
         composeRule.onNodeWithTag("entry-subcategory-groceries").assertDoesNotExist()
         composeRule.onNodeWithTag("entry-subcategory-none").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().assertIsNotEnabled()
         composeRule.onNodeWithText("Brak aktywnych podkategorii").performScrollTo().assertIsDisplayed()
     }
 
     @Test
-    fun editSelectionIsExpandedWhenFormIsRestored() {
+    fun editSelectionIsCollapsedAndSelectedWhenOpened() {
         val category = Category("income", "home", "Wpływy", defaultEntryType = EntryType.INCOME,
             authorId = "actor", updatedById = "actor")
         composeRule.setContent {
@@ -169,7 +182,10 @@ class EntryFormScreenTest {
             }
         }
         composeRule.onNodeWithTag("entry-category-menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().assertTextContains("Wypłata").performClick()
         composeRule.onNodeWithTag("entry-subcategory-salary").performScrollTo().assertIsSelected()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         composeRule.onNodeWithTag("entry-category-picker").performScrollTo().performClick()
         composeRule.onNodeWithTag("entry-category-income").assertIsSelected()
     }
@@ -386,6 +402,183 @@ class EntryFormScreenTest {
         composeRule.onNodeWithTag("entry-category-picker").performClick()
         composeRule.onNodeWithTag("entry-category-c24").performScrollTo().assertIsSelected()
         composeRule.onNodeWithTag("entry-category-c1").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun subcategoryWholeFieldOpensAndBackAndOutsideDismissWithoutMutation() {
+        var selectedCalls = 0
+        val state = subcategoryFixture().copy(subcategoryId = "s1")
+        showSubcategoryForm({ state }, { selectedCalls++ })
+        val field = composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo()
+        field.assertTextContains("Podkategoria 1")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Zwinięta"))
+            .performTouchInput { click(Offset(4f, height / 2f)) }
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertIsDisplayed()
+        field.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Rozwinięta"))
+        composeRule.onNodeWithTag("entry-subcategory-s1").assertIsSelected()
+        composeRule.onNodeWithContentDescription("Wybrana", useUnmergedTree = true).assertIsDisplayed()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        field.assertTextContains("Podkategoria 1").performClick()
+        val fieldCenterY = field.fetchSemanticsNode().boundsInRoot.center.y
+        val eventTime = SystemClock.uptimeMillis()
+        listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEachIndexed { index, action ->
+            val event = MotionEvent.obtain(eventTime, eventTime + index * 16L, action, 1f, fieldCenterY, 0)
+            event.source = InputDevice.SOURCE_TOUCHSCREEN
+            try {
+                org.junit.Assert.assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation.injectInputEvent(event, true))
+            } finally {
+                event.recycle()
+            }
+        }
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        field.assertTextContains("Podkategoria 1")
+        composeRule.runOnIdle { org.junit.Assert.assertEquals(0, selectedCalls) }
+    }
+
+    @Test
+    fun categoryChangeWhileSubcategoryMenuIsOpenClosesItAndShowsOnlyNewOptions() {
+        val initial = subcategoryFixture().copy(subcategoryId = "s1")
+        val other = Category("other", "home", "Inne", authorId = "actor", updatedById = "actor")
+        var state by mutableStateOf(initial.copy(categories = initial.categories + EntryCategory(other, listOf(
+            Subcategory("other-sub", "home", "other", "Inna podkategoria", authorId = "actor", updatedById = "actor"),
+        ))))
+        showSubcategoryForm({ state }, { state = state.copy(subcategoryId = it) })
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().performClick()
+        composeRule.onNodeWithTag("entry-subcategory-s1").assertIsSelected()
+        // The ViewModel supplies the cleared dependent ID with the changed parent ID.
+        composeRule.runOnIdle { state = state.copy(categoryId = "other", subcategoryId = null) }
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-picker").assertTextContains("Bez podkategorii").performClick()
+        composeRule.onNodeWithTag("entry-subcategory-none").assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-s1").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-other-sub").assertIsDisplayed().performClick()
+        composeRule.runOnIdle { org.junit.Assert.assertEquals("other-sub", state.subcategoryId) }
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+    }
+
+    @Test
+    fun historicalArchivedSubcategoryCanBeClearedButCannotBeAssignedAgain() {
+        val initial = subcategoryFixture()
+        val archived = Subcategory("old", "home", "food", "Dawna podkategoria", archived = true,
+            authorId = "actor", updatedById = "actor")
+        var state by mutableStateOf(initial.copy(editingEntryId = "existing", subcategoryId = "old",
+            categories = listOf(initial.categories.single().copy(subcategories = listOf(archived)))))
+        showSubcategoryForm({ state }, { state = state.copy(subcategoryId = it) })
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo()
+            .assertTextContains("Dawna podkategoria").performClick()
+        composeRule.onNodeWithTag("entry-subcategory-old").assertIsSelected().assertIsNotEnabled()
+        composeRule.onNodeWithTag("entry-subcategory-none").performClick()
+        composeRule.runOnIdle { org.junit.Assert.assertNull(state.subcategoryId) }
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-picker").assertTextContains("Bez podkategorii").assertIsNotEnabled()
+        composeRule.onNodeWithTag("entry-subcategory-old").assertDoesNotExist()
+        composeRule.onNodeWithText("Brak aktywnych podkategorii").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun subcategoryMenuScrollsLongNamesAtNarrowWidthAndLargeFont() {
+        var state by mutableStateOf(subcategoryFixture(count = 24, longNames = true))
+        showSubcategoryForm({ state }, { state = state.copy(subcategoryId = it) }, compact = true)
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().performClick()
+        composeRule.onNodeWithTag("entry-subcategory-s24").performScrollTo().assertIsDisplayed()
+        val longName = state.categories.single().subcategories.last().name
+        val layouts = mutableListOf<TextLayoutResult>()
+        composeRule.onNodeWithText(longName, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { org.junit.Assert.assertTrue(it(layouts)) }
+        org.junit.Assert.assertFalse("Long option name must be fully laid out", layouts.single().hasVisualOverflow)
+        org.junit.Assert.assertTrue("Fixture should wrap onto multiple lines", layouts.single().lineCount > 1)
+        composeRule.onNodeWithTag("entry-subcategory-s24").performClick()
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        composeRule.runOnIdle { org.junit.Assert.assertEquals("s24", state.subcategoryId) }
+        val fieldLayouts = mutableListOf<TextLayoutResult>()
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo()
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { org.junit.Assert.assertTrue(it(fieldLayouts)) }
+        org.junit.Assert.assertEquals(longName, fieldLayouts.single().layoutInput.text.text)
+        org.junit.Assert.assertFalse("Selected name must fit the multiline field", fieldLayouts.single().hasVisualOverflow)
+        composeRule.onNodeWithTag("entry-subcategory-picker").performClick()
+        composeRule.onNodeWithTag("entry-subcategory-s24").performScrollTo().assertIsSelected()
+        composeRule.onNodeWithTag("entry-subcategory-s1").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun subcategoryKeyboardSelectsAndEscapeReturnsFocusWithoutMutation() {
+        var state by mutableStateOf(subcategoryFixture())
+        showSubcategoryForm({ state }, { state = state.copy(subcategoryId = it) })
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val field = composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo()
+        fun isFocused(tag: String) = composeRule.onNodeWithTag(tag).fetchSemanticsNode().config.let { config ->
+            SemanticsProperties.Focused in config && config[SemanticsProperties.Focused]
+        }
+        var tabCount = 0
+        while (!isFocused("entry-subcategory-picker") && tabCount++ < 16) {
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_TAB)
+            composeRule.waitForIdle()
+        }
+        field.assertIsFocused()
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_ENTER)
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertIsDisplayed()
+        val options = listOf("none", "s1", "s2")
+        val firstFocus = options.single { isFocused("entry-subcategory-$it") }
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.waitForIdle()
+        val selected = options.single { isFocused("entry-subcategory-$it") }
+        org.junit.Assert.assertNotEquals(firstFocus, selected)
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_ENTER)
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        composeRule.runOnIdle { org.junit.Assert.assertEquals(selected.takeUnless { it == "none" }, state.subcategoryId) }
+        field.assertIsFocused()
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_ENTER)
+        composeRule.onNodeWithTag("entry-subcategory-$selected").assertIsSelected()
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_ESCAPE)
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        field.assertIsFocused()
+        composeRule.runOnIdle { org.junit.Assert.assertEquals(selected.takeUnless { it == "none" }, state.subcategoryId) }
+    }
+
+    @Test
+    fun restoredSubcategoryFieldKeepsSelectedValueAndClosesTransientMenu() {
+        val restoration = StateRestorationTester(composeRule)
+        val state = subcategoryFixture().copy(editingEntryId = "existing", subcategoryId = "s2")
+        restoration.setContent {
+            ThesaurusTheme {
+                EntryFormScreen(state = state, onAmountChange = {}, onTitleChange = {}, onTagsChange = {},
+                    onDateChange = {}, onTypeChange = {}, onCategorySelected = {}, onSubcategorySelected = {},
+                    onSave = {}, onBack = {})
+            }
+        }
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().performClick()
+        composeRule.onNodeWithTag("entry-subcategory-s2").assertIsSelected()
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
+        composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo()
+            .assertTextContains("Podkategoria 2").performClick()
+        composeRule.onNodeWithTag("entry-subcategory-s2").assertIsSelected()
+    }
+
+    private fun subcategoryFixture(count: Int = 2, longNames: Boolean = false) = EntryFormUiState(
+        isLoading = false, categoryId = "food",
+        categories = listOf(EntryCategory(
+            Category("food", "home", "Jedzenie", authorId = "actor", updatedById = "actor"),
+            (1..count).map { index -> Subcategory("s$index", "home", "food",
+                if (longNames) "Bardzo długa nazwa podkategorii numer $index do zawijania tekstu" else "Podkategoria $index",
+                authorId = "actor", updatedById = "actor") },
+        )),
+    )
+
+    private fun showSubcategoryForm(state: () -> EntryFormUiState, onSelected: (String?) -> Unit, compact: Boolean = false) {
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = if (compact) 1.6f else density.fontScale)) {
+                Box(if (compact) Modifier.width(320.dp) else Modifier) {
+                    ThesaurusTheme {
+                        EntryFormScreen(state = state(), onAmountChange = {}, onTitleChange = {}, onTagsChange = {},
+                            onDateChange = {}, onTypeChange = {}, onCategorySelected = {},
+                            onSubcategorySelected = onSelected, onSave = {}, onBack = {})
+                    }
+                }
+            }
+        }
     }
 
     @Test

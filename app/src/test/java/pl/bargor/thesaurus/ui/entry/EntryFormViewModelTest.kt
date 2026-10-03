@@ -482,6 +482,44 @@ class EntryFormViewModelTest {
     }
 
     @Test
+    fun `cleared historical subcategory stays optional after edit draft restoration and saves null`() = runTest {
+        val today = LocalDate.of(2026, 9, 16)
+        val original = LedgerEntry("existing", "home", -500, today, categoryId = "food", subcategoryId = "old",
+            authorId = "actor", updatedById = "actor")
+        val ledger = FakeLedgerRepository(initialEntries = listOf(original))
+        val taxonomy = FakeTaxonomyRepository(
+            listOf(Category("food", "home", "Jedzenie", authorId = "actor", updatedById = "actor")),
+            mapOf("food" to listOf(
+                Subcategory("old", "home", "food", "Dawna", archived = true, authorId = "actor", updatedById = "actor"),
+                Subcategory("active", "home", "food", "Aktywna", authorId = "actor", updatedById = "actor"),
+            )),
+        )
+        val handle = SavedStateHandle()
+        val vm = EntryFormViewModel(ledger, taxonomy, handle)
+        vm.start("home", "actor", entryId = original.id, today = today)
+        advanceUntilIdle()
+        assertEquals("old", vm.state.value.subcategoryId)
+        vm.selectSubcategory("active")
+        vm.selectSubcategory("old")
+        assertEquals("Archived subcategories cannot be reassigned", "active", vm.state.value.subcategoryId)
+        vm.selectSubcategory(null)
+        vm.updateType(EntryType.INCOME)
+        val restored = EntryFormViewModel(ledger, taxonomy, SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) }))
+        restored.start("home", "actor", entryId = original.id, today = today)
+        advanceUntilIdle()
+        assertEquals("food", restored.state.value.categoryId)
+        assertNull(restored.state.value.subcategoryId)
+        assertEquals(EntryType.INCOME, restored.state.value.type)
+        assertEquals(listOf("old", "active"), restored.state.value.categories.single().subcategories.map { it.id })
+        restored.save(today)
+        advanceUntilIdle()
+        assertEquals(original.id, ledger.saved.single().id)
+        assertEquals("food", ledger.saved.single().categoryId)
+        assertNull(ledger.saved.single().subcategoryId)
+        assertEquals(500L, ledger.saved.single().amountGrosze)
+    }
+
+    @Test
     fun `editing restores category and optional subcategory selection`() = runTest {
         val entry = LedgerEntry(
             id = "existing", householdId = "home", amountGrosze = 500,
