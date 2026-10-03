@@ -87,58 +87,78 @@ fun EntryListScreen(
     }
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onOpenSettings, modifier = Modifier.testTag("open-taxonomy-settings")) {
-                    Text(stringResource(R.string.open_taxonomy_settings))
-                }
-                TextButton(onClick = onOpenFamily, modifier = Modifier.testTag("open-family")) {
-                    Text(stringResource(R.string.open_family))
-                }
-            }
-            SortSelector(state.sort, onChangeSort)
-            EntryListSyncState(state.syncState)
-            if (state.deletionError) Text(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                text = stringResource(R.string.entries_delete_error),
-                color = MaterialTheme.colorScheme.error,
-            )
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    state.isLoading -> CircularProgressIndicator(
-                        modifier = Modifier.padding(24.dp).testTag("entries-loading"),
-                    )
-                    state.error != null && state.entries.isEmpty() -> ErrorContent(onRetry)
-                    state.entries.isEmpty() -> EmptyContent()
-                    else -> LazyColumn(
-                        modifier = Modifier.fillMaxSize().testTag("entries-list"),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        if (state.error != null) item { ErrorContent(onRetry) }
-                        items(rows, key = { it.key }, contentType = {
-                            when (it) {
-                                is EntryListRow.DateHeading -> "date"
-                                is EntryListRow.Entry -> "entry"
+                // Controls scroll with the entries so large text on a short screen
+                // cannot consume the entire viewport above the persistent add action.
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().testTag("entries-list"),
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    item(key = "entries-controls", contentType = "controls") {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            TextButton(onClick = onOpenSettings, modifier = Modifier.testTag("open-taxonomy-settings")) {
+                                Text(stringResource(R.string.open_taxonomy_settings))
                             }
-                        }) { row ->
-                            when (row) {
-                                is EntryListRow.DateHeading -> Text(
-                                    text = row.date.format(PolishDateFormatter),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.testTag(row.key),
-                                )
-                                is EntryListRow.Entry -> EntryCard(row.item, onEditEntry, onOpenActions = { actionCandidate = row.item })
+                            TextButton(onClick = onOpenFamily, modifier = Modifier.testTag("open-family")) {
+                                Text(stringResource(R.string.open_family))
                             }
                         }
-                        if (state.hasMore) item {
-                            Button(
-                                modifier = Modifier.fillMaxWidth().testTag("entries-load-more"),
-                                onClick = onLoadNextPage,
-                            ) { Text(stringResource(R.string.entries_load_more)) }
+                    }
+                    item(key = "entries-sort", contentType = "controls") {
+                        SortSelector(state.sort, onChangeSort)
+                    }
+                    if (state.syncState == SyncState.PENDING) item(key = "entries-sync", contentType = "status") {
+                        EntryListSyncState(state.syncState)
+                    }
+                    if (state.deletionError) item(key = "entries-deletion-error", contentType = "status") {
+                        Text(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            text = stringResource(R.string.entries_delete_error),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    when {
+                        state.isLoading -> item(key = "entries-loading", contentType = "status") {
+                            CircularProgressIndicator(modifier = Modifier.padding(24.dp).testTag("entries-loading"))
+                        }
+                        state.error != null && state.entries.isEmpty() -> item(key = "entries-error", contentType = "status") {
+                            ErrorContent(onRetry)
+                        }
+                        state.entries.isEmpty() -> item(key = "entries-empty", contentType = "status") {
+                            EmptyContent()
+                        }
+                        else -> {
+                            if (state.error != null) item(key = "entries-error", contentType = "status") { ErrorContent(onRetry) }
+                            items(rows, key = { it.key }, contentType = {
+                                when (it) {
+                                    is EntryListRow.DateHeading -> "date"
+                                    is EntryListRow.Entry -> "entry"
+                                }
+                            }) { row ->
+                                when (row) {
+                                    is EntryListRow.DateHeading -> Text(
+                                        text = row.date.format(PolishDateFormatter),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 16.dp).testTag(row.key),
+                                    )
+                                    is EntryListRow.Entry -> EntryCard(
+                                        row.item, onEditEntry,
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                        onOpenActions = { actionCandidate = row.item },
+                                    )
+                                }
+                            }
+                            if (state.hasMore) item(key = "entries-load-more", contentType = "controls") {
+                                Button(
+                                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().testTag("entries-load-more"),
+                                    onClick = onLoadNextPage,
+                                ) { Text(stringResource(R.string.entries_load_more)) }
+                            }
                         }
                     }
                 }
