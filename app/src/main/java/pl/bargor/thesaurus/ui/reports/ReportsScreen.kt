@@ -51,7 +51,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -112,7 +111,6 @@ fun ReportsScreen(
     onSelectSubcategory: (String?) -> Unit = {},
     onSelectSort: (ReportEntrySort) -> Unit = {},
     onToggleSortDirection: () -> Unit = {},
-    onClearControls: () -> Unit = {},
     onOpenFilters: () -> Unit = {},
     onDismissFilters: () -> Unit = {},
     onApplyFilters: () -> Unit = {},
@@ -124,7 +122,8 @@ fun ReportsScreen(
     state.filterDraft?.let { draft ->
         ReportFilterDialog(state, draft, onSelectPeriodMode, onPreviousPeriod, onNextPeriod,
             onSelectType, onCustomFromChange, onCustomToChange, onSelectCategory,
-            onSelectSubcategory, onSelectMembers, onDismissFilters, onApplyFilters, onResetFilters)
+            onSelectSubcategory, onSelectMembers, onSelectSort, onToggleSortDirection,
+            onDismissFilters, onApplyFilters, onResetFilters)
     }
     Column(
         modifier = modifier.fillMaxSize().padding(16.dp),
@@ -152,7 +151,6 @@ fun ReportsScreen(
                 ReportPeriodMode.YEAR -> state.year.toString()
                 ReportPeriodMode.CUSTOM -> "${state.customFromInput} – ${state.customToInput}"
             }, modifier = Modifier.testTag("reports-period"))
-            ReportControls(state, onSelectSort, onToggleSortDirection, onClearControls)
             if (state.isLoading) {
                 CircularProgressIndicator(Modifier.testTag("reports-loading"))
                 return@content
@@ -202,31 +200,27 @@ fun ReportsScreen(
 }
 
 @Composable
-private fun ReportControls(
-    state: ReportsUiState,
+private fun ReportSortControls(
+    draft: ReportFilterDraft,
     onSort: (ReportEntrySort) -> Unit,
     onDirection: () -> Unit,
-    onClear: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         ReportChoice(
-            stringResource(R.string.reports_sort), reportSortLabel(state.sort),
+            stringResource(R.string.reports_sort), reportSortLabel(draft.sort),
             ReportEntrySort.entries.map { it.name to reportSortLabel(it) }, "reports-sort",
             modifier = Modifier.weight(1f),
             onSelect = { name -> name?.let { onSort(ReportEntrySort.valueOf(it)) } },
         )
-        val directionDescription = stringResource(if (state.direction == ReportSortDirection.DESCENDING)
+        val directionDescription = stringResource(if (draft.direction == ReportSortDirection.DESCENDING)
             R.string.reports_sort_descending else R.string.reports_sort_ascending)
+        val directionState = stringResource(if (draft.direction == ReportSortDirection.DESCENDING)
+            R.string.reports_sort_direction_descending else R.string.reports_sort_direction_ascending)
         IconButton(onClick = onDirection, modifier = Modifier.size(48.dp).testTag("reports-sort-direction")
-            .semantics { contentDescription = directionDescription }) {
-            Icon(if (state.direction == ReportSortDirection.DESCENDING) Icons.Filled.ArrowDownward
+            .semantics { contentDescription = directionDescription; stateDescription = directionState }) {
+            Icon(if (draft.direction == ReportSortDirection.DESCENDING) Icons.Filled.ArrowDownward
                 else Icons.Filled.ArrowUpward, contentDescription = null)
-        }
-        val clearDescription = stringResource(R.string.reports_clear_controls)
-        IconButton(onClick = onClear, modifier = Modifier.size(48.dp).testTag("reports-clear-controls")
-            .semantics { contentDescription = clearDescription }) {
-            Icon(Icons.Filled.RestartAlt, contentDescription = null)
         }
     }
 }
@@ -290,6 +284,8 @@ private fun ReportFilterDialog(
     onCategory: (String?) -> Unit,
     onSubcategory: (String?) -> Unit,
     onMembers: (Set<String>?) -> Unit,
+    onSort: (ReportEntrySort) -> Unit,
+    onDirection: () -> Unit,
     dismiss: () -> Unit,
     apply: () -> Unit,
     reset: () -> Unit,
@@ -331,6 +327,7 @@ private fun ReportFilterDialog(
                         ReportChoice(stringResource(R.string.reports_filter_type), stringResource(draft.typeFilter.labelRes()),
                             ReportTypeFilter.entries.map { it.name to stringResource(it.labelRes()) }, "reports-type-selector",
                             onSelect = { it?.let { name -> onType(ReportTypeFilter.valueOf(name)) } })
+                        ReportSortControls(draft, onSort, onDirection)
                         ReportChoice(stringResource(R.string.reports_filter_category),
                             categoryOptions.firstOrNull { it.first == draft.selectedCategoryId }?.second ?: stringResource(R.string.reports_all_categories),
                             listOf(null to stringResource(R.string.reports_all_categories)) + categoryOptions,
@@ -351,7 +348,9 @@ private fun ReportFilterDialog(
                             }
                         }
                     }
-                    TextButton(onClick = reset, modifier = Modifier.testTag("reports-reset-filters")) {
+                    val resetDescription = stringResource(R.string.reports_reset_filters_description)
+                    TextButton(onClick = reset, modifier = Modifier.testTag("reports-reset-filters")
+                        .semantics { contentDescription = resetDescription }) {
                         Text(stringResource(R.string.reports_reset_filters))
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

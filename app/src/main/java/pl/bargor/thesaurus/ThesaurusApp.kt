@@ -390,7 +390,6 @@ private fun ReportsRoute(
         onSelectSubcategory = reportsViewModel::selectSubcategory,
         onSelectSort = reportsViewModel::selectSort,
         onToggleSortDirection = reportsViewModel::toggleSortDirection,
-        onClearControls = reportsViewModel::clearControls,
         onOpenFilters = reportsViewModel::openFilters,
         onDismissFilters = reportsViewModel::dismissFilters,
         onApplyFilters = reportsViewModel::applyFilters,
