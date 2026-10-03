@@ -8,6 +8,7 @@ import java.time.Clock
 import java.time.LocalDate
 import java.time.Year
 import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineStart
@@ -25,6 +26,9 @@ import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.ReportAggregation
+import pl.bargor.thesaurus.data.model.ReportBalanceTrend
+import pl.bargor.thesaurus.data.model.ReportBalanceGranularity
+import pl.bargor.thesaurus.data.model.buildReportBalanceTrend
 import pl.bargor.thesaurus.data.model.ReportTypeFilter
 import pl.bargor.thesaurus.data.model.SummaryPeriod
 import pl.bargor.thesaurus.data.model.Subcategory
@@ -82,6 +86,7 @@ data class ReportsUiState(
     val members: List<ReportMemberOption> = emptyList(),
     val filterDraft: ReportFilterDraft? = null,
     val allSubcategories: List<Subcategory> = emptyList(),
+    val balanceTrend: ReportBalanceTrend? = null,
 ) {
     val hasActiveFilters: Boolean get() = mode != ReportPeriodMode.MONTH || month != YearMonth.from(today) ||
         typeFilter != ReportTypeFilter.ALL || selectedCategoryId != null || selectedSubcategoryId != null || selectedMemberIds != null ||
@@ -137,6 +142,7 @@ class ReportsViewModel @Inject constructor(
     private var cachedSelection: ReportSelection? = null
     private var cachedSelectedEntries: List<LedgerEntry> = emptyList()
     private var cachedAggregation = ReportAggregation()
+    private var cachedBalanceTrend: ReportBalanceTrend? = null
 
     init {
         savedStateHandle.keys().filter { it.contains("tag", ignoreCase = true) }.forEach {
@@ -157,11 +163,12 @@ class ReportsViewModel @Inject constructor(
             latestEntriesSource = null; historicalCategoryIds = emptySet()
             cachedEntries = null; cachedSelection = null
             cachedSelectedEntries = emptyList(); cachedAggregation = ReportAggregation()
+            cachedBalanceTrend = null
             observations.clear(); entriesObserved = false
             mutableState.update { it.copy(isLoading = true, hasError = false, syncState = SyncState.SYNCED,
                 aggregation = ReportAggregation(), entries = emptyList(), categories = emptyList(), subcategories = emptyList(),
                 selectedCategoryId = null, selectedSubcategoryId = null, selectedMemberIds = null,
-                members = emptyList(), filterDraft = null, allSubcategories = emptyList()) }
+                members = emptyList(), filterDraft = null, allSubcategories = emptyList(), balanceTrend = null) }
             restoreFilters(householdId)
         }
         observeJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
@@ -469,6 +476,10 @@ class ReportsViewModel @Inject constructor(
                 date -> date.withDayOfMonth(1)
             } else { date -> date }
             val rawAggregation = aggregateReportEntries(cachedSelectedEntries, period, typeFilter, bucket)
+            cachedBalanceTrend = buildReportBalanceTrend(entries, period,
+                if (mode == ReportPeriodMode.YEAR || (mode == ReportPeriodMode.CUSTOM &&
+                    ChronoUnit.DAYS.between(period.from, period.to) >= 62)) ReportBalanceGranularity.MONTHLY
+                else ReportBalanceGranularity.DAILY)
             // Expense trends use magnitudes while totals keep the signed balance.
             cachedAggregation = if (typeFilter == ReportTypeFilter.EXPENSE) rawAggregation.copy(
                 trend = rawAggregation.trend.map { it.copy(amountGrosze = it.amountGrosze.abs()) },
@@ -482,6 +493,7 @@ class ReportsViewModel @Inject constructor(
             selectedCategoryId = categoryId,
             selectedSubcategoryId = subcategoryId,
             aggregation = cachedAggregation,
+            balanceTrend = cachedBalanceTrend,
             entries = cachedSelectedEntries.map { entry ->
                     ReportEntryItem(
                         entry = entry,

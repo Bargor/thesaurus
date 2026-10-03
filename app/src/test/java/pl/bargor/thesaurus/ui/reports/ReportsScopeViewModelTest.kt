@@ -5,6 +5,7 @@ import java.math.BigInteger
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -595,6 +596,136 @@ class ReportsScopeViewModelTest {
         assertEquals(setOf("actor"), vm.state.value.selectedMemberIds)
         assertEquals(ReportEntrySort.AMOUNT, vm.state.value.sort)
         assertEquals(ReportSortDirection.ASCENDING, vm.state.value.direction)
+    }
+
+    @Test fun globalBalanceIgnoresCommittedFiltersAndSortButRestoresViewportAndUpdatesPendingHistory() = runTest {
+        val saved = SavedStateHandle()
+        val ledger = Ledger(listOf(entry("first", 500, "shop", date = "2026-09-01"),
+            entry("last", -200, "shop", date = "2026-09-30"),
+            entry("other-member", -700, "shop").copy(authorId = "second"),
+            entry("other-category", -900, "fuel", "car"), entry("august", -50, "shop", date = "2026-08-31"),
+            entry("foreign-household", 9999).copy(householdId = "other"),
+            entry("deleted-history", 8888, date = "2026-08-01").copy(deleted = true, deletedById = "actor"),
+            entry("future", 7777, date = "2026-10-01")))
+        val vm = ReportsViewModel(ledger, Taxonomy(), clock, saved, ReportHouseholds())
+        vm.start("home"); advanceUntilIdle()
+        fun assertExact(state: ReportsUiState) {
+            val trend = requireNotNull(state.balanceTrend)
+            val all = ledger.home.value.value.orEmpty().filter { it.householdId == "home" && !it.deleted && it.date <= trend.period.to }
+            assertEquals(all.fold(BigInteger.ZERO) { sum, item -> sum + BigInteger.valueOf(item.amountGrosze) }, trend.endBalanceGrosze)
+            assertEquals(all.filter { it.date < trend.period.from }.fold(BigInteger.ZERO) { sum, item -> sum + BigInteger.valueOf(item.amountGrosze) }, trend.startBalanceGrosze)
+            assertTrue(trend.buckets.zipWithNext().all { (a, b) -> a.to < b.from })
+        }
+        assertExact(vm.state.value)
+        val original = vm.state.value.balanceTrend
+        assertEquals((-50).toBigInteger(), original!!.startBalanceGrosze)
+        assertEquals((-1350).toBigInteger(), original.endBalanceGrosze)
+        vm.selectCategory("food"); vm.selectSubcategory("shop"); vm.selectMembers(setOf("actor"))
+        ReportTypeFilter.entries.forEach { type ->
+            vm.selectType(type)
+            assertEquals("Report filters must not change household balance", original, vm.state.value.balanceTrend)
+        }
+        vm.selectMembers(emptySet())
+        assertTrue(vm.state.value.entries.isEmpty())
+        assertEquals("Even an empty report scope retains the household chart", original, vm.state.value.balanceTrend)
+        vm.selectMembers(setOf("actor"))
+        vm.openFilters(); vm.selectCategory("food"); vm.selectSubcategory("shop"); vm.selectMembers(setOf("actor"))
+        vm.selectType(ReportTypeFilter.EXPENSE); vm.selectPeriodMode(ReportPeriodMode.YEAR)
+        assertEquals(original, vm.state.value.balanceTrend)
+        vm.dismissFilters()
+        assertEquals(original, vm.state.value.balanceTrend)
+        vm.openFilters(); vm.selectCategory("food"); vm.selectSubcategory("shop"); vm.selectMembers(setOf("actor"))
+        vm.selectType(ReportTypeFilter.EXPENSE); vm.selectPeriodMode(ReportPeriodMode.CUSTOM)
+        vm.updateCustomFrom("2026-08-31"); vm.updateCustomTo("2026-09-30"); vm.applyFilters()
+        assertExact(vm.state.value)
+        assertEquals((-250).toBigInteger(), vm.state.value.aggregation.totals.netGrosze)
+        assertEquals((-1350).toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
+        assertEquals(ReportBalanceGranularity.DAILY, vm.state.value.balanceTrend!!.granularity)
+        val applied = vm.state.value.balanceTrend
+        ReportEntrySort.entries.forEach { sort ->
+            vm.selectSort(sort); vm.toggleSortDirection()
+            assertEquals("Ledger sort must not change chart chronology", applied, vm.state.value.balanceTrend)
+        }
+        vm.openFilters(); vm.resetFilters()
+        assertEquals(applied, vm.state.value.balanceTrend)
+        val restored = ReportsViewModel(ledger, Taxonomy(), clock, copied(saved), ReportHouseholds())
+        restored.start("home"); advanceUntilIdle()
+        assertEquals(applied, restored.state.value.balanceTrend)
+        assertNull(restored.state.value.filterDraft)
+        ledger.home.value = SyncObservation(ledger.home.value.value!! + entry("pending", -25, "fuel", "car", date = "2026-08-01").copy(authorId = "second"), SyncState.PENDING)
+        advanceUntilIdle()
+        assertExact(restored.state.value)
+        assertEquals((-1375).toBigInteger(), restored.state.value.balanceTrend!!.endBalanceGrosze)
+        assertEquals((-25).toBigInteger(), restored.state.value.balanceTrend!!.startBalanceGrosze)
+        assertEquals((-250).toBigInteger(), restored.state.value.aggregation.totals.netGrosze)
+        val pending = restored.state.value.balanceTrend
+        ledger.home.value = SyncObservation(state = SyncState.OFFLINE); advanceUntilIdle()
+        assertEquals(pending, restored.state.value.balanceTrend)
+        vm.applyFilters()
+        assertEquals((-1375).toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
+        assertFalse(vm.state.value.hasActiveFilters)
+        restored.start("other"); advanceUntilIdle()
+        assertEquals(0, restored.state.value.balanceTrend!!.entryCount)
+        assertEquals(BigInteger.ZERO, restored.state.value.balanceTrend!!.startBalanceGrosze)
+        assertEquals(BigInteger.ZERO, restored.state.value.balanceTrend!!.endBalanceGrosze)
+    }
+
+    @Test fun balanceDailyThresholdCountsInclusiveCustomDaysAndYearAlwaysUsesMonths() = runTest {
+        val vm = ReportsViewModel(Ledger(listOf(entry("one", 100))), Taxonomy(), clock, SavedStateHandle(), ReportHouseholds())
+        vm.start("home"); advanceUntilIdle()
+        assertEquals(ReportBalanceGranularity.DAILY, vm.state.value.balanceTrend!!.granularity)
+        assertEquals(30, vm.state.value.balanceTrend!!.buckets.size)
+        vm.selectPeriodMode(ReportPeriodMode.YEAR)
+        assertEquals(ReportBalanceGranularity.MONTHLY, vm.state.value.balanceTrend!!.granularity)
+        assertEquals(9, vm.state.value.balanceTrend!!.buckets.size)
+        vm.openFilters(); vm.selectPeriodMode(ReportPeriodMode.CUSTOM)
+        vm.updateCustomFrom("2026-07-31"); vm.updateCustomTo("2026-09-30"); vm.applyFilters()
+        assertEquals(ReportBalanceGranularity.DAILY, vm.state.value.balanceTrend!!.granularity)
+        assertEquals(62, vm.state.value.balanceTrend!!.buckets.size)
+        val daily = vm.state.value.balanceTrend
+        vm.openFilters(); vm.updateCustomFrom("2026-07-30")
+        assertEquals(daily, vm.state.value.balanceTrend)
+        vm.applyFilters()
+        assertEquals(ReportBalanceGranularity.MONTHLY, vm.state.value.balanceTrend!!.granularity)
+        assertEquals(LocalDate.of(2026, 7, 30), vm.state.value.balanceTrend!!.buckets.first().from)
+        assertEquals(LocalDate.of(2026, 9, 30), vm.state.value.balanceTrend!!.buckets.last().to)
+        assertEquals(3, vm.state.value.balanceTrend!!.buckets.size)
+    }
+
+    @Test fun localClockMonthBoundaryUsesLeapDayAndCustomDatesRemainIdenticalAcrossZones() = runTest {
+        val instant = Instant.parse("2024-02-29T23:30:00Z")
+        val ledger = Ledger(listOf(entry("february-first", 100, date = "2024-02-28"),
+            entry("leap-day", -30, date = "2024-02-29"), entry("march-first", 900, date = "2024-03-01")))
+        val west = ReportsViewModel(ledger, Taxonomy(), Clock.fixed(instant, ZoneId.of("America/Los_Angeles")), SavedStateHandle(), ReportHouseholds())
+        val east = ReportsViewModel(ledger, Taxonomy(), Clock.fixed(instant, ZoneId.of("Europe/Warsaw")), SavedStateHandle(), ReportHouseholds())
+        west.start("home"); east.start("home"); advanceUntilIdle()
+        assertEquals(LocalDate.of(2024, 2, 29), west.state.value.today)
+        assertEquals(LocalDate.of(2024, 3, 1), east.state.value.today)
+        assertEquals(LocalDate.of(2024, 2, 29), west.state.value.balanceTrend!!.buckets.last().to)
+        assertEquals(29, west.state.value.balanceTrend!!.buckets.size)
+        assertEquals(70.toBigInteger(), west.state.value.balanceTrend!!.endBalanceGrosze)
+        assertEquals(LocalDate.of(2024, 3, 1), east.state.value.balanceTrend!!.buckets.single().from)
+        assertEquals(70.toBigInteger(), east.state.value.balanceTrend!!.startBalanceGrosze)
+        assertEquals(970.toBigInteger(), east.state.value.balanceTrend!!.endBalanceGrosze)
+        for (vm in listOf(west, east)) {
+            vm.openFilters(); vm.selectPeriodMode(ReportPeriodMode.CUSTOM)
+            vm.updateCustomFrom("2024-02-28"); vm.updateCustomTo("2024-02-29"); vm.applyFilters()
+        }
+        assertEquals(west.state.value.balanceTrend, east.state.value.balanceTrend)
+        assertEquals(listOf(LocalDate.of(2024, 2, 28), LocalDate.of(2024, 2, 29)),
+            east.state.value.balanceTrend!!.buckets.map { it.from })
+    }
+
+    @Test fun daylightSavingClockTransitionCannotShiftPersistedCalendarEntryDates() = runTest {
+        val ledger = Ledger(listOf(entry("before", 200, date = "2024-03-30"), entry("transition", -50, date = "2024-03-31")))
+        val before = ReportsViewModel(ledger, Taxonomy(), Clock.fixed(Instant.parse("2024-03-31T00:30:00Z"), ZoneId.of("Europe/Warsaw")), SavedStateHandle(), ReportHouseholds())
+        val after = ReportsViewModel(ledger, Taxonomy(), Clock.fixed(Instant.parse("2024-03-31T01:30:00Z"), ZoneId.of("Europe/Warsaw")), SavedStateHandle(), ReportHouseholds())
+        before.start("home"); after.start("home"); advanceUntilIdle()
+        assertEquals(before.state.value.balanceTrend, after.state.value.balanceTrend)
+        assertEquals(31, after.state.value.balanceTrend!!.buckets.size)
+        assertEquals(LocalDate.of(2024, 3, 31), after.state.value.balanceTrend!!.buckets.last().to)
+        assertEquals(150.toBigInteger(), after.state.value.balanceTrend!!.endBalanceGrosze)
+        assertEquals((-50).toBigInteger(), after.state.value.balanceTrend!!.buckets.last().changeGrosze)
     }
 
     private fun copied(saved: SavedStateHandle) =

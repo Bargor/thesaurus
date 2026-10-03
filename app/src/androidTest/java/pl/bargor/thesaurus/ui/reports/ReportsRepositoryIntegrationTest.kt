@@ -88,6 +88,7 @@ class ReportsRepositoryIntegrationTest {
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectCategory(food.id); vm.selectSubcategory(shop.id); vm.applyFilters() }
                 val scoped = state("apply food/shop") { it.selectedSubcategoryId == shop.id && it.entries.size == 2 }
                 assertEquals((-900).toBigInteger(), scoped.aggregation.totals.netGrosze)
+                assertGlobalBalance(scoped, 7800, -900)
                 assertEquals(1100.toBigInteger(), scoped.aggregation.categories.single().amountGrosze)
                 assertEquals(setOf(expense.id, refund.id), scoped.entries.map { it.entry.id }.toSet())
                 firestore.disableNetwork().await()
@@ -95,6 +96,7 @@ class ReportsRepositoryIntegrationTest {
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectSort(ReportEntrySort.AMOUNT); vm.toggleSortDirection() }
                 assertEquals(cached.entries, vm.state.value.entries)
                 assertEquals(cached.aggregation, vm.state.value.aggregation)
+                assertEquals(cached.balanceTrend, vm.state.value.balanceTrend)
                 instrumentation.runOnMainSync { vm.dismissFilters(); vm.openFilters() }
                 assertEquals(ReportEntrySort.DATE, vm.state.value.filterDraft!!.sort)
                 instrumentation.runOnMainSync { vm.selectSort(ReportEntrySort.AMOUNT); vm.toggleSortDirection(); vm.applyFilters() }
@@ -104,6 +106,7 @@ class ReportsRepositoryIntegrationTest {
                 }
                 assertEquals(listOf(expense.id, refund.id), sortedCached.entries.map { it.entry.id })
                 assertEquals(cached.aggregation, sortedCached.aggregation)
+                assertEquals(cached.balanceTrend, sortedCached.balanceTrend)
                 instrumentation.runOnMainSync {
                     vm.openFilters(); vm.resetFilters()
                     val restoredState = SavedStateHandle(saved.keys().associateWith { saved.get<Any?>(it) })
@@ -120,20 +123,26 @@ class ReportsRepositoryIntegrationTest {
                 assertEquals(ReportSortDirection.ASCENDING, restoredCached.direction)
                 assertEquals(sortedCached.entries.map { it.entry.id }, restoredCached.entries.map { it.entry.id })
                 assertEquals(sortedCached.aggregation, restoredCached.aggregation)
+                assertEquals(sortedCached.balanceTrend, restoredCached.balanceTrend)
+                assertGlobalBalance(restoredCached, 7800, -900)
                 instrumentation.runOnMainSync { vm.openFilters() }
                 assertEquals(ReportEntrySort.AMOUNT, vm.state.value.filterDraft!!.sort)
                 instrumentation.runOnMainSync { vm.dismissFilters() }
                 val local = entry("local", -500)
-                val writes = listOf(async { repository.save(local) }, async { repository.save(food.copy(name = "Jedzenie lokalne", updatedById = uid)) }, async { repository.save(shop.copy(name = "Sklep lokalny", updatedById = uid)) })
+                val historicalOtherCategory = entry("historical-other-category", -300, income.id, null, "2026-08-01")
+                val writes = listOf(async { repository.save(local) }, async { repository.save(historicalOtherCategory) }, async { repository.save(food.copy(name = "Jedzenie lokalne", updatedById = uid)) }, async { repository.save(shop.copy(name = "Sklep lokalny", updatedById = uid)) })
                 try {
-                    val pending = state("pending local entry and renamed taxonomy") { it.syncState == SyncState.PENDING && it.entries.size == 3 && it.entries.all { item -> item.categoryName == "Jedzenie lokalne" && item.subcategoryName == "Sklep lokalny" } }
+                    val pending = state("pending local entry and renamed taxonomy") { it.syncState == SyncState.PENDING && it.entries.size == 3 && it.balanceTrend?.endBalanceGrosze == 7000.toBigInteger() && it.entries.all { item -> item.categoryName == "Jedzenie lokalne" && item.subcategoryName == "Sklep lokalny" } }
                     assertEquals((-1400).toBigInteger(), pending.aggregation.totals.netGrosze)
+                    assertGlobalBalance(pending, 7000, -1200)
                     assertEquals(1600.toBigInteger(), pending.aggregation.categories.single().amountGrosze)
                     assertEquals(shop.id, pending.selectedSubcategoryId)
                     instrumentation.runOnMainSync { vm.selectPeriodMode(ReportPeriodMode.YEAR) }
                     val annual = state("annual offline scope") { it.mode == ReportPeriodMode.YEAR && it.entries.size == 4 }
                     assertEquals((-2300).toBigInteger(), annual.aggregation.totals.netGrosze)
                     assertEquals(2, annual.aggregation.trend.size)
+                    assertGlobalBalance(annual, 7000, 0)
+                    assertEquals(pl.bargor.thesaurus.data.model.ReportBalanceGranularity.MONTHLY, annual.balanceTrend!!.granularity)
                     instrumentation.runOnMainSync { vm.selectPeriodMode(ReportPeriodMode.MONTH) }
                     state("return to monthly scope") { it.mode == ReportPeriodMode.MONTH && it.entries.size == 3 }
                     firestore.enableNetwork().await()
@@ -143,10 +152,12 @@ class ReportsRepositoryIntegrationTest {
                 repository.tombstone(home, local.id, uid)
                 val afterDelete = state("tombstone local entry") { it.syncState == SyncState.SYNCED && it.entries.size == 2 && it.entries.none { item -> item.entry.id == local.id } }
                 assertEquals((-900).toBigInteger(), afterDelete.aggregation.totals.netGrosze)
+                assertGlobalBalance(afterDelete, 7500, -1200)
                 assertEquals(1100.toBigInteger(), afterDelete.aggregation.categories.single().amountGrosze)
                 instrumentation.runOnMainSync { vm.openFilters(); vm.resetFilters(); vm.applyFilters(); vm.clearControls() }
                 val all = state("reset scope") { !it.hasActiveFilters && it.entries.size == 4 }
                 assertEquals(8700.toBigInteger(), all.aggregation.totals.netGrosze)
+                assertGlobalBalance(all, 7500, -1200)
             }
         } finally {
             instrumentation.runOnMainSync { store.clear() }
@@ -201,6 +212,7 @@ class ReportsRepositoryIntegrationTest {
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectMembers(setOf(guest)); vm.applyFilters() }
                 val guestOnly = state { it.entries.size == 1 && it.entries.single().entry.id == guestEntry.id }
                 assertEquals(200.toBigInteger(), guestOnly.aggregation.totals.expenseGrosze)
+                assertGlobalBalance(guestOnly, -300, 0)
                 assertEquals(200.toBigInteger(), guestOnly.aggregation.categories.single().amountGrosze)
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectMembers(setOf(owner, guest)); vm.applyFilters() }
                 state { it.entries.size == 2 }
@@ -211,8 +223,11 @@ class ReportsRepositoryIntegrationTest {
                 firestore.disableNetwork().await()
                 val offline = state { it.syncState == SyncState.OFFLINE }
                 assertEquals(listOf(guestEntry.id), offline.entries.map { it.entry.id })
+                assertGlobalBalance(offline, -300, 0)
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectMembers(emptySet()); vm.applyFilters() }
-                state { it.entries.isEmpty() && it.aggregation.totals.isEmpty && it.aggregation.categories.isEmpty() && it.aggregation.trend.isEmpty() }
+                val noMembers = state { it.entries.isEmpty() && it.aggregation.totals.isEmpty && it.aggregation.categories.isEmpty() && it.aggregation.trend.isEmpty() }
+                assertGlobalBalance(noMembers, -300, 0)
+                assertEquals(offline.balanceTrend, noMembers.balanceTrend)
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectMembers(null); vm.applyFilters() }
                 state { it.entries.size == 2 }
                 firestore.enableNetwork().await()
@@ -223,5 +238,13 @@ class ReportsRepositoryIntegrationTest {
             runCatching { withTimeout(10_000) { firestore.enableNetwork().await() } }
             runCatching { withTimeout(10_000) { firestore.terminate().await() } }
         }
+    }
+
+    private fun assertGlobalBalance(state: ReportsUiState, expectedEnd: Int, expectedStart: Int) {
+        val trend = requireNotNull(state.balanceTrend)
+        assertEquals(expectedEnd.toBigInteger(), trend.endBalanceGrosze)
+        assertEquals(expectedStart.toBigInteger(), trend.startBalanceGrosze)
+        assertEquals(trend.startBalanceGrosze + trend.buckets.fold(java.math.BigInteger.ZERO) { sum, bucket -> sum + bucket.changeGrosze }, trend.endBalanceGrosze)
+        assertTrue(trend.buckets.zipWithNext().all { (a, b) -> a.to < b.from })
     }
 }

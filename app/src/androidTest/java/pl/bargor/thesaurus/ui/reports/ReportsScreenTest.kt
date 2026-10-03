@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
@@ -32,6 +33,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.TextLayoutResult
 import java.math.BigInteger
 import java.time.LocalDate
@@ -153,8 +155,15 @@ class ReportsScreenTest {
         composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
         chooseMode("YEAR")
         composeRule.onAllNodesWithText("Trend miesięczny").assertCountEquals(1)
-        composeRule.onNodeWithContentDescription("Trend miesięczny: lut: +12,50 zł").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("reports-trend-summary").assertTextContains("lut: +12,50", substring = true)
+        composeRule.onNodeWithTag("reports-trend-chart").performScrollTo().assertIsDisplayed().assert(
+            SemanticsMatcher("monthly trend describes exact February result with year") {
+                it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { description ->
+                    "lut" in description && "2026" in description && "+12,50" in description
+                }
+            })
+        composeRule.onNodeWithTag("reports-trend-y-axis", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithTag("reports-trend-x-axis", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithTag("reports-trend-summary").assertDoesNotExist()
         chooseMode("CUSTOM")
         composeRule.onNodeWithTag("reports-trend-chart").assertDoesNotExist()
         composeRule.onNodeWithTag("reports-trend-summary").assertDoesNotExist()
