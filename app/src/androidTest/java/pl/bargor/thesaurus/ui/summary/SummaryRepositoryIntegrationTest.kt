@@ -63,8 +63,9 @@ class SummaryRepositoryIntegrationTest {
                 val writes = listOf(async { repository.save(local) }, async { repository.save(food.copy(name = "Żywność lokalna", updatedById = uid)) })
                 try {
                     val pending = state { it.syncState == SyncState.PENDING && it.detailEntries.size == 3 && it.detailEntries.all { item -> item.categoryName == "Żywność lokalna" } }
-                    assertEquals(1500.toBigInteger(), pending.detailCard!!.totals.netGrosze)
-                    assertEquals(pending.cards.first().totals, pending.detailCard!!.totals)
+                    val pendingDetail = requireNotNull(pending.detailCard)
+                    assertEquals(1500.toBigInteger(), pendingDetail.totals.netGrosze)
+                    assertEquals(pending.cards.first().totals, pendingDetail.totals)
                     assertEquals("Żywność lokalna", pending.cards.first().highestExpenseCategory!!.name)
                     instrumentation.runOnMainSync { vm.closePeriod(); vm.selectPeriodMode(SummaryPeriodMode.YEAR) }
                     val annual = state { it.mode == SummaryPeriodMode.YEAR && it.cards.singleOrNull()?.entries?.size == 4 }
@@ -77,9 +78,10 @@ class SummaryRepositoryIntegrationTest {
                 } finally { writes.filter { it.isActive }.forEach { it.cancel() } }
                 repository.tombstone(home, local.id, uid)
                 val deleted = state { it.syncState == SyncState.SYNCED && it.detailEntries.size == 2 && it.detailEntries.none { item -> item.entry.id == local.id } }
-                assertEquals(2000.toBigInteger(), deleted.detailCard!!.totals.netGrosze)
+                val deletedDetail = requireNotNull(deleted.detailCard)
+                assertEquals(2000.toBigInteger(), deletedDetail.totals.netGrosze)
                 assertEquals(deleted.cards.first().entries.map { it.id }.toSet(), deleted.detailEntries.map { it.entry.id }.toSet())
-                assertEquals(deleted.cards.first().totals, deleted.detailCard!!.totals)
+                assertEquals(deleted.cards.first().totals, deletedDetail.totals)
             }
         } finally {
             instrumentation.runOnMainSync { store.clear() }

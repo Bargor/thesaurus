@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.CompositionLocalProvider
@@ -44,6 +45,8 @@ import pl.bargor.thesaurus.ui.summary.SummaryUiState
 import pl.bargor.thesaurus.ui.entries.EntryListScreen
 import pl.bargor.thesaurus.ui.entries.EntryListUiState
 import pl.bargor.thesaurus.ui.entries.EntryListItem
+import pl.bargor.thesaurus.ui.entries.EntryListError
+import pl.bargor.thesaurus.ui.entries.EntryListSort
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.ui.reports.ReportsScreen
 import pl.bargor.thesaurus.ui.reports.ReportsUiState
@@ -171,9 +174,121 @@ class NavigationSmokeTest {
         assertTrue("Add action must remain above bottom navigation", add.bottom <= navigation.top)
         assertTrue("Navigation must leave the reserved bottom system inset", navigation.bottom < root.bottom)
         assertTrue("Add action fits horizontally", add.left >= root.left && add.right <= root.right)
+        assertUsableEntriesViewport()
         composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entry-inset-20"))
         composeTestRule.onNodeWithTag("add-entry").assertIsDisplayed().performClick()
         composeTestRule.onNodeWithText("Nowy wpis").assertIsDisplayed()
+    }
+
+    @Test
+    fun compactPhysicalViewportKeepsEntriesScrollableAndAddAboveSharedFooter() {
+        val state = mutableStateOf(EntryListUiState(isLoading = false, entries = compactEntries()))
+        composeTestRule.setContent {
+            val deviceDensity = LocalDensity.current.density
+            // Define physical pixels before replacing density; no emulator settings change.
+            Box(Modifier.requiredSize((320f / deviceDensity).dp, (640f / deviceDensity).dp).testTag("compact-viewport")) {
+                CompositionLocalProvider(LocalDensity provides Density(1.1f, 1.8f)) {
+                    ThesaurusTheme {
+                        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets(bottom = 32.dp))) {
+                            HouseholdApp(
+                                entriesContent = { onOpenSettings, onAddEntry, onOpenFamily, _ ->
+                                    EntryListScreen(
+                                        state = state.value,
+                                        onChangeSort = { state.value = state.value.copy(sort = it) },
+                                        onLoadNextPage = {}, onRetry = {},
+                                        onOpenSettings = onOpenSettings, onAddEntry = onAddEntry, onOpenFamily = onOpenFamily,
+                                    )
+                                }, summaryContent = {}, reportsContent = {},
+                                taxonomyContent = { Text("Compact settings destination") },
+                                entryFormContent = { _, _ -> Text("Compact new entry destination") },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        val viewport = composeTestRule.onNodeWithTag("compact-viewport").fetchSemanticsNode().boundsInRoot
+        assertEquals("Fixture physical width", 320f, viewport.width, 1f)
+        assertEquals("Fixture physical height", 640f, viewport.height, 1f)
+        // ScrollToNode can loop indefinitely on a zero-height LazyColumn. Fail first
+        // with the actual viewport dimensions instead of waiting for the CI watchdog.
+        assertUsableEntriesViewport()
+        val initialAdd = assertCompactAddAboveFooter()
+        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entry-compact-20"))
+        composeTestRule.onNodeWithTag("entry-compact-20").assertIsDisplayed()
+        assertEquals("Add stays fixed while entries scroll", initialAdd, assertCompactAddAboveFooter())
+        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entries-sort-created"))
+        composeTestRule.onNodeWithTag("entries-sort-created").assertIsDisplayed().performClick()
+        composeTestRule.runOnIdle { assertEquals(EntryListSort.CREATION_ORDER, state.value.sort) }
+        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entries-sort-date"))
+        composeTestRule.onNodeWithTag("entries-sort-date").assertIsDisplayed().performClick()
+        composeTestRule.runOnIdle { assertEquals(EntryListSort.ACCOUNTING_DATE, state.value.sort) }
+        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("open-family"))
+        composeTestRule.onNodeWithTag("open-family").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("open-taxonomy-settings"))
+        composeTestRule.onNodeWithTag("open-taxonomy-settings").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithText("Compact settings destination").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).performClick()
+        composeTestRule.onNodeWithTag("add-entry").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithText("Compact new entry destination").assertIsDisplayed()
+    }
+
+    @Test
+    fun compactPhysicalViewportKeepsLoadingEmptyAndErrorContentReachable() {
+        val state = mutableStateOf(EntryListUiState())
+        var retries = 0
+        composeTestRule.setContent {
+            val deviceDensity = LocalDensity.current.density
+            Box(Modifier.requiredSize((320f / deviceDensity).dp, (640f / deviceDensity).dp)) {
+                CompositionLocalProvider(LocalDensity provides Density(1.1f, 1.8f)) {
+                    ThesaurusTheme {
+                        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets(bottom = 32.dp))) {
+                            HouseholdApp(
+                                entriesContent = { _, _, _, _ ->
+                                    EntryListScreen(state.value, onChangeSort = {}, onLoadNextPage = {},
+                                        onRetry = { retries++ }, onOpenSettings = {}, onAddEntry = {})
+                                }, summaryContent = {}, reportsContent = {},
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        assertUsableEntriesViewport()
+        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entries-loading"))
+        composeTestRule.onNodeWithTag("entries-loading").assertIsDisplayed()
+        assertCompactAddAboveFooter()
+        composeTestRule.runOnIdle { state.value = EntryListUiState(isLoading = false) }
+        assertUsableEntriesViewport()
+        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(androidx.compose.ui.test.hasText("Nie ma jeszcze żadnych wpisów."))
+        composeTestRule.onNodeWithText("Nie ma jeszcze żadnych wpisów.").assertIsDisplayed()
+        assertCompactAddAboveFooter()
+        composeTestRule.runOnIdle { state.value = EntryListUiState(isLoading = false, error = EntryListError.LoadFailed) }
+        assertUsableEntriesViewport()
+        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entries-retry"))
+        composeTestRule.onNodeWithTag("entries-retry").assertIsDisplayed().performClick()
+        composeTestRule.runOnIdle { assertEquals(1, retries) }
+        assertCompactAddAboveFooter()
+    }
+
+    private fun assertUsableEntriesViewport() {
+        val list = composeTestRule.onNodeWithTag("entries-list").fetchSemanticsNode().boundsInRoot
+        assertTrue("Entries need a positive visible viewport before scrolling: $list", list.width > 0f && list.height > 0f)
+    }
+
+    private fun assertCompactAddAboveFooter(): androidx.compose.ui.geometry.Rect {
+        val add = composeTestRule.onNodeWithTag("add-entry").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val footer = composeTestRule.onNodeWithTag("global-account-balance").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val navigation = composeTestRule.onNodeWithTag("bottom-navigation").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue("Add stays above shared balance", add.bottom <= footer.top + 1f)
+        assertTrue("Balance stays above navigation", footer.bottom <= navigation.top + 1f)
+        return add
+    }
+
+    private fun compactEntries() = (1..20).map { index ->
+        EntryListItem(LedgerEntry(id = "compact-$index", householdId = "home", amountGrosze = -100,
+            date = LocalDate.of(2026, 9, 16), categoryId = "food", authorId = "creator", updatedById = "creator"),
+            "Jedzenie", null, "creator@example.test")
     }
 
     @Test

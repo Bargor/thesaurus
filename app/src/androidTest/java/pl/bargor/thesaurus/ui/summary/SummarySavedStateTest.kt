@@ -2,14 +2,18 @@ package pl.bargor.thesaurus.ui.summary
 
 import android.os.Bundle
 import android.os.Parcel
-import androidx.lifecycle.AbstractSavedStateViewModelFactory
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SAVED_STATE_REGISTRY_OWNER_KEY
+import androidx.lifecycle.VIEW_MODEL_STORE_OWNER_KEY
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.enableSavedStateHandles
+import androidx.lifecycle.viewmodel.MutableCreationExtras
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.test.platform.app.InstrumentationRegistry
@@ -112,19 +116,24 @@ class SummarySavedStateTest {
         init {
             controller.performAttach()
             controller.performRestore(saved)
+            enableSavedStateHandles()
             registry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         }
 
-        @Suppress("DEPRECATION", "UNCHECKED_CAST")
         fun summary(): SummaryViewModel {
-            val factory = object : AbstractSavedStateViewModelFactory(this, null) {
-                override fun <T : ViewModel> create(key: String, modelClass: Class<T>, handle: SavedStateHandle): T =
+            val factory = viewModelFactory {
+                initializer {
                     SummaryViewModel(
                         EmptyRepositories, EmptyRepositories, EmptyRepositories,
-                        Clock.fixed(Instant.parse("2026-09-15T12:00:00Z"), ZoneOffset.UTC), handle,
-                    ) as T
+                        Clock.fixed(Instant.parse("2026-09-15T12:00:00Z"), ZoneOffset.UTC), createSavedStateHandle(),
+                    )
+                }
             }
-            return ViewModelProvider(this, factory)[SummaryViewModel::class.java]
+            val extras = MutableCreationExtras().apply {
+                this[SAVED_STATE_REGISTRY_OWNER_KEY] = this@Owner
+                this[VIEW_MODEL_STORE_OWNER_KEY] = this@Owner
+            }
+            return ViewModelProvider(viewModelStore, factory, extras)[SummaryViewModel::class.java]
         }
     }
 
