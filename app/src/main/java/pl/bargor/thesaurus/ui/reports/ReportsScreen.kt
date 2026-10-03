@@ -173,6 +173,7 @@ fun ReportsScreen(
             ReportsTotalCards(state.aggregation.totals)
             if (state.aggregation.totals.isEmpty) {
                 Text(stringResource(R.string.empty_reports), Modifier.testTag("reports-empty"))
+                state.balanceTrend?.let { ReportsBalanceChart(it) }
                 return@content
             }
             val categories = state.aggregation.categories.map { value ->
@@ -184,6 +185,7 @@ fun ReportsScreen(
                 )
             }
             CategoryDonutChart(categories)
+            state.balanceTrend?.let { ReportsBalanceChart(it) }
             if (state.mode == ReportPeriodMode.YEAR) {
                 TrendChart(state.aggregation.trend, state.typeFilter)
             }
