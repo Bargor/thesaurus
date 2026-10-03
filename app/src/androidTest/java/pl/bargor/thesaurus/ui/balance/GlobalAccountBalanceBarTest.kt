@@ -180,7 +180,6 @@ class GlobalAccountBalanceBarTest {
         shell("settings put secure show_ime_with_hard_keyboard 1")
         compose.runOnUiThread {
             WindowCompat.setDecorFitsSystemWindows(window, false)
-            window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         var form by mutableStateOf(EntryFormUiState(isLoading = false))
         var imeBottom = 0
