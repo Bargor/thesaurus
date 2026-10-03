@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -46,7 +45,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import java.time.LocalDate
@@ -57,7 +55,6 @@ import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.ui.accentColor
-import pl.bargor.thesaurus.ui.categoryContainer
 
 private val PolishDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.forLanguageTag("pl-PL"))
@@ -145,40 +142,7 @@ fun EntryFormScreen(
             },
         )
         CategoryPicker(state, editable, onCategorySelected)
-        state.categories.firstOrNull { it.category.id == state.categoryId }?.let { category ->
-            val accent = category.category.accentColor()
-            val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-            val colors = FilterChipDefaults.filterChipColors(
-                containerColor = accent.categoryContainer(MaterialTheme.colorScheme.surface, false, dark),
-                selectedContainerColor = accent.categoryContainer(MaterialTheme.colorScheme.surface, true, dark),
-            )
-            val subcategories = category.subcategories.filter { !it.archived || it.id == state.subcategoryId }
-            Column(modifier = Modifier.fillMaxWidth()) {
-                if (subcategories.isEmpty()) {
-                    Text(stringResource(R.string.taxonomy_no_active_subcategories))
-                } else {
-                    Text(stringResource(R.string.entry_subcategory_optional), style = MaterialTheme.typography.titleSmall)
-                    FilterChip(
-                        modifier = Modifier.testTag("entry-subcategory-none"),
-                        selected = state.subcategoryId == null,
-                        enabled = editable,
-                        onClick = { onSubcategorySelected(null) },
-                        colors = colors,
-                        label = { Text(stringResource(R.string.entry_subcategory_none)) },
-                    )
-                    subcategories.forEach { subcategory ->
-                        FilterChip(
-                            modifier = Modifier.testTag("entry-subcategory-${subcategory.id}"),
-                            selected = state.subcategoryId == subcategory.id,
-                            enabled = editable && !subcategory.archived,
-                            onClick = { onSubcategorySelected(subcategory.id) },
-                            colors = colors,
-                            label = { Text(subcategory.name) },
-                        )
-                    }
-                }
-            }
-        }
+        SubcategoryPicker(state, editable, onSubcategorySelected)
         if (state.error == EntryFormError.CategoryRequired || state.error == EntryFormError.InactiveTaxonomy) {
             Text(stringResource(R.string.entry_category_error), color = MaterialTheme.colorScheme.error)
         }
@@ -213,6 +177,91 @@ fun EntryFormScreen(
             Text(stringResource(if (state.queuedOffline) R.string.entry_queued else R.string.entry_saved))
         }
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubcategoryPicker(state: EntryFormUiState, editable: Boolean, onSelected: (String?) -> Unit) {
+    val category = state.categories.firstOrNull { it.category.id == state.categoryId } ?: return
+    // A category change discards its popup; only selected IDs belong to the restored draft.
+    var expanded by remember(state.categoryId, editable) { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val subcategories = category.subcategories.filter { !it.archived || it.id == state.subcategoryId }
+    val selectedSubcategory = subcategories.firstOrNull { it.id == state.subcategoryId }
+    // Keep historical selections clearable even when there are no active replacements.
+    val enabled = editable && subcategories.isNotEmpty()
+    val menuExpanded = expanded && enabled
+    val expansionState = stringResource(if (menuExpanded) R.string.entry_subcategory_expanded else R.string.entry_subcategory_collapsed)
+    ExposedDropdownMenuBox(
+        expanded = menuExpanded,
+        onExpandedChange = {
+            if (enabled) {
+                focusManager.clearFocus()
+                expanded = it
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
+            value = selectedSubcategory?.name ?: stringResource(R.string.entry_subcategory_none),
+            onValueChange = {},
+            readOnly = true,
+            enabled = enabled,
+            label = { Text(stringResource(R.string.entry_subcategory_optional)) },
+            leadingIcon = { CategorySwatch(category.category.accentColor()) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuExpanded) },
+            supportingText = if (selectedSubcategory?.archived == true || subcategories.none { !it.archived }) {
+                {
+                    Column {
+                        if (selectedSubcategory?.archived == true) Text(stringResource(R.string.entry_subcategory_archived))
+                        if (subcategories.none { !it.archived }) Text(stringResource(R.string.taxonomy_no_active_subcategories))
+                    }
+                }
+            } else null,
+            modifier = Modifier.fillMaxWidth()
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = enabled)
+                .testTag("entry-subcategory-picker")
+                .semantics { stateDescription = expansionState },
+        )
+        ExposedDropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 320.dp).testTag("entry-subcategory-menu"),
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.entry_subcategory_none)) },
+                trailingIcon = if (state.subcategoryId == null) {
+                    { Icon(Icons.Default.Check, contentDescription = stringResource(R.string.entry_subcategory_selected_marker)) }
+                } else null,
+                enabled = editable,
+                onClick = {
+                    expanded = false
+                    onSelected(null)
+                },
+                modifier = Modifier.testTag("entry-subcategory-none").semantics { selected = state.subcategoryId == null },
+            )
+            subcategories.forEach { subcategory ->
+                val isSelected = state.subcategoryId == subcategory.id
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(subcategory.name)
+                            if (subcategory.archived) Text(stringResource(R.string.entry_subcategory_archived), style = MaterialTheme.typography.bodySmall)
+                        }
+                    },
+                    trailingIcon = if (isSelected) {
+                        { Icon(Icons.Default.Check, contentDescription = stringResource(R.string.entry_subcategory_selected_marker)) }
+                    } else null,
+                    enabled = editable && !subcategory.archived,
+                    onClick = {
+                        expanded = false
+                        onSelected(subcategory.id)
+                    },
+                    modifier = Modifier.testTag("entry-subcategory-${subcategory.id}").semantics { selected = isSelected },
+                )
+            }
+        }
     }
 }
 

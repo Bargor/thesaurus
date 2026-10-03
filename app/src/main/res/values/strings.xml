@@ -193,6 +193,10 @@
     <string name="entry_subcategory">Podkategoria</string>
     <string name="entry_subcategory_optional">Podkategoria (opcjonalnie)</string>
     <string name="entry_subcategory_none">Bez podkategorii</string>
+    <string name="entry_subcategory_expanded">Rozwinięta</string>
+    <string name="entry_subcategory_collapsed">Zwinięta</string>
+    <string name="entry_subcategory_archived">Archiwalna</string>
+    <string name="entry_subcategory_selected_marker">Wybrana</string>
     <string name="entry_optional_title">Tytuł (opcjonalnie)</string>
     <string name="entry_title_error">Tytuł może mieć najwyżej 160 znaków.</string>
     <string name="entry_tags">Tagi (opcjonalnie)</string>

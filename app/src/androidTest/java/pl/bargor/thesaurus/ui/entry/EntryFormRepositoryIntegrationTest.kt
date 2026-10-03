@@ -89,9 +89,13 @@ class EntryFormRepositoryIntegrationTest {
                 composeRule.onNodeWithTag("entry-category-${expense.id}").assertIsDisplayed()
                 composeRule.onNodeWithTag("entry-category-${income.id}").performClick()
                 composeRule.onNodeWithTag("entry-category-menu").assertDoesNotExist()
-                composeRule.onNodeWithTag("entry-subcategory-${salary.id}").performScrollTo().performClick()
+                composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().performClick()
+                composeRule.onNodeWithTag("entry-subcategory-${salary.id}").performClick()
+                composeRule.onNodeWithTag("entry-subcategory-menu").assertDoesNotExist()
                 composeRule.onNodeWithTag("entry-type-expense").performScrollTo().performClick()
+                composeRule.onNodeWithTag("entry-subcategory-picker").performScrollTo().performClick()
                 composeRule.onNodeWithTag("entry-subcategory-${salary.id}").performScrollTo().assertIsSelected()
+                InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
                 assertEquals(income.id, vm.state.value.categoryId)
                 assertEquals(salary.id, vm.state.value.subcategoryId)
                 composeRule.onNodeWithTag("entry-category-picker").performScrollTo().performClick()
@@ -139,7 +143,9 @@ class EntryFormRepositoryIntegrationTest {
                 assertEquals(income.id, restored.state.value.categoryId)
                 assertEquals(salary.id, restored.state.value.subcategoryId)
                 instrumentation.runOnMainSync { restored.save(today) }
-                withTimeout(15_000) { repository.observeEntries(home).first { it.state == SyncState.SYNCED && it.value?.singleOrNull()?.amountGrosze == 1800L } }
+                val persisted = withTimeout(15_000) { repository.observeEntries(home).first { it.state == SyncState.SYNCED && it.value?.singleOrNull()?.amountGrosze == 1800L } }.value!!.single()
+                assertEquals(income.id, persisted.categoryId)
+                assertEquals(salary.id, persisted.subcategoryId)
                 assertEquals(queued.id, repository.observeEntries(home).first { it.value?.singleOrNull()?.amountGrosze == 1800L }.value!!.single().id)
             }
         } finally {
