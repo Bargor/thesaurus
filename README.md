@@ -224,6 +224,10 @@ GitHub Actions runs the standard **API 31** verification for pull requests targe
 
 The scheduled run at 02:00 UTC performs the same checks and also runs the **API 37** job. A maintainer can request API 37 through **Run workflow** with `run_api_37` selected. Daily/API 37 jobs upload the debug APK and Android reports; the API 31 job uploads those artifacts on scheduled runs. CI is deliberately not a release-signing or Firebase-deployment workflow.
 
+Instrumentation streams TestRunner start/finish events live and uploads a separate diagnostics artifact on every run, including filtered and recent logcat, activity/window/process snapshots, the last ANR report, and available Firebase logs. `scripts/ci-instrumentation.sh` limits Gradle to 20 minutes with a 15-second termination grace, fails if no TestRunner event arrives within 5 minutes or progress stops for 3 minutes, and bounds each diagnostic adb command to 10 seconds. The last started/finished event helps distinguish a stuck test from teardown. Positive-integer `CI_INSTRUMENTATION_TIMEOUT_SECONDS`, `CI_INSTRUMENTATION_START_GRACE_SECONDS`, `CI_INSTRUMENTATION_PROGRESS_TIMEOUT_SECONDS`, `CI_INSTRUMENTATION_TERM_GRACE_SECONDS`, `CI_INSTRUMENTATION_POLL_SECONDS`, and `CI_INSTRUMENTATION_ADB_TIMEOUT_SECONDS` overrides support short local checks. Set `ANDROID_SERIAL` explicitly; CI uses `emulator-5554`. The workflow step and job have additional 25- and 45-minute limits.
+
+Run `npm run test:ci-instrumentation` on Linux to verify the CI wrapper with mocked adb and launcher processes; both CI jobs run this check after installing the Node dependencies.
+
 ## Troubleshooting
 
 | Symptom | Check |

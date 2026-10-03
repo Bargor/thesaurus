@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:ci-instrumentation": "node --test scripts/test-ci-instrumentation.mjs",
     "test:rules:direct": "node --test tests/firestore.rules.test.mjs",
     "test:rules": "firebase emulators:exec --project demo-thesaurus --only firestore \"node --test tests/firestore.rules.test.mjs\"",
     "test:hosting": "firebase emulators:exec --project demo-thesaurus --only hosting \"node --test tests/hosting.test.mjs\""
