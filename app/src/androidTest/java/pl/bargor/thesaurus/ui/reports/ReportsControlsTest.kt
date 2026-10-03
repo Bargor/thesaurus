@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.Density
@@ -93,7 +94,14 @@ class ReportsControlsTest {
         compose.onNodeWithTag("report-entry-shop-income").performScrollTo().assertIsDisplayed()
         assertEquals(setOf("shop-income", "shop-expense"), vm.state.value.entries.map { it.entry.id }.toSet())
         open(); choose("reports-period-selector", "YEAR"); apply()
-        compose.onNodeWithTag("reports-trend-summary").performScrollTo().assertTextContains("wrz: -8,00", substring = true)
+        compose.onNodeWithTag("reports-trend-chart").performScrollTo().assert(SemanticsMatcher("monthly trend retains exact scoped September amount") {
+            it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { description ->
+                "wrz" in description && "2026" in description && "-8,00" in description
+            }
+        })
+        compose.onNodeWithTag("reports-trend-y-axis", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("reports-trend-x-axis", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("reports-trend-summary").assertDoesNotExist()
         compose.onNodeWithTag("reports-clear-controls").assertDoesNotExist()
         assertEquals("shop", vm.state.value.selectedSubcategoryId)
         net("-8,00")

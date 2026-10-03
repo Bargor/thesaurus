@@ -62,7 +62,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
@@ -81,12 +80,12 @@ import java.math.MathContext
 import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.max
 import kotlin.math.ceil
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.ReportCategoryValue
 import pl.bargor.thesaurus.data.model.ReportTrendValue
 import pl.bargor.thesaurus.data.model.ReportTypeFilter
+import pl.bargor.thesaurus.data.model.SummaryPeriod
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.ui.categoryAccentColor
 import pl.bargor.thesaurus.ui.categoryContainer
@@ -643,38 +642,19 @@ private fun CategoryLegendTable(presentation: List<ChartCategoryValue>) {
 /** Shows the monthly buckets provided by [ReportsViewModel] for annual reports. */
 @Composable
 private fun TrendChart(values: List<ReportTrendValue>, type: ReportTypeFilter) {
-    val displayValues = if (type == ReportTypeFilter.EXPENSE) {
+    val displayValues = (if (type == ReportTypeFilter.EXPENSE) {
         values.map { it.copy(amountGrosze = it.amountGrosze.abs()) }
-    } else values
-    val formatter = DateTimeFormatter.ofPattern("LLL", reportsLocale)
-    val summary = displayValues.joinToString("; ") { "${it.date.format(formatter)}: ${it.amountGrosze.signedCurrency()}" }
-    val description = stringResource(R.string.reports_trend_chart_description, stringResource(R.string.reports_trend_monthly), summary)
-    Text(stringResource(R.string.reports_trend_monthly), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-    Canvas(
-        modifier = Modifier.fillMaxWidth().height(160.dp).testTag("reports-trend-chart")
-            .semantics { contentDescription = description },
-    ) {
-        if (displayValues.isEmpty()) return@Canvas
-        val amounts = displayValues.map { it.amountGrosze.toFloat() }
-        var low = amounts.minOrNull() ?: 0f
-        var high = amounts.maxOrNull() ?: 0f
-        if (low == high) { low -= 1f; high += 1f }
-        val xStep = size.width / max(1, displayValues.lastIndex)
-        fun y(amount: Float) = size.height - ((amount - low) / (high - low) * size.height)
-        val zero = y(0f)
-        drawLine(Color.Gray.copy(alpha = .4f), Offset(0f, zero), Offset(size.width, zero), strokeWidth = 2f)
-        displayValues.zipWithNext().forEachIndexed { index, (first, second) ->
-            drawLine(
-                color = Color(0xFF1565C0),
-                start = Offset(index * xStep, y(first.amountGrosze.toFloat())),
-                end = Offset((index + 1) * xStep, y(second.amountGrosze.toFloat())),
-                strokeWidth = 5f,
-                cap = StrokeCap.Round,
-            )
-        }
-        displayValues.forEachIndexed { index, value -> drawCircle(Color(0xFF1565C0), 5f, Offset(index * xStep, y(value.amountGrosze.toFloat()))) }
-    }
-    Text(summary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("reports-trend-summary"))
+    } else values).sortedBy { it.date }
+    val formatter = DateTimeFormatter.ofPattern("LLL uuuu", reportsLocale)
+    Text(stringResource(R.string.reports_trend_monthly), style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.fillMaxWidth().testTag("reports-trend-title").semantics { heading() })
+    if (displayValues.isEmpty()) return
+    val points = displayValues.map { ReportAmountChartPoint(it.date, it.date, it.amountGrosze) }
+    val description = stringResource(R.string.reports_trend_chart_description,
+        stringResource(R.string.reports_trend_monthly), "")
+    LabeledReportAmountChart(points, SummaryPeriod(displayValues.first().date, displayValues.last().date),
+        openingBalance = null, step = false, chartTag = "reports-trend-chart", description = description,
+        dateLabel = { it.format(formatter) })
 }
 
 @Composable

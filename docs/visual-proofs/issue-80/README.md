@@ -18,14 +18,18 @@ raw PNGs, not cropped, composed, or edited. Accounting periods end at today.
   balance of +1 297,40 zł. Visible axes show PLN amounts, zero, and October dates.
 - [Yearly balance](after-year.png): January 1–October 3 uses calendar-month
   buckets, carries the empty earlier months, and ends at **+17 855,00 zł**.
-  The existing non-cumulative monthly trend remains below it.
+  The non-cumulative monthly trend below it now has a PLN axis, a zero reference,
+  and Polish month/year labels, without the old joined text legend. Both complete
+  charts are visible in this capture.
 - [Expense filter](expense-only.png): the same year with only expenses selected
   still shows the identical global **+17 855,00 zł** curve. The donut, entries,
-  and existing annual trend remain expense-filtered. This is deliberately not
+  and annual monthly trend remain expense-filtered. Monthly expenses are shown
+  as positive magnitudes with labeled axes. This is deliberately not
   an expense-only cumulative balance.
 
 These screenshots reflect the user's follow-up: global history rather than a
-filtered period total, labeled axes, and no balance legend or details button.
+filtered period total, labeled axes on both charts, and no balance legend,
+details button or monthly joined legend.
 The two obsolete details-dialog screenshots were removed from this revision;
 they remain recoverable in Git history.
 
@@ -40,7 +44,7 @@ This was manual QA, not an XML journey or a claim of manual TalkBack verificatio
 
 Root reran `testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest`
 and the complete `pl.bargor.thesaurus.ui.reports` instrumentation package after
-reviewing the implementation and tests: **167 JVM tests and 33 API 31 tests
+reviewing the implementation and tests: **167 JVM tests and 39 API 31 tests
 passed**, with no lint errors. `assembleDevDebug` passed separately.
 
 Coverage includes exact signed arithmetic beyond Long totals, filled empty buckets,
@@ -52,7 +56,9 @@ New narrow-layout tests check
 text layout for clipping/ellipsis at 320 dp with 1.6× light and 1.8× dark fonts,
 including very large exact amounts. They inspect the actual measured Canvas
 tick labels and rendered foreground glyph pixels in light/dark themes, rather
-than merely asserting that an axis container exists. No details controls remain.
+than merely asserting that an axis container exists. Monthly tests also cover
+exact filtered results, positive expense magnitudes, real calendar spacing across
+nonconsecutive months, and visible single/zero points. No details controls remain.
 
 The PR workflow additionally runs all instrumentation tests, Firestore Rules
 tests, and hosting tests in its isolated CI emulators.
