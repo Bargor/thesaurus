@@ -2,13 +2,17 @@ package pl.bargor.thesaurus.ui.entry
 
 import android.app.DatePickerDialog
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,14 +23,23 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -35,8 +48,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Check
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
@@ -67,9 +79,6 @@ fun EntryFormScreen(
     val context = LocalContext.current
     val today = LocalDate.now()
     val editable = !state.saving && !state.saved
-    val visibleCategories = state.categories.filter { category ->
-        !category.category.archived || category.category.id == state.categoryId
-    }
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
@@ -135,73 +144,37 @@ fun EntryFormScreen(
                 ) { Text(stringResource(R.string.entry_date_change)) }
             },
         )
-        Text(stringResource(R.string.entry_category), style = MaterialTheme.typography.titleSmall)
-        if (visibleCategories.isEmpty()) {
-            Text(stringResource(R.string.entry_no_active_categories))
-        } else {
-            visibleCategories.forEach { category ->
-                val selected = state.categoryId == category.category.id
-                val accent = category.category.accentColor()
-                val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-                val subcategoryColors = FilterChipDefaults.filterChipColors(
-                    containerColor = accent.categoryContainer(
-                        MaterialTheme.colorScheme.surface, selected = false, dark = dark,
-                    ),
-                    selectedContainerColor = accent.categoryContainer(
-                        MaterialTheme.colorScheme.surface, selected = true, dark = dark,
-                    ),
-                )
-                val activeSubcategories = category.subcategories.filter { !it.archived || it.id == state.subcategoryId }
-                val selectionState = stringResource(
-                    if (selected) R.string.entry_category_selected_expanded else R.string.entry_category_unselected_collapsed,
-                )
-                Surface(
-                    modifier = Modifier.fillMaxWidth()
-                        .testTag("entry-category-${category.category.id}")
-                        .semantics {
-                            this.selected = selected
-                            stateDescription = selectionState
-                        },
-                    onClick = { onCategorySelected(category.category.id) },
-                    enabled = editable && !category.category.archived,
-                    shape = MaterialTheme.shapes.medium,
-                    color = accent.categoryContainer(MaterialTheme.colorScheme.surface, selected, dark),
-                    border = BorderStroke(if (selected) 2.dp else 1.dp, accent),
-                ) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                        Text(category.category.name, modifier = Modifier.weight(1f))
-                        if (selected) Text(stringResource(R.string.entry_category_selected_marker), modifier = Modifier.padding(end = 8.dp))
-                        Icon(
-                            imageVector = if (selected) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = null,
+        CategoryPicker(state, editable, onCategorySelected)
+        state.categories.firstOrNull { it.category.id == state.categoryId }?.let { category ->
+            val accent = category.category.accentColor()
+            val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+            val colors = FilterChipDefaults.filterChipColors(
+                containerColor = accent.categoryContainer(MaterialTheme.colorScheme.surface, false, dark),
+                selectedContainerColor = accent.categoryContainer(MaterialTheme.colorScheme.surface, true, dark),
+            )
+            val subcategories = category.subcategories.filter { !it.archived || it.id == state.subcategoryId }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (subcategories.isEmpty()) {
+                    Text(stringResource(R.string.taxonomy_no_active_subcategories))
+                } else {
+                    Text(stringResource(R.string.entry_subcategory_optional), style = MaterialTheme.typography.titleSmall)
+                    FilterChip(
+                        modifier = Modifier.testTag("entry-subcategory-none"),
+                        selected = state.subcategoryId == null,
+                        enabled = editable,
+                        onClick = { onSubcategorySelected(null) },
+                        colors = colors,
+                        label = { Text(stringResource(R.string.entry_subcategory_none)) },
+                    )
+                    subcategories.forEach { subcategory ->
+                        FilterChip(
+                            modifier = Modifier.testTag("entry-subcategory-${subcategory.id}"),
+                            selected = state.subcategoryId == subcategory.id,
+                            enabled = editable && !subcategory.archived,
+                            onClick = { onSubcategorySelected(subcategory.id) },
+                            colors = colors,
+                            label = { Text(subcategory.name) },
                         )
-                    }
-                }
-                if (selected) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(start = 24.dp)) {
-                        if (activeSubcategories.isEmpty()) {
-                            Text(stringResource(R.string.taxonomy_no_active_subcategories))
-                        } else {
-                            Text(stringResource(R.string.entry_subcategory_optional), style = MaterialTheme.typography.titleSmall)
-                            FilterChip(
-                                modifier = Modifier.testTag("entry-subcategory-none"),
-                                selected = state.subcategoryId == null,
-                                enabled = editable,
-                                onClick = { onSubcategorySelected(null) },
-                                colors = subcategoryColors,
-                                label = { Text(stringResource(R.string.entry_subcategory_none)) },
-                            )
-                            activeSubcategories.forEach { subcategory ->
-                                FilterChip(
-                                    modifier = Modifier.testTag("entry-subcategory-${subcategory.id}"),
-                                    selected = state.subcategoryId == subcategory.id,
-                                    enabled = editable && !subcategory.archived,
-                                    onClick = { onSubcategorySelected(subcategory.id) },
-                                    colors = subcategoryColors,
-                                    label = { Text(subcategory.name) },
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -241,6 +214,79 @@ fun EntryFormScreen(
         }
         Spacer(Modifier.height(8.dp))
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryPicker(state: EntryFormUiState, editable: Boolean, onSelected: (String) -> Unit) {
+    // Only the draft survives recreation; a popup is transient interaction state.
+    var expanded by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val categories = state.categories.filter { !it.category.archived || it.category.id == state.categoryId }
+    val selectedCategory = categories.firstOrNull { it.category.id == state.categoryId }?.category
+    val enabled = editable && categories.isNotEmpty()
+    val menuExpanded = expanded && enabled
+    val expansionState = stringResource(if (menuExpanded) R.string.entry_category_expanded else R.string.entry_category_collapsed)
+    ExposedDropdownMenuBox(
+        expanded = menuExpanded,
+        onExpandedChange = {
+            if (enabled) {
+                focusManager.clearFocus()
+                expanded = it
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
+            value = selectedCategory?.name ?: stringResource(R.string.entry_category_choose),
+            onValueChange = {},
+            readOnly = true,
+            enabled = enabled,
+            label = { Text(stringResource(R.string.entry_category)) },
+            leadingIcon = selectedCategory?.let { category -> { CategorySwatch(category.accentColor()) } },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuExpanded) },
+            isError = state.error == EntryFormError.CategoryRequired || state.error == EntryFormError.InactiveTaxonomy,
+            modifier = Modifier.fillMaxWidth()
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = enabled)
+                .testTag("entry-category-picker")
+                .semantics { stateDescription = expansionState },
+        )
+        ExposedDropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 320.dp).testTag("entry-category-menu"),
+        ) {
+            categories.forEach { item ->
+                val category = item.category
+                val isSelected = state.categoryId == category.id
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(category.name)
+                            if (category.archived) Text(stringResource(R.string.entry_category_archived), style = MaterialTheme.typography.bodySmall)
+                        }
+                    },
+                    leadingIcon = { CategorySwatch(category.accentColor()) },
+                    trailingIcon = if (isSelected) {
+                        { Icon(Icons.Default.Check, contentDescription = stringResource(R.string.entry_category_selected_marker)) }
+                    } else null,
+                    enabled = editable && !category.archived,
+                    onClick = {
+                        expanded = false
+                        onSelected(category.id)
+                    },
+                    modifier = Modifier.testTag("entry-category-${category.id}").semantics { selected = isSelected },
+                )
+            }
+        }
+    }
+    if (categories.none { !it.category.archived }) Text(stringResource(R.string.entry_no_active_categories))
+}
+
+@Composable
+private fun CategorySwatch(color: androidx.compose.ui.graphics.Color) {
+    Box(Modifier.size(16.dp).background(color, MaterialTheme.shapes.extraSmall)
+        .border(1.dp, MaterialTheme.colorScheme.onSurface, MaterialTheme.shapes.extraSmall))
 }
 
 @Composable

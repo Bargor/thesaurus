@@ -182,8 +182,10 @@
     <string name="entry_date_change">Zmień</string>
     <string name="entry_future_date_error">Data nie może być z przyszłości.</string>
     <string name="entry_category">Kategoria</string>
-    <string name="entry_category_selected_expanded">Wybrana, rozwinięta</string>
-    <string name="entry_category_unselected_collapsed">Niewybrana, zwinięta</string>
+    <string name="entry_category_choose">Wybierz kategorię</string>
+    <string name="entry_category_expanded">Rozwinięta</string>
+    <string name="entry_category_collapsed">Zwinięta</string>
+    <string name="entry_category_archived">Archiwalna</string>
     <string name="entry_category_error">Wybierz aktywną kategorię.</string>
     <string name="entry_no_active_categories">Brak aktywnych kategorii. Dodaj lub przywróć kategorię w ustawieniach.</string>
     <string name="entry_subcategory">Podkategoria</string>

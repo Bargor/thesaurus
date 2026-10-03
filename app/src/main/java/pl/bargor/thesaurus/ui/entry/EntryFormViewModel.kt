@@ -1,6 +1,7 @@
 package pl.bargor.thesaurus.ui.entry
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.math.BigInteger
@@ -9,6 +10,7 @@ import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -114,6 +116,7 @@ object EntryFormValidation {
 class EntryFormViewModel @Inject constructor(
     private val ledgerRepository: LedgerRepository,
     private val taxonomyRepository: TaxonomyRepository,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(EntryFormUiState())
     val state: StateFlow<EntryFormUiState> = mutableState.asStateFlow()
@@ -121,6 +124,9 @@ class EntryFormViewModel @Inject constructor(
     private var context: Triple<String, String, String?>? = null
     private var pendingEntryId: String? = null
     private var editingEntry: LedgerEntry? = null
+    private var draftInitialized = false
+    private var entryObservationJob: Job? = null
+    private var taxonomyObservationJob: Job? = null
 
     fun start(householdId: String, actorId: String, today: LocalDate) =
         start(householdId, actorId, entryId = null, today = today)
@@ -133,24 +139,51 @@ class EntryFormViewModel @Inject constructor(
         today: LocalDate = LocalDate.now(),
     ) {
         if (context == Triple(householdId, actorId, entryId)) return
+        entryObservationJob?.cancel()
+        taxonomyObservationJob?.cancel()
+        val restoreDraft = savedStateHandle.get<String>("entry.household") == householdId &&
+            savedStateHandle.get<String>("entry.actor") == actorId &&
+            savedStateHandle.get<String>("entry.editingId") == entryId &&
+            savedStateHandle.get<Boolean>("entry.hasDraft") == true
         context = Triple(householdId, actorId, entryId)
         editingEntry = null
-        mutableState.value = EntryFormUiState(date = today, editingEntryId = entryId)
-        viewModelScope.launch {
+        pendingEntryId = if (restoreDraft) savedStateHandle["entry.pendingId"] else null
+        draftInitialized = restoreDraft || entryId == null
+        mutableState.value = if (restoreDraft) {
+            EntryFormUiState(
+                date = savedStateHandle.get<String>("entry.date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: today,
+                editingEntryId = entryId,
+                amount = savedStateHandle["entry.amount"] ?: "",
+                title = savedStateHandle["entry.title"] ?: "",
+                tags = savedStateHandle["entry.tags"] ?: "",
+                categoryId = savedStateHandle["entry.categoryId"],
+                subcategoryId = savedStateHandle["entry.subcategoryId"],
+                type = EntryType.entries.firstOrNull { it.name == savedStateHandle.get<String>("entry.type") } ?: EntryType.EXPENSE,
+                saved = savedStateHandle["entry.saved"] ?: false,
+                queuedOffline = savedStateHandle["entry.queuedOffline"] ?: false,
+            )
+        } else EntryFormUiState(date = today, editingEntryId = entryId)
+        persistDraft()
+        entryObservationJob = viewModelScope.launch {
             ledgerRepository.observeEntries(householdId).collect { observation ->
                 val stored = entryId?.let { requestedId ->
                     observation.value.orEmpty().firstOrNull { it.id == requestedId }
                 }
                 val pendingId = pendingEntryId
-                val pendingVisible = pendingId?.let { id -> observation.value.orEmpty().any { it.id == id } } == true
                 mutableState.update { old ->
+                    // An edit already exists under this ID before its write begins. Only a
+                    // snapshot of this draft acknowledges a restored pending write.
+                    val pendingVisible = pendingId?.let { id ->
+                        observation.value.orEmpty().any { it.id == id && it.updatedById == actorId && it.matchesDraft(old) }
+                    } == true
                     val becameUnavailable = entryId != null && editingEntry != null && stored == null && observation.error == null
                     if (becameUnavailable) editingEntry = null
                     val loaded = stored?.takeIf { editingEntry?.id != it.id }
                     if (loaded != null) {
                         editingEntry = loaded
+                        draftInitialized = true
                     }
-                    val populated = if (loaded != null) {
+                    val populated = if (loaded != null && !restoreDraft) {
                         old.copy(
                             amount = magnitudeForForm(loaded.amountGrosze),
                             date = loaded.date,
@@ -183,9 +216,10 @@ class EntryFormViewModel @Inject constructor(
                         )
                     }
                 }
+                persistDraft()
             }
         }
-        viewModelScope.launch {
+        taxonomyObservationJob = viewModelScope.launch {
             taxonomyRepository.observeOrderedCategories(householdId, actorId)
                 .flatMapLatest { categoryObservation ->
                     val categories = categoryObservation.value.orEmpty()
@@ -193,18 +227,19 @@ class EntryFormViewModel @Inject constructor(
                         taxonomyRepository.observeSubcategories(householdId, category.id)
                     }
                     if (subcategoryObservations.isEmpty()) {
-                        flowOf(EntryTaxonomySnapshot(categories, emptyMap(), categoryObservation))
+                        flowOf(EntryTaxonomySnapshot(categories, emptyMap(), categoryObservation, categoryObservation.value != null))
                     } else {
                         combine(subcategoryObservations) { observations ->
                             EntryTaxonomySnapshot(
                                 categories = categories,
-                                subcategories = categories.indices.associate { index ->
-                                    categories[index].id to observations[index].value.orEmpty()
-                                },
+                                subcategories = categories.indices.mapNotNull { index ->
+                                    observations[index].value?.let { categories[index].id to it }
+                                }.toMap(),
                                 observation = SyncObservation<Unit>(
                                     state = relevantSyncState(categoryObservation.state, observations.map { it.state }),
                                     error = categoryObservation.error ?: observations.firstNotNullOfOrNull { it.error },
                                 ),
+                                hasCategorySnapshot = categoryObservation.value != null,
                             )
                         }
                     }
@@ -214,16 +249,30 @@ class EntryFormViewModel @Inject constructor(
                         // Retain archived values in state so an entry loaded after this taxonomy emission
                         // can still preserve its historical selection. The screen only exposes active values
                         // plus the current historical selection.
+                        // A listener may initially emit an empty loading snapshot; do not erase
+                        // restored IDs before the locally cached taxonomy has been delivered.
+                        if (!snapshot.hasCategorySnapshot) {
+                            return@update old.copy(
+                                isLoading = old.isLoading && snapshot.observation.error == null,
+                                syncState = snapshot.observation.state,
+                                error = snapshot.observation.error?.let { EntryFormError.SaveFailed } ?: old.error,
+                            )
+                        }
                         val available = snapshot.categories
+                        val subcategories = available.associate { category ->
+                            category.id to (snapshot.subcategories[category.id]
+                                ?: old.categories.firstOrNull { it.category.id == category.id }?.subcategories.orEmpty())
+                        }
                         val selected = old.categoryId?.let { id -> available.firstOrNull { it.id == id } }
                         val categoryId = selected?.id
                         val validSubcategory = categoryId?.let { id ->
-                            snapshot.subcategories[id].orEmpty().any { it.id == old.subcategoryId }
+                            // A failed/not-yet-loaded listener cannot invalidate a restored ID.
+                            id !in snapshot.subcategories || subcategories[id].orEmpty().any { it.id == old.subcategoryId }
                         } == true
                         old.copy(
                             isLoading = false,
                             categories = available.map { category ->
-                                EntryCategory(category, snapshot.subcategories[category.id].orEmpty())
+                                EntryCategory(category, subcategories[category.id].orEmpty())
                             },
                             categoryId = categoryId,
                             subcategoryId = old.subcategoryId.takeIf { validSubcategory },
@@ -231,6 +280,7 @@ class EntryFormViewModel @Inject constructor(
                             error = snapshot.observation.error?.let { EntryFormError.SaveFailed } ?: old.error,
                         )
                     }
+                    persistDraft()
                 }
         }
     }
@@ -293,7 +343,9 @@ class EntryFormViewModel @Inject constructor(
             update { copy(saving = true, error = null) }
             val existing = editingEntry
             val entry = LedgerEntry(
-                id = existing?.id ?: UUID.randomUUID().toString(),
+                // A process may stop after the local save starts but before its listener responds.
+                // Retrying that restored draft must write the same record rather than a duplicate.
+                id = existing?.id ?: pendingEntryId ?: UUID.randomUUID().toString(),
                 householdId = householdId,
                 amountGrosze = EntryFormValidation.signedAmount(magnitude!!, current.type),
                 date = current.date,
@@ -306,6 +358,7 @@ class EntryFormViewModel @Inject constructor(
                 createdAt = existing?.createdAt,
             )
             pendingEntryId = entry.id
+            persistDraft()
             // Firestore's task intentionally remains unfinished while offline. The entry listener above
             // releases the form as soon as the locally persisted pending snapshot contains this exact id.
             runCatching { ledgerRepository.save(entry) }
@@ -322,7 +375,37 @@ class EntryFormViewModel @Inject constructor(
 
     private fun update(transform: EntryFormUiState.() -> EntryFormUiState) {
         mutableState.update(transform)
+        draftInitialized = true
+        persistDraft()
     }
+
+    private fun persistDraft() {
+        if (!draftInitialized) return
+        val (householdId, actorId, entryId) = context ?: return
+        val draft = mutableState.value
+        savedStateHandle["entry.household"] = householdId
+        savedStateHandle["entry.actor"] = actorId
+        savedStateHandle["entry.editingId"] = entryId
+        savedStateHandle["entry.amount"] = draft.amount
+        savedStateHandle["entry.title"] = draft.title
+        savedStateHandle["entry.tags"] = draft.tags
+        savedStateHandle["entry.date"] = draft.date.toString()
+        savedStateHandle["entry.categoryId"] = draft.categoryId
+        savedStateHandle["entry.subcategoryId"] = draft.subcategoryId
+        savedStateHandle["entry.type"] = draft.type.name
+        savedStateHandle["entry.pendingId"] = pendingEntryId
+        savedStateHandle["entry.saved"] = draft.saved
+        savedStateHandle["entry.queuedOffline"] = draft.queuedOffline
+        savedStateHandle["entry.hasDraft"] = true
+    }
+}
+
+private fun LedgerEntry.matchesDraft(draft: EntryFormUiState): Boolean {
+    val magnitude = EntryFormValidation.parseMagnitudeGrosze(draft.amount) ?: return false
+    val draftTags = EntryFormValidation.normalizedTags(draft.tags) ?: return false
+    return !deleted && amountGrosze == EntryFormValidation.signedAmount(magnitude, draft.type) &&
+        date == draft.date && categoryId == draft.categoryId && subcategoryId == draft.subcategoryId &&
+        normalizedTitle == EntryFormValidation.titleOrNull(draft.title) && normalizedTags == draftTags
 }
 
 /** Absolute value avoids exposing a persisted sign as editable input. */
@@ -340,6 +423,7 @@ private data class EntryTaxonomySnapshot(
     val categories: List<Category>,
     val subcategories: Map<String, List<Subcategory>>,
     val observation: SyncObservation<*>,
+    val hasCategorySnapshot: Boolean,
 )
 
 private fun relevantSyncState(categoryState: SyncState, subcategoryStates: List<SyncState>): SyncState = when {
