@@ -58,7 +58,7 @@ class OfflineScreenCoverageTest {
     private val category = Category("food", "house", "Jedzenie", authorId = "user", updatedById = "user")
 
     @Test fun entriesKeepHeaderPositionAndPendingAndErrors() = verifyScreen(
-        "open-taxonomy-settings", R.string.entries_sync_pending, R.string.entries_load_error,
+        "entries-sort-date", R.string.entries_sync_pending, R.string.entries_load_error,
     ) { sync, error ->
         val entry = LedgerEntry("entry", "house", -1200, LocalDate.of(2026, 9, 15), "Zakupy", "food", authorId = "user", updatedById = "user")
         EntryListScreen(

@@ -71,6 +71,7 @@ import pl.bargor.thesaurus.ui.accentColor
 import pl.bargor.thesaurus.ui.asColor
 import pl.bargor.thesaurus.ui.contrastingContent
 import pl.bargor.thesaurus.ui.nameRes
+import pl.bargor.thesaurus.ui.settings.SettingsAction
 
 private sealed interface TaxonomyDialog {
     data object AddCategory : TaxonomyDialog
@@ -88,7 +89,7 @@ fun TaxonomyScreen(
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    var showArchived by remember { mutableStateOf(false) }
+    var showArchived by rememberSaveable { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<TaxonomyDialog?>(null) }
     var previewOrderIds by remember { mutableStateOf<List<String>?>(null) }
     val nodesById = state.categories.associateBy { it.category.id }
@@ -125,6 +126,7 @@ fun TaxonomyScreen(
                     Text(stringResource(R.string.taxonomy_back))
                 }
             }
+            SettingsAction()
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),

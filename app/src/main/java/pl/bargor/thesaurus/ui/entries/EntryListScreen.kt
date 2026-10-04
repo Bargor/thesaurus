@@ -50,6 +50,9 @@ import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.ui.categoryAccentColor
 import pl.bargor.thesaurus.ui.categoryContainer
+import pl.bargor.thesaurus.ui.settings.SettingsAction
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 
 internal val PolishDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.forLanguageTag("pl-PL"))
@@ -87,6 +90,13 @@ fun EntryListScreen(
     }
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.weight(1f))
+                SettingsAction(onOpenSettings)
+            }
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 // Controls scroll with the entries so large text on a short screen
                 // cannot consume the entire viewport above the persistent add action.
@@ -95,19 +105,6 @@ fun EntryListScreen(
                     contentPadding = PaddingValues(vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    item(key = "entries-controls", contentType = "controls") {
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            TextButton(onClick = onOpenSettings, modifier = Modifier.testTag("open-taxonomy-settings")) {
-                                Text(stringResource(R.string.open_taxonomy_settings))
-                            }
-                            TextButton(onClick = onOpenFamily, modifier = Modifier.testTag("open-family")) {
-                                Text(stringResource(R.string.open_family))
-                            }
-                        }
-                    }
                     item(key = "entries-sort", contentType = "controls") {
                         SortSelector(state.sort, onChangeSort)
                     }

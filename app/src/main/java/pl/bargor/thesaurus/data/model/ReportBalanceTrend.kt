@@ -36,11 +36,12 @@ fun buildReportBalanceTrend(
     entries: Iterable<LedgerEntry>,
     period: SummaryPeriod,
     granularity: ReportBalanceGranularity,
+    openingBalanceGrosze: Long = 0L,
 ): ReportBalanceTrend {
     require(period.from <= period.to)
     val changes = sortedMapOf<LocalDate, BigInteger>()
     var count = 0
-    var opening = BigInteger.ZERO
+    var opening = BigInteger.valueOf(openingBalanceGrosze)
     entries.forEach { entry ->
         if (!entry.deleted && entry.date <= period.to) {
             count++

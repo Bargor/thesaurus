@@ -10,9 +10,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
+import pl.bargor.thesaurus.data.firebase.HouseholdRepository
 import pl.bargor.thesaurus.data.model.LedgerEntry
+import pl.bargor.thesaurus.data.model.Household
+import pl.bargor.thesaurus.data.model.absoluteAccountBalance
 import pl.bargor.thesaurus.data.model.SyncState
 
 data class GlobalAccountBalanceUiState(
@@ -25,13 +29,13 @@ data class GlobalAccountBalanceUiState(
 )
 
 /** All active entries count, including dates outside the current screen's period. */
-fun globalAccountBalance(entries: List<LedgerEntry>, householdId: String): BigInteger =
-    entries.asSequence().filter { it.householdId == householdId && !it.deleted }
-        .fold(BigInteger.ZERO) { amount, entry -> amount + BigInteger.valueOf(entry.amountGrosze) }
+fun globalAccountBalance(entries: List<LedgerEntry>, householdId: String, openingBalanceGrosze: Long = 0L): BigInteger =
+    absoluteAccountBalance(openingBalanceGrosze, entries.filter { it.householdId == householdId })
 
 @HiltViewModel
 class GlobalAccountBalanceViewModel @Inject constructor(
     private val ledgerRepository: LedgerRepository,
+    private val householdRepository: HouseholdRepository,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(GlobalAccountBalanceUiState())
     val state: StateFlow<GlobalAccountBalanceUiState> = mutableState.asStateFlow()
@@ -48,13 +52,26 @@ class GlobalAccountBalanceViewModel @Inject constructor(
         // Clear immediately, before the new listener can publish any data.
         mutableState.value = GlobalAccountBalanceUiState(actorId = actorId, householdId = householdId)
         observationJob = viewModelScope.launch {
+            var knownEntries: List<LedgerEntry>? = null
+            var knownHousehold: Household? = null
             try {
-                ledgerRepository.observeEntries(householdId).collect { observation ->
+                combine(ledgerRepository.observeEntries(householdId),
+                    householdRepository.observeHousehold(householdId)) { entries, household -> entries to household }
+                    .collect { (observation, household) ->
                     if (generation != request) return@collect
-                    val failed = observation.state == SyncState.ERROR || observation.error != null
-                    val amount = if (failed) null else observation.value?.let {
-                        globalAccountBalance(it, householdId)
-                    } ?: mutableState.value.amountGrosze
+                    val failed = observation.state == SyncState.ERROR || observation.error != null ||
+                        household.state == SyncState.ERROR || household.error != null ||
+                        household.value?.id?.let { it != householdId } == true ||
+                        (household.state == SyncState.SYNCED && household.value == null)
+                    if (failed) {
+                        knownEntries = null; knownHousehold = null
+                    } else {
+                        observation.value?.let { knownEntries = it }
+                        household.value?.let { knownHousehold = it }
+                    }
+                    val amount = if (failed) null else knownEntries?.let { entries ->
+                        knownHousehold?.let { settings -> globalAccountBalance(entries, householdId, settings.openingBalanceGrosze) }
+                    }
                     mutableState.value = GlobalAccountBalanceUiState(
                         actorId = actorId,
                         householdId = householdId,
@@ -62,7 +79,12 @@ class GlobalAccountBalanceViewModel @Inject constructor(
                         amountGrosze = amount,
                         isLoading = !failed && amount == null,
                         hasError = failed,
-                        syncState = observation.state,
+                        syncState = when {
+                            failed -> SyncState.ERROR
+                            observation.state == SyncState.PENDING || household.state == SyncState.PENDING -> SyncState.PENDING
+                            observation.state == SyncState.OFFLINE || household.state == SyncState.OFFLINE -> SyncState.OFFLINE
+                            else -> SyncState.SYNCED
+                        },
                     )
                 }
             } catch (error: CancellationException) {

@@ -49,7 +49,7 @@ class GlobalAccountBalanceRepositoryIntegrationTest {
                 lateinit var vm: GlobalAccountBalanceViewModel
                 fun createVm() = instrumentation.runOnMainSync {
                     store.clear()
-                    vm = GlobalAccountBalanceViewModel(repository)
+                    vm = GlobalAccountBalanceViewModel(repository, repository)
                     store.put("balance", vm); vm.start(home, uid)
                 }
                 suspend fun state(predicate: (GlobalAccountBalanceUiState) -> Boolean) = withTimeout(15_000) { vm.state.first(predicate) }

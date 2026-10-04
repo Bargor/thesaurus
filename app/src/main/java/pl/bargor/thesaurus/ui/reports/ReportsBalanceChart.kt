@@ -84,7 +84,7 @@ fun ReportsBalanceChart(trend: ReportBalanceTrend) {
         // This also lets exact amounts and headings wrap with large system font scales.
         Text(stringResource(R.string.reports_balance_title), style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.fillMaxWidth().semantics { heading() })
-        if (trend.entryCount == 0) {
+        if (trend.entryCount == 0 && trend.startBalanceGrosze.signum() == 0) {
             Text(stringResource(R.string.reports_balance_empty), Modifier.fillMaxWidth().testTag("reports-balance-empty"))
             return@Column
         }

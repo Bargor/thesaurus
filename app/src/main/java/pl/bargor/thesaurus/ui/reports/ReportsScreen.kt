@@ -89,6 +89,7 @@ import pl.bargor.thesaurus.data.model.SummaryPeriod
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.ui.categoryAccentColor
 import pl.bargor.thesaurus.ui.categoryContainer
+import pl.bargor.thesaurus.ui.settings.SettingsAction
 
 private val reportsLocale = Locale.forLanguageTag("pl-PL")
 private val reportsMonthFormatter = DateTimeFormatter.ofPattern("LLLL uuuu", reportsLocale)
@@ -115,6 +116,7 @@ fun ReportsScreen(
     onApplyFilters: () -> Unit = {},
     onResetFilters: () -> Unit = {},
     onSelectMembers: (Set<String>?) -> Unit = {},
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     // Dialog drafts belong to this screen instance and are discarded when it leaves composition.
     DisposableEffect(Unit) { onDispose { onDismissFilters() } }
@@ -142,6 +144,7 @@ fun ReportsScreen(
                         .testTag("reports-filters-active"))
                 }
             }
+            SettingsAction(onOpenSettings)
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)) content@ {

@@ -115,10 +115,15 @@ class NavigationSmokeTest {
             }
         }
         composeTestRule.onNodeWithTag("open-taxonomy").performClick()
+        composeTestRule.onNodeWithTag("settings-categories").performClick()
         composeTestRule.onNodeWithTag("taxonomy-back").assertIsDisplayed()
         composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).assertIsNotSelected()
         when (exit) {
-            "back" -> composeTestRule.onNodeWithTag("taxonomy-back").performClick()
+            "back" -> {
+                composeTestRule.onNodeWithTag("taxonomy-back").performClick()
+                composeTestRule.onNodeWithTag("settings-categories").assertIsDisplayed()
+                composeTestRule.onNodeWithTag("settings-back").performClick()
+            }
             "summary" -> composeTestRule.onNodeWithTag(Destination.Summary.navigationTestTag).performClick()
             else -> composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).performClick()
         }
@@ -223,10 +228,10 @@ class NavigationSmokeTest {
         composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entries-sort-date"))
         composeTestRule.onNodeWithTag("entries-sort-date").assertIsDisplayed().performClick()
         composeTestRule.runOnIdle { assertEquals(EntryListSort.ACCOUNTING_DATE, state.value.sort) }
-        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("open-family"))
-        composeTestRule.onNodeWithTag("open-family").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("open-taxonomy-settings"))
-        composeTestRule.onNodeWithTag("open-taxonomy-settings").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithTag("open-family").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("open-taxonomy-settings").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("global-open-settings").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithTag("settings-categories").assertIsDisplayed().performClick()
         composeTestRule.onNodeWithText("Compact settings destination").assertIsDisplayed()
         composeTestRule.onNodeWithTag(Destination.Entries.navigationTestTag).performClick()
         composeTestRule.onNodeWithTag("add-entry").assertIsDisplayed().performClick()

@@ -13,6 +13,7 @@ import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SnapshotMetadata
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Source
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -34,6 +35,7 @@ import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.User
 import pl.bargor.thesaurus.data.model.orderedBy
+import pl.bargor.thesaurus.data.model.deriveOpeningBalance
 import pl.bargor.thesaurus.data.onboarding.StarterTaxonomy
 import java.time.Instant
 import java.time.LocalDate
@@ -73,6 +75,21 @@ interface LedgerRepository {
     suspend fun save(entry: LedgerEntry)
     suspend fun tombstone(householdId: String, entryId: String, actorId: String)
 }
+
+interface OpeningBalanceRepository {
+    /** Queued offline like other owner writes; listeners expose the pending value. */
+    suspend fun saveOpeningBalance(householdId: String, amountGrosze: Long)
+    /** Requires a complete server ledger and rejects any concurrent ledger/settings change. */
+    suspend fun saveCurrentBalance(householdId: String, currentBalanceGrosze: Long)
+}
+
+/** Internal immutable server snapshot token; never persisted or exposed by the UI contract. */
+internal data class PreparedCurrentBalance(
+    val householdId: String,
+    val expectedRevision: Long,
+    val expectedOpeningBalanceGrosze: Long?,
+    val derivedOpeningBalanceGrosze: Long,
+)
 
 interface TaxonomyRepository {
     fun observeCategories(householdId: String): Flow<SyncObservation<List<Category>>>
@@ -217,6 +234,11 @@ private fun <T> DocumentReference.observations(
 }
 
 private fun DocumentSnapshot.instant(name: String): Instant? = getTimestamp(name)?.toDate()?.toInstant()
+private fun DocumentSnapshot.ledgerRevision(): Long {
+    val value = get("ledgerRevision") ?: return 0L
+    check(value is Long && value >= 0L) { "Nieprawidłowa wersja księgi." }
+    return value
+}
 private fun Any?.string() = this as? String
 private fun Any?.long() = this as? Long ?: (this as? Number)?.toLong()
 private fun Any?.boolean() = this as? Boolean ?: false
@@ -256,6 +278,8 @@ private fun DocumentSnapshot.toHousehold(): Household? = data?.let { fields ->
         ownerId = fields["ownerId"].string() ?: return null,
         createdAt = instant("createdAt"),
         updatedAt = instant("updatedAt"),
+        openingBalanceGrosze = fields["openingBalanceGrosze"] as? Long ?: 0L,
+        ledgerRevision = fields["ledgerRevision"] as? Long ?: 0L,
     )
 }
 
@@ -411,6 +435,7 @@ private fun Member.toDocument() = mapOf(
 class FirestoreRepositories @Inject constructor(private val firestore: FirebaseFirestore) :
     UserRepository,
     HouseholdRepository,
+    OpeningBalanceRepository,
     LedgerRepository,
     TaxonomyRepository,
     InvitationRepository,
@@ -473,6 +498,66 @@ class FirestoreRepositories @Inject constructor(private val firestore: FirebaseF
         household(household.id).set(household.toDocument(), SetOptions.merge()).await()
     }
 
+    override suspend fun saveOpeningBalance(householdId: String, amountGrosze: Long) {
+        household(householdId).update(
+            mapOf("openingBalanceGrosze" to amountGrosze, "updatedAt" to FieldValue.serverTimestamp()),
+        ).await()
+    }
+
+    override suspend fun saveCurrentBalance(householdId: String, currentBalanceGrosze: Long) {
+        commitCurrentBalance(prepareCurrentBalance(householdId, currentBalanceGrosze))
+    }
+
+    internal suspend fun prepareCurrentBalance(
+        householdId: String,
+        currentBalanceGrosze: Long,
+    ): PreparedCurrentBalance {
+        val reference = household(householdId)
+        val before = reference.get(Source.SERVER).await()
+        check(before.exists() && syncState(before.metadata) == SyncState.SYNCED) {
+            "Bieżące saldo wymaga zsynchronizowanego gospodarstwa."
+        }
+        val snapshot = reference.collection(FirestorePaths.ENTRIES).get(Source.SERVER).await()
+        check(syncState(snapshot.metadata) == SyncState.SYNCED &&
+            snapshot.documents.none { it.metadata.hasPendingWrites() }) {
+            "Bieżące saldo wymaga pełnej synchronizacji wpisów."
+        }
+        val entries = snapshot.documents.map { document ->
+            check(document.get("amountGrosze") is Long && document.get("deleted") is Boolean &&
+                document.getString("householdId") == householdId) { "Nie można odczytać wszystkich wpisów." }
+            checkNotNull(document.toLedgerEntry()) { "Nie można odczytać wszystkich wpisów." }
+        }
+        val after = reference.get(Source.SERVER).await()
+        check(after.exists() && syncState(after.metadata) == SyncState.SYNCED &&
+            before.ledgerRevision() == after.ledgerRevision()) {
+            "Wpisy zmieniły się podczas obliczania salda. Spróbuj ponownie."
+        }
+        val rawOpening = after.get("openingBalanceGrosze")
+        check(!after.contains("openingBalanceGrosze") || rawOpening is Long) { "Nieprawidłowe saldo początkowe." }
+        return PreparedCurrentBalance(
+            householdId = householdId,
+            expectedRevision = after.ledgerRevision(),
+            expectedOpeningBalanceGrosze = rawOpening as Long?,
+            derivedOpeningBalanceGrosze = deriveOpeningBalance(currentBalanceGrosze, entries),
+        )
+    }
+
+    internal suspend fun commitCurrentBalance(prepared: PreparedCurrentBalance) {
+        val reference = household(prepared.householdId)
+        firestore.runTransaction { transaction ->
+            val latest = transaction.get(reference)
+            check(latest.exists() && !latest.metadata.hasPendingWrites() &&
+                latest.ledgerRevision() == prepared.expectedRevision &&
+                latest.get("openingBalanceGrosze") == prepared.expectedOpeningBalanceGrosze) {
+                "Saldo lub wpisy zmieniły się podczas zapisu. Spróbuj ponownie."
+            }
+            transaction.update(reference, mapOf(
+                "openingBalanceGrosze" to prepared.derivedOpeningBalanceGrosze,
+                "updatedAt" to FieldValue.serverTimestamp(),
+            ))
+        }.await()
+    }
+
     override suspend fun removeMember(householdId: String, memberId: String) {
         household(householdId).collection(FirestorePaths.MEMBERS).document(memberId).delete().await()
     }
@@ -489,18 +574,24 @@ class FirestoreRepositories @Inject constructor(private val firestore: FirebaseF
     }
 
     override suspend fun save(entry: LedgerEntry) {
-        household(entry.householdId)
+        val reference = household(entry.householdId)
+        val entryReference = reference
             .collection(FirestorePaths.ENTRIES)
             .document(entry.id)
-            .set(entry.toDocument(), SetOptions.merge())
-            .await()
+        firestore.runBatch { batch ->
+            batch.set(entryReference, entry.toDocument(), SetOptions.merge())
+            batch.update(reference, "ledgerRevision", FieldValue.increment(1L))
+        }.await()
     }
 
     override suspend fun tombstone(householdId: String, entryId: String, actorId: String) {
-        household(householdId)
+        val reference = household(householdId)
+        val entryReference = reference
             .collection(FirestorePaths.ENTRIES)
             .document(entryId)
-            .update(
+        firestore.runBatch { batch ->
+            batch.update(
+                entryReference,
                 mapOf(
                     "deleted" to true,
                     "deletedById" to actorId,
@@ -509,7 +600,8 @@ class FirestoreRepositories @Inject constructor(private val firestore: FirebaseF
                     "updatedAt" to FieldValue.serverTimestamp(),
                 ),
             )
-            .await()
+            batch.update(reference, "ledgerRevision", FieldValue.increment(1L))
+        }.await()
     }
 
     override fun observeCategories(householdId: String): Flow<SyncObservation<List<Category>>> =

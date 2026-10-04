@@ -13,6 +13,7 @@ import pl.bargor.thesaurus.data.firebase.HouseholdRepository
 import pl.bargor.thesaurus.data.firebase.InvitationRepository
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.OnboardingRepository
+import pl.bargor.thesaurus.data.firebase.OpeningBalanceRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.ui.entries.EntryListSortPreference
 import pl.bargor.thesaurus.ui.entries.SharedPreferencesEntryListSortPreference
@@ -47,6 +48,9 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindHouseholdRepository(repository: FirestoreRepositories): HouseholdRepository
+
+    @Binds @Singleton
+    abstract fun bindOpeningBalanceRepository(repository: FirestoreRepositories): OpeningBalanceRepository
 
     @Binds @Singleton
     abstract fun bindInvitationRepository(repository: FirestoreRepositories): InvitationRepository

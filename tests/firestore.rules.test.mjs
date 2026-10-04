@@ -12,17 +12,35 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   serverTimestamp,
-  setDoc,
+  setDoc as firestoreSetDoc,
   Timestamp,
-  updateDoc,
+  updateDoc as firestoreUpdateDoc,
   writeBatch,
 } from 'firebase/firestore';
 
-const projectId = 'demo-thesaurus';
+const projectId = process.env.THESAURUS_RULES_PROJECT_ID ?? 'demo-thesaurus';
+assert.match(projectId, /^demo-[a-z0-9-]+$/, 'Rules tests require an emulator-only demo project ID');
 const householdId = 'dom-1';
 const day = 24 * 60 * 60 * 1000;
 let env;
+
+// Match the production repository: ledger writes always carry an atomic revision fence.
+const ledgerWrite = (reference, data, operation, options) => {
+  if (!reference.path.includes('/entries/')) {
+    return operation === 'set'
+      ? firestoreSetDoc(reference, data, ...(options ? [options] : []))
+      : firestoreUpdateDoc(reference, data);
+  }
+  const batch = writeBatch(reference.firestore);
+  if (operation === 'set') batch.set(reference, data, ...(options ? [options] : []));
+  else batch.update(reference, data);
+  batch.update(doc(reference.firestore, reference.path.split('/entries/')[0]), { ledgerRevision: increment(1) });
+  return batch.commit();
+};
+const setDoc = (reference, data, options) => ledgerWrite(reference, data, 'set', options);
+const updateDoc = (reference, data) => ledgerWrite(reference, data, 'update');
 
 const db = (uid, email = `${uid}@example.test`) =>
   env.authenticatedContext(uid, { email, email_verified: true }).firestore();
@@ -654,6 +672,40 @@ test('removed member can rejoin the same household with a fresh invitation', asy
   });
   await assertSucceeds(secondAcceptance.commit());
   await assertSucceeds(getDoc(householdRef(recipient)));
+});
+
+test('opening balance is signed owner-only data and revision cannot be bypassed', async () => {
+  const alice = db('alice');
+  const bob = db('bob');
+  for (const amount of [0, -12345, 98765]) {
+    await assertSucceeds(updateDoc(householdRef(alice), {
+      openingBalanceGrosze: amount, updatedAt: serverTimestamp(),
+    }));
+    assert.equal((await getDoc(householdRef(bob))).data().openingBalanceGrosze, amount);
+  }
+  await assertFails(updateDoc(householdRef(bob), { openingBalanceGrosze: 1, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(householdRef(db('mallory')), { openingBalanceGrosze: 1, updatedAt: serverTimestamp() }));
+  for (const invalid of [1.5, '100', null]) {
+    await assertFails(updateDoc(householdRef(alice), { openingBalanceGrosze: invalid, updatedAt: serverTimestamp() }));
+  }
+  await assertSucceeds(setDoc(categoryRef(alice, 'revision-food'), category('alice')));
+  const reference = entryRef(bob, 'revision-guard');
+  const data = entry('bob', { categoryId: 'revision-food' });
+  await assertFails(firestoreSetDoc(reference, data));
+  await assertSucceeds(setDoc(reference, data));
+  await assertFails(firestoreUpdateDoc(reference, { amountGrosze: -100, updatedById: 'bob', updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(reference, { amountGrosze: -100, updatedById: 'bob', updatedAt: serverTimestamp() }));
+  await assertFails(firestoreUpdateDoc(reference, {
+    deleted: true, deletedById: 'bob', deletedAt: serverTimestamp(), updatedById: 'bob', updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(reference, {
+    deleted: true, deletedById: 'bob', deletedAt: serverTimestamp(), updatedById: 'bob', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(householdRef(bob), { ledgerRevision: 0 }));
+  await assertFails(updateDoc(householdRef(bob), {
+    ledgerRevision: increment(1), openingBalanceGrosze: 1, updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(householdRef(alice), { openingBalanceGrosze: 0, updatedAt: serverTimestamp() }));
 });
 
 test('owner removal revokes household access but preserves entry attribution', async () => {

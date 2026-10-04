@@ -24,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -41,6 +42,7 @@ import pl.bargor.thesaurus.data.model.InvitationStatus
 import pl.bargor.thesaurus.data.model.Member
 import pl.bargor.thesaurus.data.model.MemberRole
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.ui.settings.SettingsAction
 
 private val InvitationDateFormatter = DateTimeFormatter.ofPattern("d MMMM uuuu, HH:mm", Locale.forLanguageTag("pl-PL"))
 
@@ -54,7 +56,7 @@ fun FamilyScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var email by remember { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
     var memberToRemove by remember { mutableStateOf<Member?>(null) }
     LaunchedEffect(state.shareUrl) {
         if (state.shareUrl != null) email = ""
@@ -69,6 +71,7 @@ fun FamilyScreen(
                 text = stringResource(R.string.family_title),
                 style = MaterialTheme.typography.headlineSmall,
             )
+            SettingsAction()
         }
         if (state.loading) {
             CircularProgressIndicator(modifier = Modifier.padding(24.dp).testTag("family-loading"))

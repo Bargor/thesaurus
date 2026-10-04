@@ -82,9 +82,24 @@ service cloud.firestore {
     }
 
     function validHousehold(data) {
-      return exactKeys(data, ['name', 'ownerId', 'createdAt', 'updatedAt']) &&
+      return data.keys().hasAll(['name', 'ownerId', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['name', 'ownerId', 'createdAt', 'updatedAt', 'openingBalanceGrosze', 'ledgerRevision']) &&
         validText(data.name, 80) && validText(data.ownerId, 128) &&
+        (!('openingBalanceGrosze' in data) || data.openingBalanceGrosze is int) &&
+        (!('ledgerRevision' in data) || (data.ledgerRevision is int && data.ledgerRevision >= 0)) &&
         data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function revision(data) {
+      return 'ledgerRevision' in data ? data.ledgerRevision : 0;
+    }
+
+    // Every ledger mutation changes this server-enforced fence atomically. Older clients
+    // cannot bypass it; current-balance derivation compares the fence around its full query.
+    function ledgerRevisionAdvanced(householdId) {
+      let before = get(/databases/$(database)/documents/households/$(householdId)).data;
+      let after = getAfter(/databases/$(database)/documents/households/$(householdId)).data;
+      return revision(after) is int && revision(after) == revision(before) + 1;
     }
 
     function validMember(data) {
@@ -226,8 +241,11 @@ service cloud.firestore {
         request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
       allow read: if member(householdId);
       allow update: if owner(householdId) && validHousehold(request.resource.data) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'openingBalanceGrosze', 'updatedAt']) &&
         request.resource.data.updatedAt == request.time;
+      allow update: if member(householdId) && validHousehold(request.resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ledgerRevision']) &&
+        ledgerRevisionAdvanced(householdId);
       allow delete: if false;
 
       match /members/{uid} {
@@ -261,11 +279,13 @@ service cloud.firestore {
       match /entries/{entryId} {
         allow read: if member(householdId);
         allow create: if member(householdId) && validEntry(householdId, request.resource.data) &&
+          ledgerRevisionAdvanced(householdId) &&
           validActiveEntryTaxonomyAfter(householdId, request.resource.data) &&
           request.resource.data.authorId == request.auth.uid && request.resource.data.deleted == false &&
           request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
 
         allow update: if member(householdId) && !resource.data.deleted &&
+          ledgerRevisionAdvanced(householdId) &&
           (owner(householdId) || resource.data.authorId == request.auth.uid) &&
           validEntry(householdId, request.resource.data) &&
           request.resource.data.householdId == resource.data.householdId &&
