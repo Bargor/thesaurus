@@ -91,6 +91,31 @@ class ReportBalanceTrendTest {
         trend.buckets.zipWithNext().forEach { (a, b) -> assertEquals(a.to.plusDays(1), b.from) }
     }
 
+    @Test fun openingSettingOffsetsOnlyAbsoluteBalancesWithoutChangingPeriodMovementsOrEntries() {
+        val period = period("2026-09-01", "2026-09-30")
+        val entries = listOf(entry("history", 5_000, "2001-01-01"), entry("income", 2_000, "2026-09-10"),
+            entry("expense", -750, "2026-09-15"), entry("future", 99_999, "2099-12-31"),
+            entry("deleted", 99_999, "2026-09-15").copy(deleted = true, deletedById = "actor"))
+        val totals = aggregateReportEntries(entries, period, ReportTypeFilter.ALL).totals
+        val baseline = buildReportBalanceTrend(entries, period, ReportBalanceGranularity.DAILY)
+        for (opening in listOf(20_000L, -20_000L, 0L, Long.MAX_VALUE)) {
+            val trend = buildReportBalanceTrend(entries, period, ReportBalanceGranularity.DAILY, openingBalanceGrosze = opening)
+            assertEquals(baseline.startBalanceGrosze + opening.toBigInteger(), trend.startBalanceGrosze)
+            assertEquals(baseline.endBalanceGrosze + opening.toBigInteger(), trend.endBalanceGrosze)
+            assertEquals(baseline.entryCount, trend.entryCount)
+            assertEquals(baseline.buckets.map { it.changeGrosze }, trend.buckets.map { it.changeGrosze })
+            assertEquals(baseline.buckets.map { it.balanceGrosze + opening.toBigInteger() }, trend.buckets.map { it.balanceGrosze })
+            assertEquals(1_250.toBigInteger(), totals.netGrosze)
+        }
+        for (opening in listOf(20_000L, -20_000L)) {
+            val empty = buildReportBalanceTrend(emptyList(), period, ReportBalanceGranularity.MONTHLY, openingBalanceGrosze = opening)
+            assertEquals(0, empty.entryCount)
+            assertEquals(opening.toBigInteger(), empty.startBalanceGrosze)
+            assertEquals(opening.toBigInteger(), empty.endBalanceGrosze)
+            assertTrue(empty.buckets.all { it.changeGrosze == BigInteger.ZERO && it.balanceGrosze == opening.toBigInteger() })
+        }
+    }
+
     private fun period(from: String, to: String) = SummaryPeriod(LocalDate.parse(from), LocalDate.parse(to))
     private fun entry(id: String, amount: Long, date: String) = LedgerEntry(id, "home", amount,
         LocalDate.parse(date), categoryId = "food", authorId = "actor", updatedById = "actor")

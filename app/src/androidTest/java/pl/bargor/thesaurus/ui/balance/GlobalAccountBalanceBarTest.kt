@@ -34,6 +34,8 @@ import pl.bargor.thesaurus.ThesaurusTheme
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.ui.entry.EntryFormScreen
 import pl.bargor.thesaurus.ui.entry.EntryFormUiState
+import pl.bargor.thesaurus.ui.settings.OpeningBalanceScreen
+import pl.bargor.thesaurus.ui.settings.OpeningBalanceUiState
 
 class GlobalAccountBalanceBarTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
@@ -152,8 +154,10 @@ class GlobalAccountBalanceBarTest {
             compose.onNodeWithTag(destination.navigationTestTag).performClick(); assertFooter()
         }
         compose.onNodeWithTag(Destination.Entries.navigationTestTag).performClick()
-        compose.onNodeWithTag("settings-fixture").performClick(); compose.onNodeWithText("Kategorie testowe").assertIsDisplayed(); assertFooter()
+        compose.onNodeWithTag("settings-fixture").performClick(); assertFooter()
+        compose.onNodeWithTag("settings-categories").performClick(); compose.onNodeWithText("Kategorie testowe").assertIsDisplayed(); assertFooter()
         compose.onNodeWithTag("settings-back-fixture").performClick()
+        compose.onNodeWithTag("settings-back").performClick()
         compose.onNodeWithTag("family-fixture").performClick(); compose.onNodeWithText("Rodzina testowa").assertIsDisplayed(); assertFooter()
         compose.onNodeWithTag("family-back-fixture").performClick()
         compose.onNodeWithTag("entry-list-fixture").performScrollToNode(hasTestTag("last-add-fixture"))
@@ -234,12 +238,76 @@ class GlobalAccountBalanceBarTest {
                 // ComponentActivity test host starts with decor fitting system windows.
                 WindowCompat.setDecorFitsSystemWindows(window, true)
                 window.setSoftInputMode(originalSoftInputMode)
-                @Suppress("DEPRECATION")
-                window.decorView.systemUiVisibility = originalUiFlags
+                restoreSystemUiVisibility(window, originalUiFlags)
             }
             shell(if (originalImeSetting == "null") "settings delete secure show_ime_with_hard_keyboard"
                 else "settings put secure show_ime_with_hard_keyboard $originalImeSetting")
         }
+    }
+
+    @Test fun openingBalanceSignAndSaveStayReachableWithTheRealSoftwareKeyboardVisible() {
+        val originalImeSetting = shell("settings get secure show_ime_with_hard_keyboard")
+        check(originalImeSetting in listOf("null", "0", "1"))
+        val window = compose.activity.window
+        val originalSoftInputMode = window.attributes.softInputMode
+        @Suppress("DEPRECATION") val originalUiFlags = window.decorView.systemUiVisibility
+        var keyboard: SoftwareKeyboardController? = null
+        var imeBottom = 0
+        var form by mutableStateOf(OpeningBalanceUiState(loading = false, isOwner = true))
+        var saves = 0
+        try {
+            shell("settings put secure show_ime_with_hard_keyboard 1")
+            compose.runOnUiThread { WindowCompat.setDecorFitsSystemWindows(window, false) }
+            compose.setContent { ThesaurusTheme {
+                keyboard = LocalSoftwareKeyboardController.current
+                imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+                HouseholdApp(
+                    balanceState = ready(25_000.toBigInteger()),
+                    entriesContent = { settings, _, _, _ ->
+                        Button(onClick = settings, modifier = Modifier.testTag("real-balance-settings")) { Text("Ustawienia") }
+                    },
+                    summaryContent = {}, reportsContent = {}, browseContent = {},
+                    openingBalanceContent = { back ->
+                        OpeningBalanceScreen(form,
+                            onAmountChange = { form = form.copy(amount = it) },
+                            onModeChange = { form = form.copy(mode = it) },
+                            onSave = { saves++ }, onRetry = {}, onBack = back)
+                    },
+                )
+            } }
+            compose.onNodeWithTag("real-balance-settings").performClick()
+            compose.onNodeWithTag("settings-opening-balance").performClick()
+            compose.onNodeWithTag("opening-balance-amount").performScrollTo().performClick().performTextInput("123,45")
+            compose.onNodeWithTag("opening-balance-amount").assertIsFocused()
+            compose.runOnIdle { keyboard?.show() }
+            compose.waitUntil(10_000) { imeBottom > 0 }
+            compose.onNodeWithTag("opening-balance-sign").performScrollTo().assertIsDisplayed()
+                .assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp).performClick()
+            compose.onNodeWithTag("opening-balance-amount").assertTextContains("-123,45")
+            compose.runOnIdle { assertTrue("Sign action is tested with a visible real IME", imeBottom > 0) }
+            val sign = compose.onNodeWithTag("opening-balance-sign").getUnclippedBoundsInRoot()
+            val footer = compose.onNodeWithTag("global-account-balance", true).getUnclippedBoundsInRoot()
+            assertTrue("Explicit minus target must stay above the shared footer", sign.bottom <= footer.top)
+            compose.onNodeWithTag("opening-balance-save").performScrollTo().assertIsDisplayed().performClick()
+            compose.runOnIdle { assertEquals(1, saves); assertTrue(imeBottom > 0) }
+            val save = compose.onNodeWithTag("opening-balance-save").getUnclippedBoundsInRoot()
+            assertTrue("Balance save must stay above the shared footer with the IME visible", save.bottom <= footer.top)
+            assertAmount(25_000.toBigInteger())
+        } finally {
+            compose.runOnIdle { keyboard?.hide() }
+            compose.runOnUiThread {
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+                window.setSoftInputMode(originalSoftInputMode)
+                restoreSystemUiVisibility(window, originalUiFlags)
+            }
+            shell(if (originalImeSetting == "null") "settings delete secure show_ime_with_hard_keyboard"
+                else "settings put secure show_ime_with_hard_keyboard $originalImeSetting")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun restoreSystemUiVisibility(window: android.view.Window, flags: Int) {
+        window.decorView.systemUiVisibility = flags
     }
 
     private fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(

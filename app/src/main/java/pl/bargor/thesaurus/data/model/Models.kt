@@ -55,11 +55,15 @@ data class Household(
     val ownerId: String,
     val createdAt: Instant? = null,
     val updatedAt: Instant? = null,
+    /** Separate from the ledger; signed integer PLN grosze, including zero. */
+    val openingBalanceGrosze: Long = 0L,
+    val ledgerRevision: Long = 0L,
 ) {
     init {
         id.requiredId("Id gospodarstwa")
         require(name.trim().isNotEmpty() && name.trim().length <= 80)
         ownerId.requiredId("Właściciel")
+        require(ledgerRevision >= 0L)
     }
 }
 

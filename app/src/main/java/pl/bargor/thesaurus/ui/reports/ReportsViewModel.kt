@@ -129,6 +129,8 @@ class ReportsViewModel @Inject constructor(
     private var householdId: String? = null
     private var observeJob: Job? = null
     private var latestEntries: List<LedgerEntry>? = null
+    private var latestOpeningBalance: Long? = null
+    private var cachedOpeningBalance: Long? = null
     private var latestEntriesSource: List<LedgerEntry>? = null
     private var historicalCategoryIds: Set<String> = emptySet()
     private var latestCategories: List<Category> = emptyList()
@@ -158,6 +160,7 @@ class ReportsViewModel @Inject constructor(
         subcategoryJobs.clear()
         this.householdId = householdId
         if (changed) {
+            latestOpeningBalance = null; cachedOpeningBalance = null
             latestMembers = emptyList()
             latestEntries = null; latestCategories = emptyList(); latestSubcategories.clear()
             latestEntriesSource = null; historicalCategoryIds = emptySet()
@@ -172,6 +175,19 @@ class ReportsViewModel @Inject constructor(
             restoreFilters(householdId)
         }
         observeJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            launch {
+                householdRepository.observeHousehold(householdId).withReportErrors().collect { observation ->
+                    if (this@ReportsViewModel.householdId != householdId) return@collect
+                    observations["household"] = observation
+                    when {
+                        observation.state == SyncState.ERROR || observation.error != null -> latestOpeningBalance = null
+                        observation.value != null -> latestOpeningBalance =
+                            observation.value.takeIf { it.id == householdId }?.openingBalanceGrosze
+                        observation.state == SyncState.SYNCED -> latestOpeningBalance = null
+                    }
+                    refresh()
+                }
+            }
             launch {
                 householdRepository.observeMembers(householdId).withReportErrors().collect { observation ->
                     observations["members"] = observation
@@ -467,7 +483,8 @@ class ReportsViewModel @Inject constructor(
         val subcategoryId = selectedSubcategoryId?.takeIf { categoryId != null }
         val selection = ReportSelection(householdId.orEmpty(), period, typeFilter, categoryId, subcategoryId,
             sort, direction, mode == ReportPeriodMode.YEAR, selectedMemberIds)
-        if (entries !== cachedEntries || selection != cachedSelection) {
+        if (entries !== cachedEntries || selection != cachedSelection || cachedOpeningBalance != latestOpeningBalance) {
+            cachedOpeningBalance = latestOpeningBalance
             cachedEntries = entries
             cachedSelection = selection
             cachedSelectedEntries = selectReportEntries(entries, selection.householdId, period, typeFilter,
@@ -476,10 +493,10 @@ class ReportsViewModel @Inject constructor(
                 date -> date.withDayOfMonth(1)
             } else { date -> date }
             val rawAggregation = aggregateReportEntries(cachedSelectedEntries, period, typeFilter, bucket)
-            cachedBalanceTrend = buildReportBalanceTrend(entries, period,
+            cachedBalanceTrend = latestOpeningBalance?.let { opening -> buildReportBalanceTrend(entries, period,
                 if (mode == ReportPeriodMode.YEAR || (mode == ReportPeriodMode.CUSTOM &&
                     ChronoUnit.DAYS.between(period.from, period.to) >= 62)) ReportBalanceGranularity.MONTHLY
-                else ReportBalanceGranularity.DAILY)
+                else ReportBalanceGranularity.DAILY, opening) }
             // Expense trends use magnitudes while totals keep the signed balance.
             cachedAggregation = if (typeFilter == ReportTypeFilter.EXPENSE) rawAggregation.copy(
                 trend = rawAggregation.trend.map { it.copy(amountGrosze = it.amountGrosze.abs()) },
@@ -493,7 +510,9 @@ class ReportsViewModel @Inject constructor(
             selectedCategoryId = categoryId,
             selectedSubcategoryId = subcategoryId,
             aggregation = cachedAggregation,
-            balanceTrend = cachedBalanceTrend,
+            balanceTrend = if (listOfNotNull(observations["household"], observations["entries"])
+                .any { it.state == SyncState.ERROR || it.error != null })
+                null else cachedBalanceTrend,
             entries = cachedSelectedEntries.map { entry ->
                     ReportEntryItem(
                         entry = entry,

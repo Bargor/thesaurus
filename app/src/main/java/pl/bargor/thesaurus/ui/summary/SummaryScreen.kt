@@ -49,6 +49,7 @@ import pl.bargor.thesaurus.ui.entries.EntryCard
 import pl.bargor.thesaurus.ui.entries.EntryListRow
 import pl.bargor.thesaurus.ui.entries.PolishDateFormatter
 import pl.bargor.thesaurus.ui.entries.entryListRows
+import pl.bargor.thesaurus.ui.settings.SettingsAction
 
 private val polishLocale = Locale.forLanguageTag("pl-PL")
 private val monthFormatter = DateTimeFormatter.ofPattern("LLLL uuuu", polishLocale)
@@ -105,7 +106,8 @@ fun SummaryScreen(
             )
         } else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             TextButton(onClick = onClosePeriod, modifier = Modifier.heightIn(min = 48.dp)
-                .testTag("summary-detail-back")) { Text(stringResource(R.string.summary_back_overview)) }
+                .weight(1f).testTag("summary-detail-back")) { Text(stringResource(R.string.summary_back_overview)) }
+            SettingsAction()
         }
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth()
@@ -227,5 +229,6 @@ internal fun SummaryPeriodNavigator(
             enabled = nextEnabled,
             modifier = Modifier.testTag("$testTagPrefix-next-period").semantics { contentDescription = nextDescription },
         ) { Text("›") }
+        SettingsAction()
     }
 }

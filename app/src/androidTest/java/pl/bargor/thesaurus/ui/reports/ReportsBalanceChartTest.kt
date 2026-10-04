@@ -83,6 +83,33 @@ class ReportsBalanceChartTest {
         assertChartDescriptionContains(currency(BigInteger.ZERO))
     }
 
+    @Test fun positiveOpeningWithoutEntriesShowsConstantSignedChart() = assertOpeningOnlyChart(20_000L)
+
+    @Test fun negativeOpeningWithoutEntriesShowsConstantSignedChart() = assertOpeningOnlyChart(-20_000L)
+
+    @Test fun zeroOpeningWithoutEntriesRetainsExplicitEmptyState() {
+        val empty = buildReportBalanceTrend(emptyList(), period, ReportBalanceGranularity.DAILY, openingBalanceGrosze = 0L)
+        compose.setContent { ThesaurusTheme { ReportsBalanceChart(empty) } }
+        compose.onNodeWithTag("reports-balance-empty").assertIsDisplayed()
+        compose.onNodeWithTag("reports-balance-chart").assertDoesNotExist()
+        compose.onNodeWithTag("reports-balance-total").assertDoesNotExist()
+    }
+
+    private fun assertOpeningOnlyChart(opening: Long) {
+        val empty = buildReportBalanceTrend(emptyList(), period, ReportBalanceGranularity.DAILY,
+            openingBalanceGrosze = opening)
+        assertEquals(0, empty.entryCount)
+        assertTrue(empty.buckets.all { it.changeGrosze == BigInteger.ZERO && it.balanceGrosze == opening.toBigInteger() })
+        compose.setContent { ThesaurusTheme { ReportsBalanceChart(empty) } }
+        compose.onNodeWithTag("reports-balance-empty").assertDoesNotExist()
+        compose.onNodeWithTag("reports-balance-chart").assertIsDisplayed()
+        compose.onNodeWithTag("reports-balance-total").assertTextEquals("Końcowe saldo: ${currency(opening.toBigInteger())}")
+        assertChartDescriptionContains(currency(opening.toBigInteger()))
+        assertChartDescriptionContains("1 wrz 2026")
+        assertChartDescriptionContains("3 wrz 2026")
+        assertRemovedControlsAbsent()
+    }
+
     @Test fun restoredCompositionRetainsGlobalOpeningAndExactFinalBalance() {
         val history = listOf(entry("old", 100, 1).copy(date = LocalDate.of(2026, 8, 31)), entry("new", -25, 2))
         val restoration = StateRestorationTester(compose)

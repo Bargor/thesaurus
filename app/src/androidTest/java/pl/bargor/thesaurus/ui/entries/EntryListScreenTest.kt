@@ -175,7 +175,7 @@ class EntryListScreenTest {
     }
 
     @Test
-    fun actionsAndSortUseTheTopOfTheScreenAtLargeFontScale() {
+    fun globalGearAndSortFitAtLargeFontScaleWithoutLegacySettingsActions() {
         composeRule.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.8f)) {
@@ -192,15 +192,17 @@ class EntryListScreenTest {
         }
 
         composeRule.onNodeWithText("Wpisy").assertDoesNotExist()
-        val settings = composeRule.onNodeWithTag("open-taxonomy-settings").assertIsDisplayed().getUnclippedBoundsInRoot()
-        val family = composeRule.onNodeWithTag("open-family").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val gear = composeRule.onNodeWithTag("global-open-settings").assertIsDisplayed().getUnclippedBoundsInRoot()
+        composeRule.onNodeWithTag("open-taxonomy-settings").assertDoesNotExist()
+        composeRule.onNodeWithTag("open-family").assertDoesNotExist()
         val sort = composeRule.onNodeWithTag("entries-sort-date").assertIsDisplayed().getUnclippedBoundsInRoot()
         val createdSort = composeRule.onNodeWithTag("entries-sort-created").assertIsDisplayed().getUnclippedBoundsInRoot()
-        assertTrue("Actions should start at the top without an empty title row", settings.top <= 24.dp)
-        assertTrue("Settings must fit on a compact screen", settings.left >= 0.dp && settings.right <= 320.dp)
-        assertTrue("Family action must fit on a compact screen", family.left >= 0.dp && family.right <= 320.dp)
-        assertTrue("Actions must not overlap", settings.bottom <= family.top || settings.right <= family.left)
-        assertTrue("Sort controls must follow the actions", sort.top >= minOf(settings.bottom, family.bottom))
+        assertTrue("Global settings starts at the top", gear.top <= 24.dp)
+        assertTrue("Global settings has a 48 dp touch target", gear.right - gear.left >= 48.dp && gear.bottom - gear.top >= 48.dp)
+        assertTrue("Global settings fits the compact width", gear.left >= 0.dp && gear.right <= 320.dp)
+        assertTrue("Sort follows the compact global header", sort.top >= gear.bottom)
+        assertTrue("Sort controls must clear the left edge", sort.left >= 0.dp && createdSort.left >= 0.dp)
+        assertTrue("Sort controls must not overlap", sort.bottom <= createdSort.top || sort.right <= createdSort.left)
         assertTrue("Sort controls must fit on a compact screen", sort.right <= 320.dp && createdSort.right <= 320.dp)
     }
 

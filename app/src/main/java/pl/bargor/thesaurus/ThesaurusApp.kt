@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -81,6 +82,12 @@ import pl.bargor.thesaurus.ui.browse.BrowseViewModel
 import pl.bargor.thesaurus.ui.balance.GlobalAccountBalanceBar
 import pl.bargor.thesaurus.ui.balance.GlobalAccountBalanceUiState
 import pl.bargor.thesaurus.ui.balance.GlobalAccountBalanceViewModel
+import pl.bargor.thesaurus.ui.settings.LocalSettingsNavigation
+import pl.bargor.thesaurus.ui.settings.SettingsNavigation
+import pl.bargor.thesaurus.ui.settings.SettingsScreen
+import pl.bargor.thesaurus.ui.settings.OpeningBalanceScreen
+import pl.bargor.thesaurus.ui.settings.OpeningBalanceViewModel
+import pl.bargor.thesaurus.ui.settings.OpeningBalanceUiState
 
 enum class Destination(
     @param:StringRes val labelRes: Int,
@@ -191,11 +198,17 @@ internal fun HouseholdApp(
     // Preview/navigation fixtures stay independent of Hilt; production requests the live source explicitly.
     balanceState: GlobalAccountBalanceUiState? = GlobalAccountBalanceUiState(),
     familyContent: (@Composable (onBack: () -> Unit) -> Unit)? = null,
+    openingBalanceContent: (@Composable (onBack: () -> Unit) -> Unit)? = null,
 ) {
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
     val dismissOfflineTooltip = LocalDismissOfflineTooltip.current
     LaunchedEffect(currentBackStackEntry) { dismissOfflineTooltip() }
+    val settingsRoutes = setOf("settings", "taxonomy", "family", "opening-balance")
+    val openSettings = {
+        if (currentRoute != "settings") navController.navigate("settings") { launchSingleTop = true }
+        Unit
+    }
 
     Scaffold(
         // Move the shared footer and scrollable screen together above the keyboard.
@@ -207,14 +220,10 @@ internal fun HouseholdApp(
                 if (balanceState != null) GlobalAccountBalanceBar(balanceState)
                 else GlobalAccountBalanceRoute(householdId, actorId)
                 HouseholdNavigationBar(currentRoute = currentRoute, onNavigate = { destination ->
-                    // Settings is a temporary screen above Entries, not a saved tab.
-                    if (currentRoute == "settings") {
-                        navController.popBackStack(Destination.Entries.route, inclusive = false)
-                    }
-                    // Entry editing belongs to its source tab, not that tab's saved stack.
-                    // Dismiss it before saving navigation state, including when reselecting the source tab.
-                    if (currentRoute == "edit-entry/{entryId}") {
-                        navController.popBackStack()
+                    // Temporary screens belong to their source tab and are never saved as tabs.
+                    val mainRoutes = Destination.entries.map { it.route }.toSet()
+                    while (navController.currentDestination?.route !in mainRoutes) {
+                        if (!navController.popBackStack()) break
                     }
                     navController.navigate(destination.route) {
                         popUpTo(navController.graph.findStartDestination().id) {
@@ -227,6 +236,9 @@ internal fun HouseholdApp(
             }
         },
     ) { padding ->
+        CompositionLocalProvider(LocalSettingsNavigation provides SettingsNavigation(
+            selected = currentRoute in settingsRoutes, open = openSettings,
+        )) {
         NavHost(
             navController = navController,
             startDestination = Destination.Entries.route,
@@ -237,7 +249,7 @@ internal fun HouseholdApp(
         ) {
             composable(Destination.Entries.route) {
                 entriesContent(
-                    { navController.navigate("settings") },
+                    openSettings,
                     { navController.navigate("add-entry") },
                     { navController.navigate("family") },
                     { entryId -> navController.navigate("edit-entry/$entryId") },
@@ -247,15 +259,31 @@ internal fun HouseholdApp(
             composable(Destination.Browse.route) { browseContent { entryId -> navController.navigate("edit-entry/$entryId") } }
             composable(Destination.Reports.route) { reportsContent { entryId -> navController.navigate("edit-entry/$entryId") } }
             composable("settings") {
-                val onBack = {
-                    navController.popBackStack(Destination.Entries.route, inclusive = false)
-                    Unit
-                }
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenCategories = { navController.navigate("taxonomy") {
+                        launchSingleTop = true
+                    } },
+                    onOpenFamily = { navController.navigate("family") {
+                        launchSingleTop = true
+                    } },
+                    onSetAccountBalance = { navController.navigate("opening-balance") {
+                        launchSingleTop = true
+                    } },
+                )
+            }
+            composable("taxonomy") {
+                val onBack = { navController.popBackStack(); Unit }
                 if (taxonomyContent != null) taxonomyContent(onBack) else TaxonomyRoute(
                     householdId = householdId,
                     actorId = actorId,
                     onBack = onBack,
                 )
+            }
+            composable("opening-balance") {
+                val onBack = { navController.popBackStack(); Unit }
+                if (openingBalanceContent != null) openingBalanceContent(onBack)
+                else OpeningBalanceRoute(householdId, actorId, onBack)
             }
             composable("family") {
                 val onBack = { navController.popBackStack(); Unit }
@@ -294,7 +322,23 @@ internal fun HouseholdApp(
                 }
             }
         }
+        }
     }
+}
+
+@Composable
+private fun OpeningBalanceRoute(
+    householdId: String,
+    actorId: String,
+    onBack: () -> Unit,
+    viewModel: OpeningBalanceViewModel = hiltViewModel(),
+) {
+    LaunchedEffect(householdId, actorId) { viewModel.start(householdId, actorId) }
+    val observed by viewModel.state.collectAsState()
+    val visible = if (observed.householdId == householdId && observed.actorId == actorId) observed
+        else OpeningBalanceUiState(householdId = householdId, actorId = actorId)
+    OpeningBalanceScreen(visible, viewModel::changeAmount, viewModel::changeMode,
+        viewModel::save, viewModel::retry, onBack)
 }
 
 @Composable

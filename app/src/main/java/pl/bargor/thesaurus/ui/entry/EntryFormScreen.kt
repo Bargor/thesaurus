@@ -55,6 +55,7 @@ import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.ui.accentColor
+import pl.bargor.thesaurus.ui.settings.SettingsAction
 
 private val PolishDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.forLanguageTag("pl-PL"))
@@ -91,6 +92,7 @@ fun EntryFormScreen(
             TextButton(modifier = Modifier.testTag("entry-back"), onClick = onBack) {
                 Text(stringResource(R.string.entry_back))
             }
+            SettingsAction()
         }
         EntrySyncState(state)
         if (state.isLoading) {

@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -25,6 +26,7 @@ import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.LedgerEntry
+import pl.bargor.thesaurus.data.model.Household
 import pl.bargor.thesaurus.data.model.ReportTypeFilter
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncObservation
@@ -75,6 +77,39 @@ class ReportsViewModelTest {
         assertEquals("2026", vm.state.value.year.toString())
         assertEquals(SyncState.OFFLINE, vm.state.value.syncState)
         assertEquals(400.toBigInteger(), vm.state.value.aggregation.totals.incomeGrosze)
+    }
+
+    @Test fun openingSettingsUpdateAbsoluteChartButLeavePeriodTotalsAndEntriesUnchanged() = runTest {
+        val ledger = FakeLedger(listOf(entry("history", 1_000, LocalDate.of(2001, 1, 1)),
+            entry("income", 600, LocalDate.of(2026, 2, 1)), entry("expense", -200, LocalDate.of(2026, 2, 2)),
+            entry("future", 99_999, LocalDate.of(2099, 12, 31))))
+        val households = ReportHouseholds()
+        households.settings.value = SyncObservation(Household("home", "Dom", "actor", openingBalanceGrosze = 25_000), SyncState.OFFLINE)
+        val vm = ReportsViewModel(ledger, FakeTaxonomy(), clock, SavedStateHandle(), households)
+        vm.start("home"); advanceUntilIdle()
+        val totals = vm.state.value.aggregation.totals
+        val entries = vm.state.value.entries
+        assertEquals(400.toBigInteger(), totals.netGrosze)
+        assertEquals(26_000.toBigInteger(), vm.state.value.balanceTrend!!.startBalanceGrosze)
+        assertEquals(26_400.toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
+        households.settings.value = SyncObservation(Household("home", "Dom", "actor", openingBalanceGrosze = 30_000), SyncState.PENDING)
+        advanceUntilIdle()
+        assertEquals(31_400.toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
+        assertEquals(SyncState.PENDING, vm.state.value.syncState)
+        assertEquals(totals, vm.state.value.aggregation.totals); assertEquals(entries, vm.state.value.entries)
+        households.settings.value = SyncObservation(state = SyncState.OFFLINE); advanceUntilIdle()
+        assertEquals(31_400.toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
+        households.settings.value = SyncObservation(state = SyncState.ERROR, error = IllegalStateException("failure"))
+        advanceUntilIdle()
+        assertNull(vm.state.value.balanceTrend); assertTrue(vm.state.value.hasError)
+        assertEquals(totals, vm.state.value.aggregation.totals); assertEquals(entries, vm.state.value.entries)
+        households.settings.value = SyncObservation(state = SyncState.OFFLINE); advanceUntilIdle()
+        assertNull(vm.state.value.balanceTrend)
+        households.settings.value = SyncObservation(Household("home", "Dom", "actor", openingBalanceGrosze = -5_000), SyncState.SYNCED)
+        advanceUntilIdle()
+        assertEquals((-3_600).toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
+        assertFalse(vm.state.value.hasError)
+        assertEquals(totals, vm.state.value.aggregation.totals); assertEquals(entries, vm.state.value.entries)
     }
 
     private fun entry(id: String, amount: Long, date: LocalDate) = LedgerEntry(id, "home", amount, date, categoryId = "food", authorId = "anna", updatedById = "anna")
