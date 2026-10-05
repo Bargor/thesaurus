@@ -8,13 +8,10 @@ import java.time.Clock
 import java.time.Year
 import java.time.YearMonth
 import javax.inject.Inject
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.HouseholdRepository
@@ -24,14 +21,17 @@ import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.CategoryOrder
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.Member
-import pl.bargor.thesaurus.data.model.MemberRole
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SummaryPeriod
 import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.orderedBy
 import pl.bargor.thesaurus.data.model.summaryPeriod
+import pl.bargor.thesaurus.data.observation.HouseholdObservation
+import pl.bargor.thesaurus.data.observation.HouseholdReadModel
+import pl.bargor.thesaurus.data.observation.reduceSyncState
 import pl.bargor.thesaurus.ui.entries.EntryListItem
+import pl.bargor.thesaurus.ui.entries.presentEntry
 import pl.bargor.thesaurus.ui.summary.SummaryPeriodMode
 
 data class BrowseUiState(
@@ -70,14 +70,10 @@ class BrowseViewModel @Inject constructor(
     private var identity: Pair<String, String>? = null
     private var observationJob: Job? = null
     private var entries: List<LedgerEntry> = emptyList()
-    private var entriesSource: List<LedgerEntry>? = null
-    private var historicalCategoryIds: Set<String> = emptySet()
     private var categories: List<Category> = emptyList()
-    private var categoriesSource: List<Category>? = null
     private var order: CategoryOrder? = null
     private var members: List<Member> = emptyList()
     private val subcategories = mutableMapOf<String, List<Subcategory>>()
-    private val subcategorySources = mutableMapOf<String, List<Subcategory>>()
     private var taxonomyRevision = 0L
     private var preparedSource: List<LedgerEntry>? = null
     private var preparedPeriod: SummaryPeriod? = null
@@ -90,8 +86,8 @@ class BrowseViewModel @Inject constructor(
     private var itemGroups: List<BrowseCategoryGroup>? = null
     private var itemMembers: List<Member>? = null
     private var entryItems: Map<String, EntryListItem> = emptyMap()
-    private val subcategoryJobs = mutableMapOf<String, Job>()
     private val observations = mutableMapOf<String, SyncObservation<*>>()
+    private var readModel: HouseholdReadModel? = null
     private var entriesObserved = false
 
     init { savePeriod() }
@@ -101,103 +97,36 @@ class BrowseViewModel @Inject constructor(
         if (identity == nextIdentity && observationJob?.isActive == true) return
         val changed = identity != nextIdentity
         observationJob?.cancel()
-        subcategoryJobs.clear()
         identity = nextIdentity
         if (changed) {
+            readModel = null
             entries = emptyList(); categories = emptyList(); order = null; members = emptyList()
-            entriesSource = null; categoriesSource = null
-            historicalCategoryIds = emptySet()
             preparedSource = null; preparedPeriod = null; boundPrepared = null
             boundCategories = null; boundOrder = null; boundTaxonomyRevision = -1L
             prepared = emptyList(); groups = emptyList(); itemGroups = null; itemMembers = null
-            entryItems = emptyMap(); subcategorySources.clear(); taxonomyRevision = 0L
+            entryItems = emptyMap(); taxonomyRevision = 0L
             subcategories.clear(); observations.clear(); entriesObserved = false
             mutableState.update { it.copy(categories = emptyList(), entryItems = emptyMap(),
                 expandedCategoryIds = emptySet(), expandedSubcategories = emptySet(),
                 isLoading = true, hasError = false, syncState = SyncState.SYNCED) }
         }
-        observationJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            launch {
-                ledgerRepository.observeEntries(householdId).withErrors().collect { observation ->
-                    observations["entries"] = observation
-                    observation.value?.let { value ->
-                        if (value !== entriesSource && value != entriesSource) {
-                            entriesSource = value
-                            entries = value.filter { entry -> entry.householdId == householdId }
-                            historicalCategoryIds = entries.asSequence().filterNot { it.deleted }
-                                .map { it.categoryId }.toSet()
-                        }
+        observationJob = viewModelScope.launch {
+            HouseholdObservation(ledgerRepository, taxonomyRepository, householdRepository)
+                .observe(householdId, actorId, initial = readModel).collect { snapshot ->
+                    if (identity != nextIdentity) return@collect
+                    readModel = snapshot
+                    observations.clear(); observations.putAll(snapshot.observations)
+                    snapshot.entries.value?.let { entries = it }
+                    snapshot.categories.value?.let { categories = it }
+                    order = snapshot.order.value
+                    snapshot.members.value?.let { members = it }
+                    val nextSubcategories = snapshot.subcategoryValues
+                    if (subcategories != nextSubcategories) {
+                        subcategories.clear(); subcategories.putAll(nextSubcategories); taxonomyRevision++
                     }
-                    entriesObserved = true
-                    reconcileSubcategories(householdId)
+                    entriesObserved = snapshot.entries.observation != null
                     recalculate()
                 }
-            }
-            launch {
-                taxonomyRepository.observeCategories(householdId).withErrors().collect { observation ->
-                    observations["categories"] = observation
-                    observation.value?.let { value ->
-                        if (value !== categoriesSource && value != categoriesSource) {
-                            categoriesSource = value
-                            categories = value.filter { category -> category.householdId == householdId }
-                        }
-                    }
-                    reconcileSubcategories(householdId)
-                    recalculate()
-                }
-            }
-            launch {
-                taxonomyRepository.observeCategoryOrder(householdId, actorId).withErrors().collect { observation ->
-                    observations["order"] = observation
-                    // A successful absent preference clears an older one; errors retain last good order.
-                    if (observation.error == null && observation.state != SyncState.ERROR) {
-                        val value = observation.value?.takeIf { it.householdId == householdId && it.userId == actorId }
-                        if (value != order) order = value
-                    } else observation.value?.let {
-                        if (it.householdId == householdId && it.userId == actorId && it != order) order = it
-                    }
-                    recalculate()
-                }
-            }
-            launch {
-                householdRepository.observeMembers(householdId).withErrors().collect { observation ->
-                    observations["members"] = observation
-                    observation.value?.let { if (it !== members && it != members) members = it }
-                    recalculate()
-                }
-            }
-        }
-        observationJob?.start()
-    }
-
-    /** Each category owns its cache and listener, so regrouping cannot reuse another category's data. */
-    private fun reconcileSubcategories(householdId: String) {
-        val required = categories.mapTo(mutableSetOf()) { it.id }
-        required.addAll(historicalCategoryIds)
-        (subcategoryJobs.keys - required).forEach { id ->
-            subcategoryJobs.remove(id)?.cancel()
-            subcategories.remove(id)
-            subcategorySources.remove(id)
-            taxonomyRevision++
-            observations.remove("sub:$id")
-        }
-        val parent = observationJob ?: return
-        required.filterNot { it in subcategoryJobs }.forEach { id ->
-            subcategoryJobs[id] = viewModelScope.launch(parent) {
-                taxonomyRepository.observeSubcategories(householdId, id).withErrors().collect { observation ->
-                    observations["sub:$id"] = observation
-                    observation.value?.let { values ->
-                        if (values !== subcategorySources[id] && values != subcategorySources[id]) {
-                            subcategorySources[id] = values
-                            subcategories[id] = values.filter {
-                                it.householdId == householdId && it.categoryId == id
-                            }
-                            taxonomyRevision++
-                        }
-                    }
-                    recalculate()
-                }
-            }
         }
     }
 
@@ -275,30 +204,20 @@ class BrowseViewModel @Inject constructor(
                 itemGroups = groups
                 itemMembers = members
                 val authors = members.associateBy { it.uid }
+                val categoryById = categories.associateBy { it.id }
                 val refreshedItems = buildMap {
                     groups.forEach { group ->
                         group.subcategories.forEach { subgroup ->
                             subgroup.entries.forEach { entry ->
-                                val author = authors[entry.authorId]
-                                put(entry.id, EntryListItem(
-                                    entry, group.category?.name, subgroup.subcategory?.name,
-                                    author?.displayName?.takeIf { it.isNotBlank() } ?: author?.email ?: entry.authorId,
-                                    entry.authorId == actorId || authors[actorId]?.role == MemberRole.OWNER,
-                                    group.category?.color,
-                                ))
+                                put(entry.id, presentEntry(entry, categoryById,
+                                    subcategories, authors, actorId).listItem(entry))
                             }
                         }
                     }
                 }
                 if (refreshedItems != entryItems) entryItems = refreshedItems
             }
-            val states = observations.values.map { it.state }
-            val sync = when {
-                SyncState.ERROR in states -> SyncState.ERROR
-                SyncState.PENDING in states -> SyncState.PENDING
-                SyncState.OFFLINE in states -> SyncState.OFFLINE
-                else -> SyncState.SYNCED
-            }
+            val sync = reduceSyncState(observations.values)
             old.copy(categories = groups, entryItems = entryItems,
                 expandedCategoryIds = old.expandedCategoryIds.intersect(categoryIds),
                 expandedSubcategories = old.expandedSubcategories.intersect(keys),
@@ -309,5 +228,3 @@ class BrowseViewModel @Inject constructor(
 }
 
 private fun <T> Set<T>.toggled(value: T): Set<T> = if (value in this) this - value else this + value
-private fun <T> Flow<SyncObservation<T>>.withErrors(): Flow<SyncObservation<T>> =
-    catch { emit(SyncObservation(state = SyncState.ERROR, error = it)) }

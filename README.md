@@ -50,6 +50,10 @@ A disconnected-plug icon in the top-right corner indicates that Android has no v
 
 This indicator is independent of Firestore snapshot/cache metadata and pending writes. Pending-sync notices and actionable errors remain visible. In developer mode, stopping the local Firebase emulators does not by itself mean the device has lost internet, and a local emulator connection does not imply internet access. The app still uses Firestore's existing offline queue; the indicator does not enable, disable, or retry synchronization.
 
+## Household observation architecture
+
+Summary, overview, reports, and entry screens reuse a household read model and entry-presentation helpers. Each ViewModel owns its listener group; account/household changes cancel obsolete subscriptions. Historical taxonomy, cached values, pending writes, and errors remain explicit. See [Household observation ownership](docs/household-observation.md) for the subscription, retry, and stricter balance contracts.
+
 ## Requirements
 
 - JDK 21
