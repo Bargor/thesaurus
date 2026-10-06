@@ -1,7 +1,7 @@
 package pl.bargor.thesaurus.ui.reports
 
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Clock
@@ -11,30 +11,31 @@ import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.HouseholdRepository
-import pl.bargor.thesaurus.data.model.Member
+import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.LedgerEntry
+import pl.bargor.thesaurus.data.model.Member
 import pl.bargor.thesaurus.data.model.ReportAggregation
-import pl.bargor.thesaurus.data.model.ReportBalanceTrend
 import pl.bargor.thesaurus.data.model.ReportBalanceGranularity
-import pl.bargor.thesaurus.data.model.buildReportBalanceTrend
+import pl.bargor.thesaurus.data.model.ReportBalanceTrend
 import pl.bargor.thesaurus.data.model.ReportTypeFilter
-import pl.bargor.thesaurus.data.model.SummaryPeriod
 import pl.bargor.thesaurus.data.model.Subcategory
+import pl.bargor.thesaurus.data.model.SummaryPeriod
 import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.aggregateReportEntries
+import pl.bargor.thesaurus.data.model.buildReportBalanceTrend
+import pl.bargor.thesaurus.data.observation.HouseholdObservation
+import pl.bargor.thesaurus.data.observation.HouseholdReadModel
+import pl.bargor.thesaurus.data.observation.reduceSyncState
+import pl.bargor.thesaurus.ui.entries.presentEntry
 
 enum class ReportPeriodMode { MONTH, YEAR, CUSTOM }
 
@@ -131,13 +132,11 @@ class ReportsViewModel @Inject constructor(
     private var latestEntries: List<LedgerEntry>? = null
     private var latestOpeningBalance: Long? = null
     private var cachedOpeningBalance: Long? = null
-    private var latestEntriesSource: List<LedgerEntry>? = null
-    private var historicalCategoryIds: Set<String> = emptySet()
     private var latestCategories: List<Category> = emptyList()
     private var latestMembers: List<Member> = emptyList()
     private val latestSubcategories = mutableMapOf<String, List<Subcategory>>()
-    private val subcategoryJobs = mutableMapOf<String, Job>()
     private val observations = mutableMapOf<String, SyncObservation<*>>()
+    private var readModel: HouseholdReadModel? = null
     private var entriesObserved = false
     private var appliedCustomPeriod = SummaryPeriod(today.withDayOfMonth(1), today)
     private var cachedEntries: List<LedgerEntry>? = null
@@ -157,13 +156,12 @@ class ReportsViewModel @Inject constructor(
         if (this.householdId == householdId && observeJob?.isActive == true) return
         val changed = this.householdId != householdId
         observeJob?.cancel()
-        subcategoryJobs.clear()
         this.householdId = householdId
         if (changed) {
+            readModel = null
             latestOpeningBalance = null; cachedOpeningBalance = null
             latestMembers = emptyList()
             latestEntries = null; latestCategories = emptyList(); latestSubcategories.clear()
-            latestEntriesSource = null; historicalCategoryIds = emptySet()
             cachedEntries = null; cachedSelection = null
             cachedSelectedEntries = emptyList(); cachedAggregation = ReportAggregation()
             cachedBalanceTrend = null
@@ -174,77 +172,31 @@ class ReportsViewModel @Inject constructor(
                 members = emptyList(), filterDraft = null, allSubcategories = emptyList(), balanceTrend = null) }
             restoreFilters(householdId)
         }
-        observeJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            launch {
-                householdRepository.observeHousehold(householdId).withReportErrors().collect { observation ->
+        observeJob = viewModelScope.launch {
+            HouseholdObservation(ledgerRepository, taxonomyRepository, householdRepository)
+                .observe(householdId, includeHousehold = true, initial = readModel).collect { snapshot ->
                     if (this@ReportsViewModel.householdId != householdId) return@collect
-                    observations["household"] = observation
-                    when {
-                        observation.state == SyncState.ERROR || observation.error != null -> latestOpeningBalance = null
-                        observation.value != null -> latestOpeningBalance =
-                            observation.value.takeIf { it.id == householdId }?.openingBalanceGrosze
-                        observation.state == SyncState.SYNCED -> latestOpeningBalance = null
+                    readModel = snapshot
+                    observations.clear(); observations.putAll(snapshot.observations)
+                    snapshot.entries.value?.let { latestEntries = it }
+                    latestCategories = snapshot.categories.value.orEmpty()
+                    latestMembers = snapshot.members.value.orEmpty()
+                    latestSubcategories.clear(); latestSubcategories.putAll(snapshot.subcategoryValues)
+                    val household = snapshot.household.observation
+                    latestOpeningBalance = when {
+                        snapshot.household.hasError -> null
+                        household?.value != null -> household.value.openingBalanceGrosze
+                        household?.state == SyncState.SYNCED -> null
+                        // After an error, metadata without a fresh value cannot revive an old balance.
+                        else -> latestOpeningBalance
                     }
+                    entriesObserved = snapshot.entries.observation != null
                     refresh()
                 }
-            }
-            launch {
-                householdRepository.observeMembers(householdId).withReportErrors().collect { observation ->
-                    observations["members"] = observation
-                    observation.value?.let { latestMembers = it }
-                    refresh()
-                }
-            }
-            launch {
-                ledgerRepository.observeEntries(householdId).withReportErrors().collect { observation ->
-                    observations["entries"] = observation
-                    observation.value?.let { values ->
-                        if (values !== latestEntriesSource && values != latestEntriesSource) {
-                            latestEntriesSource = values
-                            latestEntries = values.filter { entry -> entry.householdId == householdId }
-                            historicalCategoryIds = latestEntries.orEmpty().asSequence().filterNot { it.deleted }
-                                .map { it.categoryId }.toSet()
-                        }
-                    }
-                    entriesObserved = true
-                    reconcileSubcategories(householdId)
-                    refresh()
-                }
-            }
-            launch {
-                taxonomyRepository.observeCategories(householdId).withReportErrors().collect { observation ->
-                    observations["categories"] = observation
-                    observation.value?.let { latestCategories = it.filter { category -> category.householdId == householdId } }
-                    reconcileSubcategories(householdId)
-                    refresh()
-                }
-            }
-        }
-        observeJob?.start()
-    }
-
-    private fun reconcileSubcategories(householdId: String) {
-        val required = latestCategories.mapTo(mutableSetOf()) { it.id }
-        required.addAll(historicalCategoryIds)
-        (subcategoryJobs.keys - required).forEach { id ->
-            subcategoryJobs.remove(id)?.cancel(); latestSubcategories.remove(id); observations.remove("sub:$id")
-        }
-        val parent = observeJob ?: return
-        required.filterNot { it in subcategoryJobs }.forEach { id ->
-            subcategoryJobs[id] = viewModelScope.launch(parent) {
-                taxonomyRepository.observeSubcategories(householdId, id).withReportErrors().collect { observation ->
-                    observations["sub:$id"] = observation
-                    observation.value?.let { values -> latestSubcategories[id] = values.filter {
-                        it.householdId == householdId && it.categoryId == id
-                    } }
-                    refresh()
-                }
-            }
         }
     }
 
     private fun refresh() = mutableState.update { old ->
-        val states = observations.values.map { it.state }
         val current = latestMembers.associateBy { it.uid }
         val former = (latestEntries.orEmpty().filterNot { it.deleted }.map { it.authorId } +
             old.selectedMemberIds.orEmpty() + old.filterDraft?.selectedMemberIds.orEmpty()).distinct()
@@ -252,7 +204,7 @@ class ReportsViewModel @Inject constructor(
         old.copy(members = (current.values.map { ReportMemberOption(it.uid,
             it.displayName?.takeIf(String::isNotBlank)?.let { name -> "$name (${it.email})" } ?: it.email) } + former).sortedBy { it.name.lowercase() })
             .recalculated(latestEntries.orEmpty(), latestCategories, isLoading = !entriesObserved,
-            syncState = reportSyncState(states),
+            syncState = reduceSyncState(observations.values),
             hasError = observations.values.any { it.error != null || it.state == SyncState.ERROR })
     }
 
@@ -514,27 +466,15 @@ class ReportsViewModel @Inject constructor(
                 .any { it.state == SyncState.ERROR || it.error != null })
                 null else cachedBalanceTrend,
             entries = cachedSelectedEntries.map { entry ->
-                    ReportEntryItem(
-                        entry = entry,
-                        categoryName = taxonomy[entry.categoryId]?.name ?: entry.categoryId,
-                        categoryColor = taxonomy[entry.categoryId]?.color,
-                        subcategoryName = entry.subcategoryId?.let { id ->
-                            latestSubcategories[entry.categoryId].orEmpty().firstOrNull { it.id == id }?.name ?: id
-                        },
-                    )
-                },
+                val presentation = presentEntry(entry, taxonomy, latestSubcategories)
+                ReportEntryItem(entry, presentation.categoryName ?: entry.categoryId,
+                    presentation.categoryColor, presentation.subcategoryName ?: entry.subcategoryId)
+            },
             isLoading = isLoading,
             syncState = syncState,
             hasError = hasError,
         )
     }
-}
-
-private fun reportSyncState(states: List<SyncState>): SyncState = when {
-    SyncState.ERROR in states -> SyncState.ERROR
-    SyncState.PENDING in states -> SyncState.PENDING
-    SyncState.OFFLINE in states -> SyncState.OFFLINE
-    else -> SyncState.SYNCED
 }
 
 private data class ReportSelection(
@@ -548,6 +488,3 @@ private data class ReportSelection(
     val monthlyTrend: Boolean,
     val memberIds: Set<String>?,
 )
-
-private fun <T> Flow<SyncObservation<T>>.withReportErrors(): Flow<SyncObservation<T>> =
-    catch { emit(SyncObservation(state = SyncState.ERROR, error = it)) }

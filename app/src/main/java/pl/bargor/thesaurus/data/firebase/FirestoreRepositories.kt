@@ -36,6 +36,7 @@ import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.User
 import pl.bargor.thesaurus.data.model.orderedBy
 import pl.bargor.thesaurus.data.model.deriveOpeningBalance
+import pl.bargor.thesaurus.data.observation.reduceSyncState
 import pl.bargor.thesaurus.data.onboarding.StarterTaxonomy
 import java.time.Instant
 import java.time.LocalDate
@@ -121,12 +122,7 @@ fun TaxonomyRepository.observeOrderedCategories(
 ) { categories, order ->
     SyncObservation(
         value = categories.value?.orderedBy(order.value),
-        state = when {
-            categories.state == SyncState.ERROR || order.state == SyncState.ERROR -> SyncState.ERROR
-            categories.state == SyncState.PENDING || order.state == SyncState.PENDING -> SyncState.PENDING
-            categories.state == SyncState.OFFLINE || order.state == SyncState.OFFLINE -> SyncState.OFFLINE
-            else -> SyncState.SYNCED
-        },
+        state = reduceSyncState(listOf(categories, order)),
         error = categories.error ?: order.error,
     )
 }

@@ -26,6 +26,7 @@ import pl.bargor.thesaurus.data.model.InvitationStatus
 import pl.bargor.thesaurus.data.model.Member
 import pl.bargor.thesaurus.data.model.MemberRole
 import pl.bargor.thesaurus.data.model.SyncObservation
+import pl.bargor.thesaurus.data.observation.reduceSyncState
 import pl.bargor.thesaurus.data.model.SyncState
 
 data class FamilyUiState(
@@ -76,7 +77,7 @@ class FamilyViewModel @Inject constructor(
                             members = members.sortedWith(compareBy<Member> { it.role != MemberRole.OWNER }.thenBy { it.email }),
                             invitations = invitations.sortedByDescending { it.createdAt },
                             isOwner = members.any { it.uid == actorId && it.role == MemberRole.OWNER },
-                            syncState = relevantSyncState(memberObservation.state, invitationObservation.state),
+                            syncState = reduceSyncState(listOf(memberObservation, invitationObservation)),
                             error = (memberObservation.error ?: invitationObservation.error)?.let { FamilyError.LOAD },
                         )
                     }
@@ -137,10 +138,3 @@ class FamilyViewModel @Inject constructor(
 
 private fun String.isPlausibleEmail(): Boolean = length <= 254 &&
     matches(Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"))
-
-private fun relevantSyncState(first: SyncState, second: SyncState): SyncState = when {
-    first == SyncState.ERROR || second == SyncState.ERROR -> SyncState.ERROR
-    first == SyncState.PENDING || second == SyncState.PENDING -> SyncState.PENDING
-    first == SyncState.OFFLINE || second == SyncState.OFFLINE -> SyncState.OFFLINE
-    else -> SyncState.SYNCED
-}

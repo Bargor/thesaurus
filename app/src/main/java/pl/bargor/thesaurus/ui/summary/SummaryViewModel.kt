@@ -9,14 +9,11 @@ import java.time.LocalDate
 import java.time.Year
 import java.time.YearMonth
 import javax.inject.Inject
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.HouseholdRepository
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
@@ -24,11 +21,14 @@ import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.Member
-import pl.bargor.thesaurus.data.model.MemberRole
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.data.observation.HouseholdObservation
+import pl.bargor.thesaurus.data.observation.HouseholdReadModel
+import pl.bargor.thesaurus.data.observation.reduceSyncState
 import pl.bargor.thesaurus.ui.entries.EntryListItem
+import pl.bargor.thesaurus.ui.entries.presentEntry
 
 enum class SummaryPeriodMode { MONTH, YEAR }
 
@@ -75,8 +75,8 @@ class SummaryViewModel @Inject constructor(
     private var categories: List<Category> = emptyList()
     private var members: List<Member> = emptyList()
     private val subcategories = mutableMapOf<String, List<Subcategory>>()
-    private val subcategoryJobs = mutableMapOf<String, Job>()
     private val observations = mutableMapOf<String, SyncObservation<*>>()
+    private var readModel: HouseholdReadModel? = null
     private var entriesObserved = false
     private var entriesLoaded = false
     private var preparedSource: List<LedgerEntry>? = null
@@ -91,8 +91,8 @@ class SummaryViewModel @Inject constructor(
         if (identity == nextIdentity && observationJob?.isActive == true) return
         val changed = identity != nextIdentity
         observationJob?.cancel()
-        subcategoryJobs.clear()
         if (changed) {
+            readModel = null
             if (identity != null || savedStateHandle.get<Any?>("summary.detailHousehold") != householdId) {
                 detailKey = null
                 saveDetail()
@@ -104,62 +104,19 @@ class SummaryViewModel @Inject constructor(
                 isLoading = true, hasError = false, syncState = SyncState.SYNCED) }
         }
         identity = nextIdentity
-        observationJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            launch {
-                ledgerRepository.observeEntries(householdId).withErrors().collect { observation ->
-                    observations["entries"] = observation
-                    observation.value?.let {
-                        entriesLoaded = true
-                        if (it != entries) entries = it
-                    }
-                    entriesObserved = true
-                    reconcileSubcategories(householdId)
+        observationJob = viewModelScope.launch {
+            HouseholdObservation(ledgerRepository, taxonomyRepository, householdRepository)
+                .observe(householdId, initial = readModel).collect { snapshot ->
+                    if (identity != nextIdentity) return@collect
+                    readModel = snapshot
+                    observations.clear(); observations.putAll(snapshot.observations)
+                    snapshot.entries.value?.let { entriesLoaded = true; entries = it }
+                    categories = snapshot.categories.value.orEmpty()
+                    members = snapshot.members.value.orEmpty()
+                    subcategories.clear(); subcategories.putAll(snapshot.subcategoryValues)
+                    entriesObserved = snapshot.entries.observation != null
                     recalculate()
                 }
-            }
-            launch {
-                taxonomyRepository.observeCategories(householdId).withErrors().collect { observation ->
-                    observations["categories"] = observation
-                    observation.value?.let { categories = it.filter { category -> category.householdId == householdId } }
-                    reconcileSubcategories(householdId)
-                    recalculate()
-                }
-            }
-            launch {
-                householdRepository.observeMembers(householdId).withErrors().collect { observation ->
-                    observations["members"] = observation
-                    observation.value?.let { members = it }
-                    recalculate()
-                }
-            }
-        }
-        observationJob?.start()
-    }
-
-    private fun reconcileSubcategories(householdId: String) {
-        val today = LocalDate.now(clock)
-        val required = categories.mapTo(mutableSetOf()) { it.id }
-        entries.filter { it.householdId == householdId && !it.deleted && !it.date.isAfter(today) }
-            .mapTo(required) { it.categoryId }
-        // Retrying cancels listeners but preserves their cached values/status. Prune
-        // those caches as well, even when the corresponding job is already absent.
-        val observedIds = observations.keys.filter { it.startsWith("sub:") }.map { it.removePrefix("sub:") }
-        ((subcategoryJobs.keys + subcategories.keys + observedIds) - required).forEach { id ->
-            subcategoryJobs.remove(id)?.cancel()
-            subcategories.remove(id)
-            observations.remove("sub:$id")
-        }
-        val parent = observationJob ?: return
-        required.filterNot { it in subcategoryJobs }.forEach { id ->
-            subcategoryJobs[id] = viewModelScope.launch(parent) {
-                taxonomyRepository.observeSubcategories(householdId, id).withErrors().collect { observation ->
-                    observations["sub:$id"] = observation
-                    observation.value?.let { values ->
-                        subcategories[id] = values.filter { it.householdId == householdId && it.categoryId == id }
-                    }
-                    recalculate()
-                }
-            }
         }
     }
 
@@ -251,20 +208,9 @@ class SummaryViewModel @Inject constructor(
         }
         val authors = members.associateBy { it.uid }
         val items = detail?.entries.orEmpty().map { entry ->
-            val category = categoryById[entry.categoryId]
-            val subcategory = subcategories[entry.categoryId].orEmpty().firstOrNull { it.id == entry.subcategoryId }
-            val author = authors[entry.authorId]
-            EntryListItem(entry, category?.name, subcategory?.name,
-                author?.displayName?.takeIf { it.isNotBlank() } ?: author?.email ?: entry.authorId,
-                entry.authorId == actorId || authors[actorId]?.role == MemberRole.OWNER, category?.color)
+            presentEntry(entry, categoryById, subcategories, authors, actorId).listItem(entry)
         }
-        val states = observations.values.map { it.state }
-        val sync = when {
-            SyncState.ERROR in states -> SyncState.ERROR
-            SyncState.PENDING in states -> SyncState.PENDING
-            SyncState.OFFLINE in states -> SyncState.OFFLINE
-            else -> SyncState.SYNCED
-        }
+        val sync = reduceSyncState(observations.values)
         mutableState.value = old.copy(cards = overview, detailCard = detail, detailEntries = items,
             isLoading = !entriesObserved, syncState = sync, currentYear = today.year,
             hasError = observations.values.any { observation -> observation.error != null || observation.state == SyncState.ERROR })
@@ -281,6 +227,3 @@ class SummaryViewModel @Inject constructor(
         if (start.isAfter(LocalDate.now(clock))) null else SummaryPeriodKey(mode, year, if (mode == SummaryPeriodMode.MONTH) month else null)
     }.getOrNull()
 }
-
-private fun <T> Flow<SyncObservation<T>>.withErrors(): Flow<SyncObservation<T>> =
-    catch { emit(SyncObservation(state = SyncState.ERROR, error = it)) }

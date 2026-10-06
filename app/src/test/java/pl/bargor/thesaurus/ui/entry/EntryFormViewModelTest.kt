@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -36,6 +37,51 @@ class EntryFormViewModelTest {
 
     @Before fun setUp() = Dispatchers.setMain(dispatcher)
     @After fun tearDown() = Dispatchers.resetMain()
+
+    @Test
+    fun `initial form waits for order and all subcategories without erasing restored IDs`() = runTest {
+        val taxonomy = ControlledTaxonomyRepository()
+        taxonomy.categoriesFor("home").value = SyncObservation(listOf(
+            Category("food", "home", "Jedzenie", authorId = "actor", updatedById = "actor"),
+            Category("income", "home", "Wpływy", authorId = "actor", updatedById = "actor"),
+        ), SyncState.SYNCED)
+        val order = MutableSharedFlow<SyncObservation<CategoryOrder>>(replay = 1)
+        val subs = MutableSharedFlow<SyncObservation<List<Subcategory>>>(replay = 1)
+        val repository = object : TaxonomyRepository by taxonomy {
+            override fun observeCategoryOrder(householdId: String, userId: String): Flow<SyncObservation<CategoryOrder>> = order
+            override fun observeSubcategories(householdId: String, categoryId: String): Flow<SyncObservation<List<Subcategory>>> =
+                if (categoryId == "food") subs else flowOf(SyncObservation(emptyList(), SyncState.SYNCED))
+        }
+        val handle = SavedStateHandle(mapOf("entry.household" to "home", "entry.actor" to "actor",
+            "entry.hasDraft" to true, "entry.categoryId" to "food", "entry.subcategoryId" to "shop"))
+        val vm = EntryFormViewModel(FakeLedgerRepository(), repository, handle)
+        vm.start("home", "actor", LocalDate.of(2026, 9, 16))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.isLoading)
+        assertTrue(vm.state.value.categories.isEmpty())
+        assertEquals("food", vm.state.value.categoryId)
+        assertEquals("shop", vm.state.value.subcategoryId)
+        order.emit(SyncObservation(CategoryOrder("home", "actor", listOf("income", "food")), SyncState.SYNCED))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.isLoading)
+        assertTrue(vm.state.value.categories.isEmpty())
+        assertEquals("shop", vm.state.value.subcategoryId)
+        order.emit(SyncObservation(state = SyncState.ERROR, error = IllegalStateException("order")))
+        advanceUntilIdle()
+        assertFalse(vm.state.value.isLoading)
+        assertEquals(EntryFormError.SaveFailed, vm.state.value.error)
+        assertTrue(vm.state.value.categories.isEmpty())
+        assertEquals("food", vm.state.value.categoryId)
+        assertEquals("shop", vm.state.value.subcategoryId)
+        order.emit(SyncObservation(CategoryOrder("home", "actor", listOf("income", "food")), SyncState.SYNCED))
+        subs.emit(SyncObservation(listOf(Subcategory("shop", "home", "food", "Zakupy",
+            authorId = "actor", updatedById = "actor")), SyncState.SYNCED))
+        advanceUntilIdle()
+        assertFalse(vm.state.value.isLoading)
+        assertEquals(listOf("income", "food"), vm.state.value.categories.map { it.category.id })
+        assertEquals("food", vm.state.value.categoryId)
+        assertEquals("shop", vm.state.value.subcategoryId)
+    }
 
     @Test
     fun `null category and subcategory snapshots preserve restored IDs until real snapshots arrive`() = runTest {

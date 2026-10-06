@@ -19,6 +19,7 @@ import pl.bargor.thesaurus.data.model.CategoryOrder
 import pl.bargor.thesaurus.data.model.CategoryPalette
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Subcategory
+import pl.bargor.thesaurus.data.observation.reduceSyncState
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.moveActiveCategory
 import java.util.UUID
@@ -97,7 +98,7 @@ class TaxonomyViewModel @Inject constructor(
                             TaxonomySnapshot(
                                 categories = categories,
                                 subcategories = byCategory,
-                                state = mostRelevantState(categoryObservation.state, observations.map { it.state }),
+                                state = reduceSyncState(listOf(categoryObservation) + observations),
                                 error = error,
                             )
                         }
@@ -232,10 +233,3 @@ private data class TaxonomySnapshot(
     val state: SyncState,
     val error: Throwable?,
 )
-
-private fun mostRelevantState(categoryState: SyncState, subcategoryStates: List<SyncState>): SyncState = when {
-    categoryState == SyncState.ERROR || SyncState.ERROR in subcategoryStates -> SyncState.ERROR
-    categoryState == SyncState.PENDING || SyncState.PENDING in subcategoryStates -> SyncState.PENDING
-    categoryState == SyncState.OFFLINE || SyncState.OFFLINE in subcategoryStates -> SyncState.OFFLINE
-    else -> SyncState.SYNCED
-}
