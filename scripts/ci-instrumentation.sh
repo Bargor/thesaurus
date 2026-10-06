@@ -43,6 +43,11 @@ capture_diagnostics() {
     bounded_adb shell dumpsys window > "$diagnostics_dir/window.txt" 2>&1
     bounded_adb shell ps -A > "$diagnostics_dir/processes.txt" 2>&1
     bounded_adb shell dumpsys activity lastanr > "$diagnostics_dir/last-anr.txt" 2>&1
+    if [[ ${CI_CAPTURE_VISUAL_EVIDENCE:-false} == true ]]; then
+        # Only synthetic test frames from this disposable CI emulator are collected.
+        # Missing/failed captures must not replace Gradle's actual exit status.
+        bounded_adb pull /sdcard/Android/data/pl.bargor.thesaurus/files/visual-evidence "$diagnostics_dir/" > "$diagnostics_dir/visual-evidence-capture.txt" 2>&1 || true
+    fi
 }
 
 stop_monitor() {

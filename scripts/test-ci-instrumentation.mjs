@@ -97,6 +97,14 @@ test('Gradle failure survives failed diagnostic captures', () => {
   assert.equal(result.status, 42, result.output);
   assert.match(result.files['exit-status.txt'], /status: 42/);
 });
+test('optional visual evidence collection stays scoped and preserves the test result', () => {
+  const enabled = runCase({ env: { CI_CAPTURE_VISUAL_EVIDENCE: 'true' } });
+  assert.equal(enabled.status, 0, enabled.output);
+  assert.match(enabled.calls, /pull \/sdcard\/Android\/data\/pl\.bargor\.thesaurus\/files\/visual-evidence /);
+  const failed = runCase({ command: 'sleep 1; exit 42', diagnostic: 'failed',
+    env: { CI_CAPTURE_VISUAL_EVIDENCE: 'true' } });
+  assert.equal(failed.status, 42, failed.output);
+});
 test('stuck diagnostic commands are bounded and preserve Gradle status', () => {
   const result = runCase({ command: 'sleep 1; exit 42', diagnostic: 'stuck' });
   assert.equal(result.status, 42, result.output);
@@ -149,6 +157,6 @@ test('both workflow jobs run the harness, wrapper and always-upload diagnostics 
   assert.match(source, /CI_INSTRUMENTATION_TIMEOUT_SECONDS:-1200/);
   // The 25m step also includes emulator boot and Firebase startup/shutdown.
   // This checks headroom for those phases, not a guarantee of their duration.
-  // 20m instrumentation + TERM grace + monitor cleanup + five bounded captures.
-  assert.ok(1200 + 15 + 6 + 5 * (10 + 2) < 25 * 60);
+  // 20m instrumentation + TERM grace + monitor cleanup + six bounded captures.
+  assert.ok(1200 + 15 + 6 + 6 * (10 + 2) < 25 * 60);
 });
