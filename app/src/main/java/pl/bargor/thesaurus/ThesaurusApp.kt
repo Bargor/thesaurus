@@ -490,7 +490,7 @@ private fun EntryListRoute(
     EntryListScreen(
         state = state,
         onChangeSort = entryListViewModel::changeSort,
-        onLoadNextPage = entryListViewModel::loadNextPage,
+        onRevealMore = entryListViewModel::revealMoreEntries,
         onRetry = entryListViewModel::retry,
         onOpenSettings = onOpenSettings,
         onAddEntry = onAddEntry,

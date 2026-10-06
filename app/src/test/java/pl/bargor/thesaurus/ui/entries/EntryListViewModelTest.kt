@@ -83,7 +83,7 @@ class EntryListViewModelTest {
     }
 
     @Test
-    fun `date sorting has stable id tie breaker and loading another page exposes exactly one page`() = runTest {
+    fun `date sorting has stable id tie breaker and revealing more entries exposes the remaining local rows`() = runTest {
         val ledger = FakeLedger(entries = (1..21).map { index ->
             entry(id = if (index == 1) "z" else if (index == 2) "a" else "id-$index", date = LocalDate.of(2026, 9, 16))
         })
@@ -95,7 +95,7 @@ class EntryListViewModelTest {
         assertEquals("a", viewModel.state.value.visibleEntries.first().entry.id)
         assertEquals(20, viewModel.state.value.visibleEntries.size)
         assertTrue(viewModel.state.value.hasMore)
-        viewModel.loadNextPage()
+        viewModel.revealMoreEntries()
         assertEquals(21, viewModel.state.value.visibleEntries.size)
         assertFalse(viewModel.state.value.hasMore)
     }
@@ -277,6 +277,53 @@ class EntryListViewModelTest {
         assertTrue(failingViewModel.state.value.deletionError)
     }
 
+    @Test
+    fun `local reveal keeps one full observation across sort and live cached mutations`() = runTest {
+        val date = LocalDate.of(2026, 9, 16)
+        val original = (0 until 45).map { entry("id-${it.toString().padStart(2, '0')}", date, Instant.EPOCH.plusSeconds(it.toLong())) }
+        val ledger = FakeLedger(original)
+        val preference = FakePreference()
+        val viewModel = viewModel(ledger, preference)
+        viewModel.start("home", "author")
+        advanceUntilIdle()
+        assertEquals(45, viewModel.state.value.entries.size)
+        assertEquals(20, viewModel.state.value.visibleEntries.size)
+        viewModel.revealMoreEntries()
+        assertEquals(40, viewModel.state.value.visibleEntries.size)
+
+        val inserted = entry("pending", date.plusDays(1))
+        val edited = original.first().copy(date = date.plusDays(2), title = "Edited")
+        val deleted = original[1].copy(deleted = true, deletedById = "author")
+        ledger.entries.value = SyncObservation(listOf(inserted, edited, deleted) + original.drop(2), SyncState.PENDING)
+        advanceUntilIdle()
+        val live = viewModel.state.value
+        assertEquals(45, live.entries.size)
+        assertEquals(40, live.visibleEntries.size)
+        assertEquals(listOf(edited.id, inserted.id), live.visibleEntries.take(2).map { it.entry.id })
+        assertFalse(live.entries.any { it.entry.id == deleted.id })
+        assertTrue(live.entries.all { it.canManage })
+        viewModel.revealMoreEntries()
+        viewModel.revealMoreEntries()
+        assertEquals(45, viewModel.state.value.visibleEntries.size)
+        assertFalse(viewModel.state.value.hasMore)
+
+        viewModel.changeSort(EntryListSort.CREATION_ORDER)
+        assertEquals(20, viewModel.state.value.visibleEntries.size)
+        assertEquals(inserted.id, viewModel.state.value.visibleEntries.first().entry.id)
+        assertEquals(1, ledger.observationCount)
+        assertEquals(listOf(false), ledger.includeDeletedArguments)
+        ledger.entries.value = ledger.entries.value.copy(state = SyncState.OFFLINE)
+        advanceUntilIdle()
+        val restored = viewModel(ledger, preference)
+        restored.start("home", "author")
+        advanceUntilIdle()
+        assertEquals(SyncState.OFFLINE, restored.state.value.syncState)
+        assertEquals(viewModel.state.value.entries, restored.state.value.entries)
+        restored.revealMoreEntries()
+        assertEquals(40, restored.state.value.visibleEntries.size)
+        assertEquals(2, ledger.observationCount)
+    }
+
     private fun viewModel(
         ledger: FakeLedger,
         preference: FakePreference = FakePreference(),
@@ -303,7 +350,13 @@ private class FakeLedger(
 ) : LedgerRepository {
     val entries = MutableStateFlow(SyncObservation(entries, SyncState.SYNCED))
     val tombstones = mutableListOf<Triple<String, String, String>>()
-    override fun observeEntries(householdId: String, includeDeleted: Boolean): Flow<SyncObservation<List<LedgerEntry>>> = entries
+    var observationCount = 0
+    val includeDeletedArguments = mutableListOf<Boolean>()
+    override fun observeEntries(householdId: String, includeDeleted: Boolean): Flow<SyncObservation<List<LedgerEntry>>> {
+        observationCount++
+        includeDeletedArguments += includeDeleted
+        return entries
+    }
     override suspend fun save(entry: LedgerEntry) = Unit
     override suspend fun tombstone(householdId: String, entryId: String, actorId: String) {
         if (failTombstone) error("delete failed")

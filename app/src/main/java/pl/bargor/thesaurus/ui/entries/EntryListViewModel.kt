@@ -19,7 +19,8 @@ import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.observation.HouseholdObservation
 
-const val ENTRY_LIST_PAGE_SIZE = 20
+/** Number of already observed entries exposed by each local reveal action. */
+const val ENTRY_LIST_REVEAL_SIZE = 20
 
 enum class EntryListSort { ACCOUNTING_DATE, CREATION_ORDER }
 
@@ -35,7 +36,7 @@ data class EntryListItem(
 data class EntryListUiState(
     val isLoading: Boolean = true,
     val entries: List<EntryListItem> = emptyList(),
-    val visibleCount: Int = ENTRY_LIST_PAGE_SIZE,
+    val visibleCount: Int = ENTRY_LIST_REVEAL_SIZE,
     val sort: EntryListSort = EntryListSort.ACCOUNTING_DATE,
     val syncState: SyncState = SyncState.SYNCED,
     val error: EntryListError? = null,
@@ -53,8 +54,9 @@ sealed interface EntryListError { data object LoadFailed : EntryListError }
 const val ENTRY_DELETE_UNDO_WINDOW_MILLIS = 6_000L
 
 /**
- * Loads a bounded, deterministic page from the locally observed entry collection. The source is
- * retained by Firestore's persistent cache, so a pending local write is immediately listable.
+ * Observes the complete active household ledger and reveals a sorted local prefix in increments.
+ * Revealing entries does not fetch a Firestore page or change the complete-history consumers.
+ * Firestore's persistent cache makes cached entries and pending local writes immediately listable.
  */
 @HiltViewModel
 class EntryListViewModel @Inject constructor(
@@ -99,7 +101,7 @@ class EntryListViewModel @Inject constructor(
                     mutableState.update { old ->
                         val categories = snapshot.categories.value.orEmpty().associateBy { it.id }
                         val authors = snapshot.members.value.orEmpty().associateBy { it.uid }
-                        val items = sortEntries(snapshot.entries.value.orEmpty(), old.sort).map { entry ->
+                        val items = sortEntries(snapshot.entries.value.orEmpty().filterNot { it.deleted }, old.sort).map { entry ->
                             presentEntry(entry, categories, snapshot.subcategoryValues, authors, actorId,
                                 trimAuthorName = true).listItem(entry)
                         }
@@ -108,7 +110,7 @@ class EntryListViewModel @Inject constructor(
                         old.copy(
                             isLoading = false,
                             entries = visibleItems,
-                            visibleCount = old.visibleCount.coerceAtMost(visibleItems.size).coerceAtLeast(ENTRY_LIST_PAGE_SIZE),
+                            visibleCount = old.visibleCount.coerceAtMost(visibleItems.size).coerceAtLeast(ENTRY_LIST_REVEAL_SIZE),
                             syncState = snapshot.syncState,
                             error = if (snapshot.hasError) EntryListError.LoadFailed else null,
                         )
@@ -121,13 +123,14 @@ class EntryListViewModel @Inject constructor(
         if (state.value.sort == sort) return
         sortPreference.save(sort)
         mutableState.update { old ->
-            old.copy(sort = sort, entries = sortItems(old.entries, sort), visibleCount = ENTRY_LIST_PAGE_SIZE)
+            old.copy(sort = sort, entries = sortItems(old.entries, sort), visibleCount = ENTRY_LIST_REVEAL_SIZE)
         }
     }
 
-    fun loadNextPage() {
+    /** Reveals more of the current local ordering without restarting or limiting observation. */
+    fun revealMoreEntries() {
         mutableState.update { old ->
-            old.copy(visibleCount = (old.visibleCount + ENTRY_LIST_PAGE_SIZE).coerceAtMost(old.entries.size))
+            old.copy(visibleCount = (old.visibleCount + ENTRY_LIST_REVEAL_SIZE).coerceAtMost(old.entries.size))
         }
     }
 
@@ -197,18 +200,22 @@ class EntryListViewModel @Inject constructor(
 }
 
 /** The id is always the final tie-breaker, so Firestore/cache ordering cannot shuffle equal rows. */
-fun sortEntries(entries: List<LedgerEntry>, sort: EntryListSort): List<LedgerEntry> = when (sort) {
-    EntryListSort.ACCOUNTING_DATE -> entries.sortedWith(
+fun sortEntries(entries: List<LedgerEntry>, sort: EntryListSort): List<LedgerEntry> =
+    entries.sortedWith(entryListComparator(sort))
+
+private fun entryListComparator(sort: EntryListSort): Comparator<LedgerEntry> = when (sort) {
+    EntryListSort.ACCOUNTING_DATE ->
         compareByDescending<LedgerEntry> { it.date }
             .thenByDescending { it.createdAt ?: Instant.MAX }
-            .thenBy { it.id },
-    )
-    EntryListSort.CREATION_ORDER -> entries.sortedWith(
+            .thenBy { it.id }
+    EntryListSort.CREATION_ORDER ->
         compareByDescending<LedgerEntry> { it.createdAt ?: Instant.MAX }
             .thenByDescending { it.date }
-            .thenBy { it.id },
-    )
+            .thenBy { it.id }
 }
 
-private fun sortItems(items: List<EntryListItem>, sort: EntryListSort): List<EntryListItem> =
-    sortEntries(items.map { it.entry }, sort).map { entry -> items.first { it.entry.id == entry.id } }
+/** Sort row objects directly: O(n log n), retaining their metadata and object identity. */
+internal fun sortItems(items: List<EntryListItem>, sort: EntryListSort): List<EntryListItem> {
+    val comparator = entryListComparator(sort)
+    return items.sortedWith { left, right -> comparator.compare(left.entry, right.entry) }
+}
