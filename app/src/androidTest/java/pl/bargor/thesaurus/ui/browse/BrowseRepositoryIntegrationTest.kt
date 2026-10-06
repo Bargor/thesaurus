@@ -30,6 +30,7 @@ import pl.bargor.thesaurus.data.firebase.FirestoreRepositories
 import pl.bargor.thesaurus.data.firebase.OnboardingIdentity
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.data.observation.HouseholdObservation
 import pl.bargor.thesaurus.ui.summary.SummaryPeriodMode
 
 /** Only a named fake app connected to Auth/Firestore emulators participates in this test. */
@@ -111,6 +112,25 @@ class BrowseRepositoryIntegrationTest {
                 val deleted = awaitState { it.syncState == SyncState.SYNCED && !it.entryItems.containsKey(offlineExpense.id) && it.entryItems.size == 2 }
                 assertEquals((-2_000).toBigInteger(), deleted.categories.single { it.categoryId == food.id }.netGrosze)
                 assertEquals(setOf(septExpense.id), deleted.categories.single { it.categoryId == food.id }.subcategories.single().entries.map { it.id }.toSet())
+                // Archived taxonomy remains readable for historical ledger rows in the shared model.
+                repository.save(shop.copy(name = "Historyczne zakupy", archived = true, updatedById = uid))
+                val renamed = awaitState { it.syncState == SyncState.SYNCED &&
+                    it.entryItems[septExpense.id]?.subcategoryName == "Historyczne zakupy" }
+                assertEquals((-2_000).toBigInteger(), renamed.categories.single { it.categoryId == food.id }.netGrosze)
+                val shared = withTimeout(15_000) {
+                    HouseholdObservation(repository, repository, repository)
+                        .observe(household, uid, includeHousehold = true).first { model ->
+                            model.syncState == SyncState.SYNCED && model.household.hasSnapshot &&
+                                model.entries.value.orEmpty().size == 3 &&
+                                model.subcategoryValues[food.id].orEmpty().any {
+                                    it.id == shop.id && it.archived && it.name == "Historyczne zakupy"
+                                }
+                        }
+                }
+                val sharedEntries = requireNotNull(shared.entries.value)
+                assertEquals(setOf(septIncome.id, septExpense.id, august.id), sharedEntries.map { it.id }.toSet())
+                assertEquals(-2_000L, sharedEntries.single { it.id == septExpense.id }.amountGrosze)
+                assertEquals(household, requireNotNull(shared.household.value).id)
             }
         } finally {
             instrumentation.runOnMainSync { store.clear() }

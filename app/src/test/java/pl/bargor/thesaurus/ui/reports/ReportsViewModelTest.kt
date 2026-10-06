@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -22,6 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
+import pl.bargor.thesaurus.data.firebase.HouseholdRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.EntryType
@@ -110,6 +112,29 @@ class ReportsViewModelTest {
         assertEquals((-3_600).toBigInteger(), vm.state.value.balanceTrend!!.endBalanceGrosze)
         assertFalse(vm.state.value.hasError)
         assertEquals(totals, vm.state.value.aggregation.totals); assertEquals(entries, vm.state.value.entries)
+    }
+
+    @Test fun delayedHouseholdSettingsKeepEntriesVisibleBeforeTheAbsoluteChartIsReady() = runTest {
+        val ledger = FakeLedger(listOf(entry("history", 1_000, LocalDate.of(2001, 1, 1)),
+            entry("income", 600, LocalDate.of(2026, 2, 1))))
+        val settings = MutableSharedFlow<SyncObservation<Household>>(replay = 1)
+        val households = object : HouseholdRepository by ReportHouseholds() {
+            override fun observeHousehold(householdId: String): Flow<SyncObservation<Household>> = settings
+        }
+        val vm = ReportsViewModel(ledger, FakeTaxonomy(), clock, SavedStateHandle(), households)
+        vm.start("home"); advanceUntilIdle()
+        assertFalse(vm.state.value.isLoading)
+        assertEquals(listOf("income"), vm.state.value.entries.map { it.entry.id })
+        assertEquals(600.toBigInteger(), vm.state.value.aggregation.totals.netGrosze)
+        assertNull("Entries readiness must not imply a fabricated opening balance", vm.state.value.balanceTrend)
+
+        settings.emit(SyncObservation(Household("home", "Dom", "actor", openingBalanceGrosze = 25_000), SyncState.OFFLINE))
+        advanceUntilIdle()
+        val trend = requireNotNull(vm.state.value.balanceTrend)
+        assertEquals(26_000.toBigInteger(), trend.startBalanceGrosze)
+        assertEquals(26_600.toBigInteger(), trend.endBalanceGrosze)
+        assertEquals(600.toBigInteger(), vm.state.value.aggregation.totals.netGrosze)
+        assertEquals(SyncState.OFFLINE, vm.state.value.syncState)
     }
 
     private fun entry(id: String, amount: Long, date: LocalDate) = LedgerEntry(id, "home", amount, date, categoryId = "food", authorId = "anna", updatedById = "anna")

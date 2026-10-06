@@ -1,26 +1,21 @@
 package pl.bargor.thesaurus.ui.entry
 
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
 import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
-import pl.bargor.thesaurus.data.firebase.observeOrderedCategories
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.LedgerEntry
@@ -29,6 +24,9 @@ import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.normalizeTags
 import pl.bargor.thesaurus.data.model.PlnMoney
+import pl.bargor.thesaurus.data.model.orderedBy
+import pl.bargor.thesaurus.data.observation.HouseholdObservation
+import pl.bargor.thesaurus.data.observation.withObservationErrors
 
 data class EntryCategory(
     val category: Category,
@@ -117,7 +115,6 @@ class EntryFormViewModel @Inject constructor(
     fun start(householdId: String, actorId: String, today: LocalDate) =
         start(householdId, actorId, entryId = null, today = today)
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     fun start(
         householdId: String,
         actorId: String,
@@ -151,7 +148,8 @@ class EntryFormViewModel @Inject constructor(
         } else EntryFormUiState(date = today, editingEntryId = entryId)
         persistDraft()
         entryObservationJob = viewModelScope.launch {
-            ledgerRepository.observeEntries(householdId).collect { observation ->
+            ledgerRepository.observeEntries(householdId).withObservationErrors().collect { observation ->
+                if (context != Triple(householdId, actorId, entryId)) return@collect
                 val stored = entryId?.let { requestedId ->
                     observation.value.orEmpty().firstOrNull { it.id == requestedId }
                 }
@@ -206,31 +204,26 @@ class EntryFormViewModel @Inject constructor(
             }
         }
         taxonomyObservationJob = viewModelScope.launch {
-            taxonomyRepository.observeOrderedCategories(householdId, actorId)
-                .flatMapLatest { categoryObservation ->
-                    val categories = categoryObservation.value.orEmpty()
-                    val subcategoryObservations = categories.map { category ->
-                        taxonomyRepository.observeSubcategories(householdId, category.id)
+            HouseholdObservation(null, taxonomyRepository)
+                .observe(householdId, actorId)
+                .collect { model ->
+                    if (context != Triple(householdId, actorId, entryId)) return@collect
+                    if (!model.isTaxonomyReady) {
+                        mutableState.update { old -> old.copy(
+                            isLoading = old.isLoading && !model.hasError,
+                            syncState = model.syncState,
+                            error = if (model.hasError) EntryFormError.SaveFailed else old.error,
+                        ) }
+                        return@collect
                     }
-                    if (subcategoryObservations.isEmpty()) {
-                        flowOf(EntryTaxonomySnapshot(categories, emptyMap(), categoryObservation, categoryObservation.value != null))
-                    } else {
-                        combine(subcategoryObservations) { observations ->
-                            EntryTaxonomySnapshot(
-                                categories = categories,
-                                subcategories = categories.indices.mapNotNull { index ->
-                                    observations[index].value?.let { categories[index].id to it }
-                                }.toMap(),
-                                observation = SyncObservation<Unit>(
-                                    state = relevantSyncState(categoryObservation.state, observations.map { it.state }),
-                                    error = categoryObservation.error ?: observations.firstNotNullOfOrNull { it.error },
-                                ),
-                                hasCategorySnapshot = categoryObservation.value != null,
-                            )
-                        }
-                    }
-                }
-                .collect { snapshot ->
+                    val snapshot = EntryTaxonomySnapshot(
+                        categories = model.categories.value.orEmpty().orderedBy(model.order.value),
+                        subcategories = model.subcategoryValues,
+                        observation = SyncObservation<Unit>(state = model.syncState,
+                            error = model.observations.values.firstNotNullOfOrNull { it.error }
+                                ?: if (model.hasError) IllegalStateException("Nie można wczytać kategorii.") else null),
+                        hasCategorySnapshot = model.categories.hasSnapshot,
+                    )
                     mutableState.update { old ->
                         // Retain archived values in state so an entry loaded after this taxonomy emission
                         // can still preserve its historical selection. The screen only exposes active values
@@ -400,10 +393,3 @@ private data class EntryTaxonomySnapshot(
     val observation: SyncObservation<*>,
     val hasCategorySnapshot: Boolean,
 )
-
-private fun relevantSyncState(categoryState: SyncState, subcategoryStates: List<SyncState>): SyncState = when {
-    categoryState == SyncState.ERROR || SyncState.ERROR in subcategoryStates -> SyncState.ERROR
-    categoryState == SyncState.PENDING || SyncState.PENDING in subcategoryStates -> SyncState.PENDING
-    categoryState == SyncState.OFFLINE || SyncState.OFFLINE in subcategoryStates -> SyncState.OFFLINE
-    else -> SyncState.SYNCED
-}

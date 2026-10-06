@@ -78,11 +78,11 @@ class ReportsRepositoryIntegrationTest {
                             "subcategory=${last.selectedSubcategoryId}, " +
                             "subcategories=${last.allSubcategories.map { it.categoryId + "/" + it.id }}, " +
                             "entries=${last.entries.map { it.entry.id }}, " +
-                            "sync=${last.syncState}, error=${last.hasError}", timeout)
+                            "sync=${last.syncState}, error=${last.hasError}, balance=${last.balanceTrend}", timeout)
                     }
                 }
                 state("initial entries and scoped taxonomy") {
-                    !it.isLoading && it.syncState == SyncState.SYNCED && it.entries.size == 4 &&
+                    !it.isLoading && it.syncState == SyncState.SYNCED && it.entries.size == 4 && it.balanceTrend != null &&
                         it.categories.isNotEmpty() && it.allSubcategories.any { sub -> sub.categoryId == food.id && sub.id == shop.id }
                 }
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectCategory(food.id); vm.selectSubcategory(shop.id); vm.applyFilters() }
@@ -117,7 +117,7 @@ class ReportsRepositoryIntegrationTest {
                 }
                 val restoredCached = state("restore applied sorting and scope from offline cache") {
                     !it.isLoading && it.syncState == SyncState.OFFLINE && it.entries.size == 2 &&
-                        it.selectedSubcategoryId == shop.id && it.filterDraft == null
+                        it.selectedSubcategoryId == shop.id && it.filterDraft == null && it.balanceTrend != null
                 }
                 assertEquals(ReportEntrySort.AMOUNT, restoredCached.sort)
                 assertEquals(ReportSortDirection.ASCENDING, restoredCached.direction)
@@ -206,7 +206,9 @@ class ReportsRepositoryIntegrationTest {
                 }
                 suspend fun state(predicate: (ReportsUiState) -> Boolean) =
                     withTimeout(15_000) { vm.state.first(predicate) }
-                val all = state { !it.isLoading && it.syncState == SyncState.SYNCED && it.entries.size == 2 && it.members.size == 2 }
+                // Entries and members can arrive before the independent household settings listener.
+                val all = state { !it.isLoading && it.syncState == SyncState.SYNCED && it.entries.size == 2 &&
+                    it.members.size == 2 && it.balanceTrend != null }
                 assertEquals(setOf(owner, guest), all.members.map { it.id }.toSet())
                 assertEquals(2, all.members.map { it.name }.distinct().size)
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectMembers(setOf(guest)); vm.applyFilters() }
