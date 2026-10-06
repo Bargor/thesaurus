@@ -6,14 +6,7 @@ import java.time.LocalDate
 /** Filter is deliberately based on the sign stored in the ledger, never on a UI-selected type. */
 enum class ReportTypeFilter { ALL, INCOME, EXPENSE }
 
-data class ReportTotals(
-    val incomeGrosze: BigInteger = BigInteger.ZERO,
-    val expenseGrosze: BigInteger = BigInteger.ZERO,
-    val entryCount: Int = 0,
-) {
-    val netGrosze: BigInteger get() = incomeGrosze - expenseGrosze
-    val isEmpty: Boolean get() = entryCount == 0
-}
+typealias ReportTotals = LedgerTotals
 
 data class ReportCategoryValue(val categoryId: String, val amountGrosze: BigInteger)
 data class ReportTrendValue(val date: LocalDate, val amountGrosze: BigInteger)
@@ -47,20 +40,19 @@ fun aggregateReportEntries(
     type: ReportTypeFilter,
     bucket: (LocalDate) -> LocalDate = { it },
 ): ReportAggregation {
-    var income = BigInteger.ZERO
-    var expense = BigInteger.ZERO
+    var totals = ReportTotals()
     val categories = linkedMapOf<String, BigInteger>()
     val trend = sortedMapOf<LocalDate, BigInteger>()
     val selected = filterReportEntries(entries, period, type)
     selected.forEach { entry ->
         val signed = BigInteger.valueOf(entry.amountGrosze)
-        if (signed.signum() > 0) income += signed else expense -= signed
+        totals = totals.add(entry.amountGrosze)
         categories[entry.categoryId] = (categories[entry.categoryId] ?: BigInteger.ZERO) + signed.abs()
         val date = bucket(entry.date)
         trend[date] = (trend[date] ?: BigInteger.ZERO) + signed
     }
     return ReportAggregation(
-        totals = ReportTotals(income, expense, selected.size),
+        totals = totals,
         categories = categories.map { ReportCategoryValue(it.key, it.value) }
             .sortedWith(compareByDescending<ReportCategoryValue> { it.amountGrosze }.thenBy { it.categoryId }),
         trend = trend.map { ReportTrendValue(it.key, it.value) },

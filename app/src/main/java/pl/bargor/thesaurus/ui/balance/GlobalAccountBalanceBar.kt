@@ -33,17 +33,15 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import java.math.BigDecimal
 import java.math.BigInteger
-import java.text.NumberFormat
-import java.util.Locale
+import pl.bargor.thesaurus.data.model.PlnMoney
+import pl.bargor.thesaurus.data.model.PlnSign
 import kotlin.math.ceil
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.SyncState
 
 internal fun formatGlobalAccountBalance(amount: BigInteger): String =
-    (if (amount.signum() > 0) "+" else "") + NumberFormat
-        .getCurrencyInstance(Locale.forLanguageTag("pl-PL")).format(BigDecimal(amount, 2))
+    PlnMoney.currency(amount, PlnSign.EXPLICIT_POSITIVE)
 
 /** A compact shared footer; measurement keeps full amounts at the user's text size. */
 @Composable

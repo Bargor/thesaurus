@@ -77,7 +77,8 @@ import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.math.MathContext
-import java.text.NumberFormat
+import pl.bargor.thesaurus.data.model.PlnMoney
+import pl.bargor.thesaurus.data.model.PlnSign
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.ceil
@@ -691,6 +692,6 @@ private fun ReportEntryCard(item: ReportEntryItem, onOpen: (String) -> Unit) {
     }
 }
 
-private fun BigInteger.currency(): String = NumberFormat.getCurrencyInstance(reportsLocale).format(BigDecimal(this, 2))
-private fun BigInteger.signedCurrency(): String = (if (signum() > 0) "+" else "") + currency()
-private fun Long.signedCurrency(): String = (if (this > 0) "+" else "") + BigInteger.valueOf(this).currency()
+private fun BigInteger.currency(): String = PlnMoney.currency(this)
+private fun BigInteger.signedCurrency(): String = PlnMoney.currency(this, PlnSign.EXPLICIT_POSITIVE)
+private fun Long.signedCurrency(): String = PlnMoney.currency(this, PlnSign.EXPLICIT_POSITIVE)

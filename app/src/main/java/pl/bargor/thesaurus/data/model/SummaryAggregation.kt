@@ -1,6 +1,5 @@
 package pl.bargor.thesaurus.data.model
 
-import java.math.BigInteger
 import java.time.Year
 import java.time.YearMonth
 
@@ -9,25 +8,14 @@ fun YearMonth.summaryPeriod(): SummaryPeriod = SummaryPeriod(atDay(1), atEndOfMo
 
 fun Year.summaryPeriod(): SummaryPeriod = SummaryPeriod(atDay(1), atMonth(12).atEndOfMonth())
 
-data class SummaryTotals(
-    val incomeGrosze: BigInteger = BigInteger.ZERO,
-    val expenseGrosze: BigInteger = BigInteger.ZERO,
-    val entryCount: Int = 0,
-) {
-    val netGrosze: BigInteger get() = incomeGrosze - expenseGrosze
-    val isEmpty: Boolean get() = entryCount == 0
-}
+typealias SummaryTotals = LedgerTotals
 
 /** Uses arbitrary precision so valid Long amounts cannot overflow when combined. */
 fun aggregateEntries(entries: Iterable<LedgerEntry>, period: SummaryPeriod): SummaryTotals {
-    var income = BigInteger.ZERO
-    var expense = BigInteger.ZERO
-    var count = 0
+    var totals = SummaryTotals()
     for (entry in entries) {
         if (entry.deleted || entry.date.isBefore(period.from) || entry.date.isAfter(period.to)) continue
-        val amount = BigInteger.valueOf(entry.amountGrosze)
-        if (amount.signum() > 0) income += amount else expense -= amount
-        count++
+        totals = totals.add(entry.amountGrosze)
     }
-    return SummaryTotals(income, expense, count)
+    return totals
 }

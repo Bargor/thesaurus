@@ -42,7 +42,7 @@ import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.math.RoundingMode
-import java.text.NumberFormat
+import pl.bargor.thesaurus.data.model.PlnMoney
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import pl.bargor.thesaurus.R
@@ -80,7 +80,7 @@ internal val SummaryPeriodCard.tagKey: String get() = when (key.mode) {
 }
 
 internal fun summaryCurrency(amount: BigInteger): String =
-    NumberFormat.getCurrencyInstance(summaryLocale).format(BigDecimal(amount, 2))
+    PlnMoney.currency(amount)
 
 @Composable
 internal fun SummaryPeriodCardContent(card: SummaryPeriodCard, onClick: (() -> Unit)? = null) {

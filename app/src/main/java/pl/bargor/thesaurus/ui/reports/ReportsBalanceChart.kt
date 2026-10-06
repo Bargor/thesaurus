@@ -34,7 +34,8 @@ import pl.bargor.thesaurus.data.model.SummaryPeriod
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.math.MathContext
-import java.text.NumberFormat
+import pl.bargor.thesaurus.data.model.PlnMoney
+import pl.bargor.thesaurus.data.model.PlnSign
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -42,7 +43,7 @@ import java.util.Locale
 private val balanceLocale = Locale.forLanguageTag("pl-PL")
 private val balanceDateFormatter = DateTimeFormatter.ofPattern("d MMM uuuu", balanceLocale)
 private fun BigInteger.balanceCurrency(): String =
-    (if (signum() > 0) "+" else "") + NumberFormat.getCurrencyInstance(balanceLocale).format(BigDecimal(this, 2))
+    PlnMoney.currency(this, PlnSign.EXPLICIT_POSITIVE)
 private fun LocalDate.balanceDate() = format(balanceDateFormatter)
 
 /** Compact ticks retain PLN units; semantic descriptions always use the exact amount. */
@@ -69,8 +70,7 @@ private fun BigInteger.axisCurrency(compact: Boolean, units: BalanceAxisUnits): 
         12 -> units.trillion
         else -> units.scientific
     }
-    val formatter = NumberFormat.getNumberInstance(balanceLocale).apply { maximumFractionDigits = 2 }
-    val value = (if (signum() > 0) "+" else "−") + formatter.format(amount.movePointLeft(power))
+    val value = (if (signum() > 0) "+" else "−") + PlnMoney.chartNumber(amount.movePointLeft(power))
     return String.format(balanceLocale, template, value, power)
 }
 

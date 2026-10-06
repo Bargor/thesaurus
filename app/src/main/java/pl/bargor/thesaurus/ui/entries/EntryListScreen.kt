@@ -42,8 +42,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import java.text.NumberFormat
-import java.math.BigDecimal
+import pl.bargor.thesaurus.data.model.PlnMoney
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import pl.bargor.thesaurus.R
@@ -345,5 +344,4 @@ internal fun EntryCard(
     }
 }
 
-private fun Long.toPolishCurrency(): String = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pl-PL"))
-    .format(BigDecimal.valueOf(this, 2))
+private fun Long.toPolishCurrency(): String = PlnMoney.currency(this)
