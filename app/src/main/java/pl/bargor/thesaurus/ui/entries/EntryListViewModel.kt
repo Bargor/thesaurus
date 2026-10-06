@@ -5,28 +5,19 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import javax.inject.Inject
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.HouseholdRepository
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
-import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.LedgerEntry
-import pl.bargor.thesaurus.data.model.Member
-import pl.bargor.thesaurus.data.model.MemberRole
-import pl.bargor.thesaurus.data.model.Subcategory
-import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.data.observation.HouseholdObservation
 
 /** Number of already observed entries exposed by each local reveal action. */
 const val ENTRY_LIST_REVEAL_SIZE = 20
@@ -62,13 +53,6 @@ sealed interface EntryListError { data object LoadFailed : EntryListError }
 // last-frame action from racing a Firestore tombstone that has already been submitted.
 const val ENTRY_DELETE_UNDO_WINDOW_MILLIS = 6_000L
 
-private data class TaxonomySnapshot(
-    val categories: List<Category>,
-    val subcategories: Map<String, List<Subcategory>>,
-    val state: SyncState,
-    val error: Throwable?,
-)
-
 /**
  * Observes the complete active household ledger and reveals a sorted local prefix in increments.
  * Revealing entries does not fetch a Firestore page or change the complete-history consumers.
@@ -90,10 +74,8 @@ class EntryListViewModel @Inject constructor(
     private var deleteJob: Job? = null
     private val locallyHiddenEntryIds = mutableSetOf<String>()
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     fun start(householdId: String) = start(householdId, actorId = "")
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     fun start(householdId: String, actorId: String) {
         if (this.householdId == householdId && this.actorId == actorId && observeJob?.isActive == true) return
         this.householdId = householdId
@@ -104,21 +86,24 @@ class EntryListViewModel @Inject constructor(
         val sort = sortPreference.read()
         mutableState.value = EntryListUiState(sort = sort)
         observeJob = viewModelScope.launch {
-            combine(
-                ledgerRepository.observeEntries(householdId),
-                taxonomySnapshots(householdId),
-                householdRepository.observeMembers(householdId),
-            ) { entries, taxonomy, members -> EntryListSnapshot(entries, taxonomy, members) }
-                .collect { snapshot ->
-                    val error = snapshot.entries.error ?: snapshot.taxonomy.error ?: snapshot.members.error
-                    val syncState = relevantSyncState(
-                        snapshot.entries.state,
-                        snapshot.taxonomy.state,
-                        snapshot.members.state,
-                    )
+            HouseholdObservation(ledgerRepository, taxonomyRepository, householdRepository)
+                .observe(householdId).collect { snapshot ->
+                    if (this@EntryListViewModel.householdId != householdId ||
+                        this@EntryListViewModel.actorId != actorId) return@collect
+                    if (!snapshot.isReady) {
+                        mutableState.update { old -> old.copy(
+                            isLoading = old.isLoading && !snapshot.hasError,
+                            syncState = snapshot.syncState,
+                            error = if (snapshot.hasError) EntryListError.LoadFailed else old.error,
+                        ) }
+                        return@collect
+                    }
                     mutableState.update { old ->
-                        val items = snapshot.entries.value.orEmpty().let { entries ->
-                            toItems(entries, snapshot.taxonomy, snapshot.members.value.orEmpty(), actorId, old.sort)
+                        val categories = snapshot.categories.value.orEmpty().associateBy { it.id }
+                        val authors = snapshot.members.value.orEmpty().associateBy { it.uid }
+                        val items = sortEntries(snapshot.entries.value.orEmpty().filterNot { it.deleted }, old.sort).map { entry ->
+                            presentEntry(entry, categories, snapshot.subcategoryValues, authors, actorId,
+                                trimAuthorName = true).listItem(entry)
                         }
                         locallyHiddenEntryIds.retainAll(items.map { it.entry.id }.toSet())
                         val visibleItems = items.filterNot { it.entry.id in locallyHiddenEntryIds }
@@ -126,8 +111,8 @@ class EntryListViewModel @Inject constructor(
                             isLoading = false,
                             entries = visibleItems,
                             visibleCount = old.visibleCount.coerceAtMost(visibleItems.size).coerceAtLeast(ENTRY_LIST_REVEAL_SIZE),
-                            syncState = syncState,
-                            error = error?.let { EntryListError.LoadFailed },
+                            syncState = snapshot.syncState,
+                            error = if (snapshot.hasError) EntryListError.LoadFailed else null,
                         )
                     }
                 }
@@ -205,53 +190,6 @@ class EntryListViewModel @Inject constructor(
         actorId?.let { start(id, it) }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private fun taxonomySnapshots(householdId: String): Flow<TaxonomySnapshot> =
-        taxonomyRepository.observeCategories(householdId).flatMapLatest { categoryObservation ->
-            val categories = categoryObservation.value.orEmpty()
-            val flows = categories.map { category -> taxonomyRepository.observeSubcategories(householdId, category.id) }
-            if (flows.isEmpty()) {
-                flowOf(TaxonomySnapshot(categories, emptyMap(), categoryObservation.state, categoryObservation.error))
-            } else {
-                combine(flows) { observations ->
-                    TaxonomySnapshot(
-                        categories = categories,
-                        subcategories = categories.indices.associate { index ->
-                            categories[index].id to observations[index].value.orEmpty()
-                        },
-                        state = relevantSyncState(categoryObservation.state, *observations.map { it.state }.toTypedArray()),
-                        error = categoryObservation.error ?: observations.firstNotNullOfOrNull { it.error },
-                    )
-                }
-            }
-        }
-
-    private fun toItems(
-        entries: List<LedgerEntry>,
-        taxonomy: TaxonomySnapshot,
-        members: List<Member>,
-        actorId: String,
-        sort: EntryListSort,
-    ): List<EntryListItem> {
-        val categories = taxonomy.categories.associateBy { it.id }
-        val authors = members.associateBy { it.uid }
-        return sortEntries(entries.filterNot { it.deleted }, sort).map { entry ->
-            EntryListItem(
-                entry = entry,
-                categoryName = categories[entry.categoryId]?.name,
-                subcategoryName = entry.subcategoryId?.let { subcategoryId ->
-                    taxonomy.subcategories[entry.categoryId]
-                        .orEmpty()
-                        .firstOrNull { it.id == subcategoryId }
-                        ?.name
-                },
-                authorName = authors[entry.authorId].authorLabel(entry.authorId),
-                canManage = entry.authorId == actorId || authors[actorId]?.role == MemberRole.OWNER,
-                categoryColor = categories[entry.categoryId]?.color,
-            )
-        }
-    }
-
     override fun onCleared() {
         // A queued delete is deliberately not committed after this UI owner disappears. The original
         // Firestore document remains active, so a recreated list deterministically shows it again.
@@ -260,15 +198,6 @@ class EntryListViewModel @Inject constructor(
         super.onCleared()
     }
 }
-
-private data class EntryListSnapshot(
-    val entries: SyncObservation<List<LedgerEntry>>,
-    val taxonomy: TaxonomySnapshot,
-    val members: SyncObservation<List<Member>>,
-)
-
-private fun Member?.authorLabel(fallback: String): String =
-    this?.displayName?.trim()?.takeIf(String::isNotEmpty) ?: this?.email ?: fallback
 
 /** The id is always the final tie-breaker, so Firestore/cache ordering cannot shuffle equal rows. */
 fun sortEntries(entries: List<LedgerEntry>, sort: EntryListSort): List<LedgerEntry> =
@@ -289,11 +218,4 @@ private fun entryListComparator(sort: EntryListSort): Comparator<LedgerEntry> = 
 internal fun sortItems(items: List<EntryListItem>, sort: EntryListSort): List<EntryListItem> {
     val comparator = entryListComparator(sort)
     return items.sortedWith { left, right -> comparator.compare(left.entry, right.entry) }
-}
-
-private fun relevantSyncState(vararg states: SyncState): SyncState = when {
-    SyncState.ERROR in states -> SyncState.ERROR
-    SyncState.PENDING in states -> SyncState.PENDING
-    SyncState.OFFLINE in states -> SyncState.OFFLINE
-    else -> SyncState.SYNCED
 }

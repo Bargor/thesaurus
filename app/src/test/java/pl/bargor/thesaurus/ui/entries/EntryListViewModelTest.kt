@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -39,6 +40,47 @@ class EntryListViewModelTest {
 
     @Before fun setUp() = Dispatchers.setMain(dispatcher)
     @After fun tearDown() = Dispatchers.resetMain()
+
+    @Test
+    fun `initial rows wait for members and each taxonomy listener while errors surface immediately`() = runTest {
+        val ledger = FakeLedger(listOf(entry("one", LocalDate.of(2026, 9, 16), subcategoryId = "shop")))
+        val baseTaxonomy = FakeTaxonomy()
+        baseTaxonomy.categories.value = SyncObservation(listOf(Category("food", "home", "Jedzenie",
+            authorId = "author", updatedById = "author")), SyncState.SYNCED)
+        val subs = MutableSharedFlow<SyncObservation<List<Subcategory>>>(replay = 1)
+        val members = MutableSharedFlow<SyncObservation<List<Member>>>(replay = 1)
+        val taxonomy = object : TaxonomyRepository by baseTaxonomy {
+            override fun observeSubcategories(householdId: String, categoryId: String): Flow<SyncObservation<List<Subcategory>>> = subs
+        }
+        val households = object : HouseholdRepository by FakeHouseholds() {
+            override fun observeMembers(householdId: String): Flow<SyncObservation<List<Member>>> = members
+        }
+        val vm = EntryListViewModel(ledger, taxonomy, households, FakePreference())
+        vm.start("home", "author")
+        advanceUntilIdle()
+        assertTrue(vm.state.value.isLoading)
+        assertTrue(vm.state.value.entries.isEmpty())
+        members.emit(SyncObservation(listOf(Member("author", "author@example.test", "Anna", MemberRole.MEMBER)), SyncState.SYNCED))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.isLoading)
+        assertTrue(vm.state.value.entries.isEmpty())
+        ledger.entries.value = SyncObservation(state = SyncState.ERROR, error = IllegalStateException("read"))
+        advanceUntilIdle()
+        assertFalse(vm.state.value.isLoading)
+        assertEquals(EntryListError.LoadFailed, vm.state.value.error)
+        assertTrue(vm.state.value.entries.isEmpty())
+        ledger.entries.value = SyncObservation(listOf(entry("one", LocalDate.of(2026, 9, 16), subcategoryId = "shop")), SyncState.SYNCED)
+        advanceUntilIdle()
+        assertEquals(EntryListError.LoadFailed, vm.state.value.error)
+        assertTrue(vm.state.value.entries.isEmpty())
+        subs.emit(SyncObservation(listOf(Subcategory("shop", "home", "food", "Zakupy",
+            authorId = "author", updatedById = "author")), SyncState.SYNCED))
+        advanceUntilIdle()
+        assertFalse(vm.state.value.isLoading)
+        assertEquals(null, vm.state.value.error)
+        assertEquals("Zakupy", vm.state.value.entries.single().subcategoryName)
+        assertEquals("Anna", vm.state.value.entries.single().authorName)
+    }
 
     @Test
     fun `date sorting has stable id tie breaker and revealing more entries exposes the remaining local rows`() = runTest {

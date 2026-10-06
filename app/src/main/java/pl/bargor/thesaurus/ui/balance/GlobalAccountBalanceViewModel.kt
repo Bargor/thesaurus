@@ -18,6 +18,7 @@ import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.Household
 import pl.bargor.thesaurus.data.model.absoluteAccountBalance
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.data.observation.reduceSyncState
 
 data class GlobalAccountBalanceUiState(
     val actorId: String? = null,
@@ -79,12 +80,7 @@ class GlobalAccountBalanceViewModel @Inject constructor(
                         amountGrosze = amount,
                         isLoading = !failed && amount == null,
                         hasError = failed,
-                        syncState = when {
-                            failed -> SyncState.ERROR
-                            observation.state == SyncState.PENDING || household.state == SyncState.PENDING -> SyncState.PENDING
-                            observation.state == SyncState.OFFLINE || household.state == SyncState.OFFLINE -> SyncState.OFFLINE
-                            else -> SyncState.SYNCED
-                        },
+                        syncState = if (failed) SyncState.ERROR else reduceSyncState(listOf(observation, household)),
                     )
                 }
             } catch (error: CancellationException) {
