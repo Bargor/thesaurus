@@ -46,7 +46,9 @@ capture_diagnostics() {
     if [[ ${CI_CAPTURE_VISUAL_EVIDENCE:-false} == true ]]; then
         # Only synthetic test frames from this disposable CI emulator are collected.
         # Missing/failed captures must not replace Gradle's actual exit status.
-        bounded_adb pull /sdcard/Android/data/pl.bargor.thesaurus/files/visual-evidence "$diagnostics_dir/" > "$diagnostics_dir/visual-evidence-capture.txt" 2>&1 || true
+        # MediaStore images survive UTP's target-app uninstall at suite teardown.
+        mkdir -p "$diagnostics_dir/visual-evidence" || true
+        bounded_adb pull /sdcard/Pictures/ThesaurusTestEvidence/issue94 "$diagnostics_dir/visual-evidence/" > "$diagnostics_dir/visual-evidence-capture.txt" 2>&1 || true
     fi
 }
 

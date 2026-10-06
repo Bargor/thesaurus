@@ -58,7 +58,10 @@ drag suites remain in CI. Local test/build execution is intentionally omitted at
 
 `ResponsibilitySplitVisualEvidenceTest` renders real components/navigation with deterministic,
 synthetic data, without Firebase or real authentication. It captures six PNG frames: entries,
-reports, report filters, settings, expanded categories and the category editor. The CI harness
-optionally pulls these from the disposable emulator into `ci-instrumentation/visual-evidence/issue94`.
+reports, report filters, settings, expanded categories and the category editor. PNGs are published
+through MediaStore into `Pictures/ThesaurusTestEvidence/issue94`, not the app-specific directory
+removed by instrumentation teardown. This follows Android's [shared media storage contract](https://developer.android.com/training/data-storage/shared/media).
+The CI harness optionally pulls that exact directory from the disposable emulator into
+`ci-instrumentation/visual-evidence/issue94`.
 Collection is bounded and cannot hide a failing test exit status. API 31/37 diagnostics artifacts
 include the images for review; the PR will attach the verified images after CI completes.

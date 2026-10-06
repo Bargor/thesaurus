@@ -1,18 +1,22 @@
 package pl.bargor.thesaurus
 
+import android.content.ContentValues
 import android.graphics.Bitmap
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
-import java.io.File
 import java.time.LocalDate
 import java.time.Year
 import java.time.YearMonth
@@ -107,6 +111,7 @@ class ResponsibilitySplitVisualEvidenceTest {
         capture("settings")
         compose.onNodeWithTag("settings-categories").performClick()
         compose.onNodeWithTag("taxonomy-category-header-jedzenie").performClick()
+        compose.onNodeWithTag("taxonomy-list").performScrollToNode(hasText("Supermarket"))
         compose.onNodeWithText("Supermarket").assertIsDisplayed()
         capture("categories-expanded")
         compose.onNodeWithTag("taxonomy-add-category").performClick()
@@ -120,11 +125,27 @@ class ResponsibilitySplitVisualEvidenceTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot()) { "CI screenshot unavailable: $name" }
         try {
-            val external = requireNotNull(instrumentation.targetContext.getExternalFilesDir(null))
-            val directory = File(external, "visual-evidence/issue94")
-            check(directory.isDirectory || directory.mkdirs())
-            File(directory, "$name.png").outputStream().use {
-                assertTrue("PNG capture failed: $name", bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+            // UTP can uninstall the target after testing, removing app-specific external files.
+            // These synthetic images stay in shared media until the disposable CI device exits.
+            val resolver = instrumentation.targetContext.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.png")
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/ThesaurusTestEvidence/issue94/")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val image = requireNotNull(resolver.insert(collection, values)) { "CI media insertion failed: $name" }
+            try {
+                requireNotNull(resolver.openOutputStream(image)) { "CI media stream unavailable: $name" }.use {
+                    assertTrue("PNG capture failed: $name", bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+                }
+                val published = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                check(resolver.update(image, published, null, null) == 1) { "CI media publication failed: $name" }
+            } catch (error: Throwable) {
+                // Only the URI inserted by this capture is eligible for failure cleanup.
+                runCatching { resolver.delete(image, null, null) }
+                throw error
             }
         } finally {
             bitmap.recycle()
