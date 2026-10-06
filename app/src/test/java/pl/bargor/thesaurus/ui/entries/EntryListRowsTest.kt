@@ -51,7 +51,7 @@ class EntryListRowsTest {
     }
 
     @Test
-    fun `new page continues the current date run and introduces only changed dates`() {
+    fun `revealed prefix continues the current date run and introduces only changed dates`() {
         val items = (1..22).map { item("id-$it", if (it <= 21) 16 else 15) }
         val state = EntryListUiState(isLoading = false, entries = items)
         assertEquals(listOf(16), headings(entryListRows(state.visibleEntries)))

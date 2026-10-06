@@ -162,7 +162,7 @@ class NavigationSmokeTest {
                                             ), "Jedzenie", null, "creator@example.test",
                                         )
                                     }),
-                                    onChangeSort = {}, onLoadNextPage = {}, onRetry = {},
+                                    onChangeSort = {}, onRevealMore = {}, onRetry = {},
                                     onOpenSettings = onOpenSettings, onAddEntry = onAddEntry, onOpenFamily = onOpenFamily,
                                 )
                             },
@@ -200,7 +200,7 @@ class NavigationSmokeTest {
                                     EntryListScreen(
                                         state = state.value,
                                         onChangeSort = { state.value = state.value.copy(sort = it) },
-                                        onLoadNextPage = {}, onRetry = {},
+                                        onRevealMore = {}, onRetry = {},
                                         onOpenSettings = onOpenSettings, onAddEntry = onAddEntry, onOpenFamily = onOpenFamily,
                                     )
                                 }, summaryContent = {}, reportsContent = {},
@@ -250,7 +250,7 @@ class NavigationSmokeTest {
                         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets(bottom = 32.dp))) {
                             HouseholdApp(
                                 entriesContent = { _, _, _, _ ->
-                                    EntryListScreen(state.value, onChangeSort = {}, onLoadNextPage = {},
+                                    EntryListScreen(state.value, onChangeSort = {}, onRevealMore = {},
                                         onRetry = { retries++ }, onOpenSettings = {}, onAddEntry = {})
                                 }, summaryContent = {}, reportsContent = {},
                             )
@@ -304,7 +304,7 @@ class NavigationSmokeTest {
                     entriesContent = { onOpenSettings, onAddEntry, onOpenFamily, _ ->
                         EntryListScreen(
                             state = EntryListUiState(isLoading = false),
-                            onChangeSort = {}, onLoadNextPage = {}, onRetry = {},
+                            onChangeSort = {}, onRevealMore = {}, onRetry = {},
                             onOpenSettings = onOpenSettings, onAddEntry = onAddEntry, onOpenFamily = onOpenFamily,
                         )
                     },

@@ -58,7 +58,7 @@ class EntryListScreenTest {
         composeRule.setContent {
             ThesaurusTheme {
                 EntryListScreen(
-                    state = state, onChangeSort = {}, onLoadNextPage = {}, onRetry = {},
+                    state = state, onChangeSort = {}, onRevealMore = {}, onRetry = {},
                     onOpenSettings = {}, onAddEntry = {},
                 )
             }
@@ -89,15 +89,15 @@ class EntryListScreenTest {
     }
 
     @Test
-    fun addEntryStaysFixedWhenBrowsingAndLoadingAnotherPage() {
-        val entries = (1..25).map { item("scroll-$it", -100, title = "Zakup $it") }
+    fun addEntryStaysFixedWhenBrowsingAndRevealingMoreEntries() {
+        val entries = (1..45).map { item("scroll-$it", -100, title = "Zakup $it") }
         var state by mutableStateOf(EntryListUiState(isLoading = false, entries = entries))
         var added = 0
         composeRule.setContent {
             ThesaurusTheme {
                 EntryListScreen(
                     state = state, onChangeSort = {},
-                    onLoadNextPage = { state = state.copy(visibleCount = entries.size) },
+                    onRevealMore = { state = state.copy(visibleCount = (state.visibleCount + ENTRY_LIST_REVEAL_SIZE).coerceAtMost(entries.size)) },
                     onRetry = {}, onOpenSettings = {}, onAddEntry = { added++ },
                 )
             }
@@ -108,7 +108,12 @@ class EntryListScreenTest {
         composeRule.onNodeWithTag("add-entry").assertIsDisplayed().performClick()
         assertEquals(before, composeRule.onNodeWithTag("add-entry").getUnclippedBoundsInRoot())
         composeRule.onNodeWithTag("entries-load-more").performClick()
-        composeRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entry-scroll-25"))
+        composeRule.runOnIdle { assertEquals(40, state.visibleEntries.size) }
+        composeRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entries-load-more"))
+        composeRule.onNodeWithTag("entries-load-more").performClick()
+        composeRule.runOnIdle { assertEquals(45, state.visibleEntries.size) }
+        composeRule.onNodeWithTag("entries-load-more").assertDoesNotExist()
+        composeRule.onNodeWithTag("entries-list").performScrollToNode(hasTestTag("entry-scroll-45"))
         composeRule.onNodeWithTag("add-entry").assertIsDisplayed().performClick()
         assertEquals(2, added)
         assertEquals(before, composeRule.onNodeWithTag("add-entry").getUnclippedBoundsInRoot())
@@ -148,7 +153,7 @@ class EntryListScreenTest {
                         ) {
                             EntryListScreen(
                                 state = EntryListUiState(isLoading = false, entries = entries, syncState = SyncState.OFFLINE),
-                                onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
+                                onChangeSort = {}, onRevealMore = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
                             )
                         }
                     }
@@ -183,7 +188,7 @@ class EntryListScreenTest {
                     Box(Modifier.width(320.dp).fillMaxHeight()) {
                         EntryListScreen(
                             state = EntryListUiState(isLoading = false),
-                            onChangeSort = {}, onLoadNextPage = {}, onRetry = {},
+                            onChangeSort = {}, onRevealMore = {}, onRetry = {},
                             onOpenSettings = {}, onAddEntry = {},
                         )
                     }
@@ -214,7 +219,7 @@ class EntryListScreenTest {
             ThesaurusTheme {
                 EntryListScreen(
                     state = EntryListUiState(isLoading = false, entries = listOf(income, expense)),
-                    onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
+                    onChangeSort = {}, onRevealMore = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
                 )
             }
         }
@@ -238,7 +243,7 @@ class EntryListScreenTest {
                         isLoading = false,
                         entries = listOf(item("colored", -500, categoryColor = "rose")),
                     ),
-                    onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
+                    onChangeSort = {}, onRevealMore = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
                 )
             }
         }
@@ -255,7 +260,7 @@ class EntryListScreenTest {
             ThesaurusTheme {
                 EntryListScreen(
                     state = state,
-                    onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = { added++ },
+                    onChangeSort = {}, onRevealMore = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = { added++ },
                 )
             }
         }
@@ -285,7 +290,7 @@ class EntryListScreenTest {
             ThesaurusTheme {
                 EntryListScreen(
                     state = EntryListUiState(isLoading = false, entries = listOf(manageable)),
-                    onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
+                    onChangeSort = {}, onRevealMore = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
                     onEditEntry = { editedId = it },
                 )
             }
@@ -311,7 +316,7 @@ class EntryListScreenTest {
             ThesaurusTheme {
                 EntryListScreen(
                     state = EntryListUiState(isLoading = false, entries = listOf(first, second)),
-                    onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
+                    onChangeSort = {}, onRevealMore = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
                     onEditEntry = { editedId = it },
                 )
             }
@@ -341,7 +346,7 @@ class EntryListScreenTest {
                 EntryListScreen(
                     state = state,
                     onChangeSort = {},
-                    onLoadNextPage = {},
+                    onRevealMore = {},
                     onRetry = {},
                     onOpenSettings = {},
                     onAddEntry = {},
@@ -380,7 +385,7 @@ class EntryListScreenTest {
                     Box(Modifier.width(320.dp).fillMaxHeight()) {
                         EntryListScreen(
                             state = EntryListUiState(isLoading = false, entries = listOf(manageable)),
-                            onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
+                            onChangeSort = {}, onRevealMore = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
                         )
                     }
                 }

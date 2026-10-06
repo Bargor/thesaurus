@@ -61,7 +61,7 @@ internal val PolishDateFormatter: DateTimeFormatter =
 fun EntryListScreen(
     state: EntryListUiState,
     onChangeSort: (EntryListSort) -> Unit,
-    onLoadNextPage: () -> Unit,
+    onRevealMore: () -> Unit,
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onAddEntry: () -> Unit,
@@ -153,7 +153,7 @@ fun EntryListScreen(
                             if (state.hasMore) item(key = "entries-load-more", contentType = "controls") {
                                 Button(
                                     modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().testTag("entries-load-more"),
-                                    onClick = onLoadNextPage,
+                                    onClick = onRevealMore,
                                 ) { Text(stringResource(R.string.entries_load_more)) }
                             }
                         }

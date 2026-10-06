@@ -64,7 +64,7 @@ class OfflineScreenCoverageTest {
         EntryListScreen(
             state = EntryListUiState(isLoading = false, entries = listOf(EntryListItem(entry, "Jedzenie", null, "Karol")),
                 syncState = sync, error = if (error) EntryListError.LoadFailed else null),
-            onChangeSort = {}, onLoadNextPage = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
+            onChangeSort = {}, onRevealMore = {}, onRetry = {}, onOpenSettings = {}, onAddEntry = {},
         )
     }
 
