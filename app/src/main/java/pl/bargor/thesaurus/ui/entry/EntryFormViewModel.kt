@@ -4,7 +4,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.math.BigInteger
 import java.time.LocalDate
 import java.util.Locale
 import java.util.UUID
@@ -24,6 +23,7 @@ import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.model.normalizeTags
+import pl.bargor.thesaurus.data.model.PlnMoney
 import pl.bargor.thesaurus.data.model.orderedBy
 import pl.bargor.thesaurus.data.observation.HouseholdObservation
 import pl.bargor.thesaurus.data.observation.withObservationErrors
@@ -71,20 +71,10 @@ object EntryFormValidation {
     const val MAX_TITLE_LENGTH = 160
 
     fun parseMagnitudeGrosze(raw: String): Long? {
-        val value = raw.trim()
-        val match = AMOUNT.matchEntire(value) ?: return null
-        val whole = match.groupValues[1].toLongOrNull() ?: return null
-        val decimal = match.groupValues.getOrNull(3).orEmpty()
-        val fraction = when (decimal.length) {
-            0 -> 0L
-            1 -> decimal.toLong() * 10L
-            2 -> decimal.toLong()
-            else -> return null
-        }
-        return runCatching { Math.addExact(Math.multiplyExact(whole, 100L), fraction) }
-            .getOrNull()
-            ?.takeIf { it > 0L }
+        return PlnMoney.parseEntryGrosze(raw, EntryType.INCOME)
     }
+
+    fun parseSignedGrosze(raw: String, type: EntryType): Long? = PlnMoney.parseEntryGrosze(raw, type)
 
     fun titleOrNull(raw: String): String? = raw.trim().takeIf { it.isNotEmpty() }
 
@@ -102,12 +92,8 @@ object EntryFormValidation {
         normalizeTags(raw.split(','))
     }.getOrNull()
 
-    fun signedAmount(magnitudeGrosze: Long, type: EntryType): Long = when (type) {
-        EntryType.INCOME -> magnitudeGrosze
-        EntryType.EXPENSE -> -magnitudeGrosze
-    }
-
-    private val AMOUNT = Regex("^(\\d+)([,.](\\d{1,2}))?$")
+    fun signedAmount(magnitudeGrosze: Long, type: EntryType): Long =
+        PlnMoney.signedEntryGrosze(java.math.BigInteger.valueOf(magnitudeGrosze), type)
 }
 
 @HiltViewModel
@@ -183,7 +169,7 @@ class EntryFormViewModel @Inject constructor(
                     }
                     val populated = if (loaded != null && !restoreDraft) {
                         old.copy(
-                            amount = magnitudeForForm(loaded.amountGrosze),
+                            amount = PlnMoney.entryInput(loaded.amountGrosze),
                             date = loaded.date,
                             title = loaded.normalizedTitle.orEmpty(),
                             tags = loaded.normalizedTags.joinToString(", "),
@@ -316,9 +302,9 @@ class EntryFormViewModel @Inject constructor(
         }
         val current = state.value
         if (current.saving || current.saved) return
-        val magnitude = EntryFormValidation.parseMagnitudeGrosze(current.amount)
+        val signedAmount = EntryFormValidation.parseSignedGrosze(current.amount, current.type)
         val error = when {
-            magnitude == null -> EntryFormError.InvalidAmount
+            signedAmount == null -> EntryFormError.InvalidAmount
             current.date.isAfter(today) -> EntryFormError.FutureDate
             !EntryFormValidation.validTitle(current.title) -> EntryFormError.InvalidTitle
             EntryFormValidation.normalizedTags(current.tags) == null -> EntryFormError.InvalidTags
@@ -340,7 +326,7 @@ class EntryFormViewModel @Inject constructor(
                 // Retrying that restored draft must write the same record rather than a duplicate.
                 id = existing?.id ?: pendingEntryId ?: UUID.randomUUID().toString(),
                 householdId = householdId,
-                amountGrosze = EntryFormValidation.signedAmount(magnitude!!, current.type),
+                amountGrosze = signedAmount!!,
                 date = current.date,
                 title = EntryFormValidation.titleOrNull(current.title),
                 categoryId = current.categoryId!!,
@@ -394,22 +380,11 @@ class EntryFormViewModel @Inject constructor(
 }
 
 private fun LedgerEntry.matchesDraft(draft: EntryFormUiState): Boolean {
-    val magnitude = EntryFormValidation.parseMagnitudeGrosze(draft.amount) ?: return false
+    val signedAmount = EntryFormValidation.parseSignedGrosze(draft.amount, draft.type) ?: return false
     val draftTags = EntryFormValidation.normalizedTags(draft.tags) ?: return false
-    return !deleted && amountGrosze == EntryFormValidation.signedAmount(magnitude, draft.type) &&
+    return !deleted && amountGrosze == signedAmount &&
         date == draft.date && categoryId == draft.categoryId && subcategoryId == draft.subcategoryId &&
         normalizedTitle == EntryFormValidation.titleOrNull(draft.title) && normalizedTags == draftTags
-}
-
-/** Absolute value avoids exposing a persisted sign as editable input. */
-private fun magnitudeForForm(amountGrosze: Long): String {
-    val magnitude = BigInteger.valueOf(amountGrosze).abs()
-    val (whole, fraction) = magnitude.divideAndRemainder(BigInteger.valueOf(100))
-    return if (fraction == BigInteger.ZERO) {
-        whole.toString()
-    } else {
-        "%d,%02d".format(Locale.ROOT, whole, fraction)
-    }
 }
 
 private data class EntryTaxonomySnapshot(

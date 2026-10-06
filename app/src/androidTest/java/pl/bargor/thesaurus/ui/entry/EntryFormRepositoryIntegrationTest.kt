@@ -147,6 +147,34 @@ class EntryFormRepositoryIntegrationTest {
                 assertEquals(income.id, persisted.categoryId)
                 assertEquals(salary.id, persisted.subcategoryId)
                 assertEquals(queued.id, repository.observeEntries(home).first { it.value?.singleOrNull()?.amountGrosze == 1800L }.value!!.single().id)
+
+                // Firestore's signed integer and the edit form must preserve the asymmetric Long limit.
+                repository.save(persisted.copy(amountGrosze = Long.MIN_VALUE))
+                withTimeout(15_000) { repository.observeEntries(home).first {
+                    it.state == SyncState.SYNCED && it.value?.singleOrNull()?.amountGrosze == Long.MIN_VALUE
+                } }
+                lateinit var minimumEdit: EntryFormViewModel
+                instrumentation.runOnMainSync {
+                    minimumEdit = EntryFormViewModel(repository, repository, SavedStateHandle())
+                    store.put("minimum-edit", minimumEdit)
+                    minimumEdit.start(home, uid, entryId = persisted.id, today = today)
+                }
+                withTimeout(15_000) { minimumEdit.state.first {
+                    !it.isLoading && it.amount == "92233720368547758,08"
+                } }
+                assertEquals(EntryType.EXPENSE, minimumEdit.state.value.type)
+                instrumentation.runOnMainSync {
+                    minimumEdit.updateTitle("Granica groszy")
+                    minimumEdit.save(today)
+                }
+                withTimeout(15_000) { minimumEdit.state.first { it.saved && !it.saving } }
+                val minimumPersisted = withTimeout(15_000) { repository.observeEntries(home).first {
+                    it.state == SyncState.SYNCED && it.value?.singleOrNull()?.let { entry ->
+                        entry.amountGrosze == Long.MIN_VALUE && entry.title == "Granica groszy"
+                    } == true
+                } }.value!!.single()
+                assertEquals(persisted.id, minimumPersisted.id)
+                assertEquals(persisted.authorId, minimumPersisted.authorId)
             }
         } finally {
             instrumentation.runOnMainSync { store.clear() }

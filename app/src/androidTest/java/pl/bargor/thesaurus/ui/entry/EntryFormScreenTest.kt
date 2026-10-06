@@ -50,6 +50,23 @@ import pl.bargor.thesaurus.data.model.Subcategory
 class EntryFormScreenTest {
     @get:Rule val composeRule = createComposeRule()
 
+    @Test fun minimumExpenseEditShowsExactUnsignedMagnitudeAndSelectedExpense() {
+        val magnitude = pl.bargor.thesaurus.data.model.PlnMoney.entryInput(Long.MIN_VALUE)
+        composeRule.setContent {
+            ThesaurusTheme {
+                EntryFormScreen(
+                    state = EntryFormUiState(isLoading = false, editingEntryId = "minimum",
+                        amount = magnitude, type = EntryType.EXPENSE),
+                    onAmountChange = {}, onTitleChange = {}, onTagsChange = {}, onDateChange = {},
+                    onTypeChange = {}, onCategorySelected = {}, onSubcategorySelected = {},
+                    onSave = {}, onBack = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("entry-amount").assertTextContains("92233720368547758,08")
+        composeRule.onNodeWithTag("entry-type-expense").performScrollTo().assertIsSelected()
+    }
+
     @Test
     fun activeTaxonomyCanBeSelectedAndDirectionCanBeOverridden() {
         val category = Category(

@@ -25,20 +25,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import java.math.BigDecimal
 import java.math.BigInteger
-import java.text.NumberFormat
-import java.util.Locale
+import pl.bargor.thesaurus.data.model.PlnMoney
+import pl.bargor.thesaurus.data.model.PlnSign
 import kotlin.math.ceil
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.ReportTotals
 
-private val totalCardsLocale = Locale.forLanguageTag("pl-PL")
-
 /** Preserve the report's existing signs and exact arbitrary-precision PLN formatting. */
 private fun reportTotalAmount(value: BigInteger, signed: Boolean = false): String =
-    (if (signed && value.signum() > 0) "+" else "") +
-        NumberFormat.getCurrencyInstance(totalCardsLocale).format(BigDecimal(value, 2))
+    PlnMoney.currency(value, if (signed) PlnSign.EXPLICIT_POSITIVE else PlnSign.MAGNITUDE)
 
 @Composable
 internal fun ReportsTotalCards(totals: ReportTotals, modifier: Modifier = Modifier) {

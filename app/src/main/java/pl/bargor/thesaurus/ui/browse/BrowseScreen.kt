@@ -37,11 +37,10 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import java.math.BigDecimal
 import java.math.BigInteger
-import java.text.NumberFormat
+import pl.bargor.thesaurus.data.model.PlnMoney
+import pl.bargor.thesaurus.data.model.PlnSign
 import java.time.LocalDate
-import java.util.Locale
 import pl.bargor.thesaurus.R
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.SyncState
@@ -189,9 +188,7 @@ fun BrowseScreen(
 @Composable
 private fun browseEntryDescription(item: EntryListItem): String {
     val entry = item.entry
-    val amount = (if (entry.amountGrosze > 0) "+" else "") +
-        NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pl-PL"))
-            .format(BigDecimal.valueOf(entry.amountGrosze, 2))
+    val amount = PlnMoney.currency(entry.amountGrosze, PlnSign.EXPLICIT_POSITIVE)
     val parts = mutableListOf(
         stringResource(R.string.browse_entry_description, entry.date.format(PolishDateFormatter), amount),
         stringResource(R.string.browse_entry_category, item.categoryName
@@ -222,8 +219,7 @@ private fun BrowseTile(
     val surface = MaterialTheme.colorScheme.surface
     val dark = surface.luminance() < 0.5f
     val accent = categoryAccentColor(categoryId, categoryColor)
-    val formatted = (if (amount.signum() > 0) "+" else "") +
-        NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pl-PL")).format(BigDecimal(amount, 2))
+    val formatted = PlnMoney.currency(amount, PlnSign.EXPLICIT_POSITIVE)
     val description = stringResource(if (isCategory) R.string.browse_category_description
         else R.string.browse_subcategory_description, name, formatted)
     val expansion = stringResource(if (expanded) R.string.browse_expanded else R.string.browse_collapsed)

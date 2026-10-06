@@ -4,7 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.math.BigDecimal
+import pl.bargor.thesaurus.data.model.PlnMoney
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -91,7 +91,7 @@ class OpeningBalanceViewModel @Inject constructor(
                         (observation.state == SyncState.PENDING || mutableState.value.queuedOffline)
                     val firstAmount = if (!draftInitialized && household != null) {
                         draftInitialized = true
-                        BigDecimal.valueOf(household.openingBalanceGrosze, 2).toPlainString().replace('.', ',')
+                        PlnMoney.balanceInput(household.openingBalanceGrosze)
                     } else mutableState.value.amount
                     if (matchesPending && observation.state == SyncState.SYNCED) pendingOpening = null
                     if (failed) pendingOpening = null

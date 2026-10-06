@@ -38,6 +38,33 @@ class EntryFormViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(dispatcher)
     @After fun tearDown() = Dispatchers.resetMain()
 
+    @Test fun `minimum signed expense remains editable and acknowledges its exact pending snapshot`() = runTest {
+        val today = LocalDate.of(2026, 9, 16)
+        val original = LedgerEntry("minimum", "home", Long.MIN_VALUE, today,
+            categoryId = "food", authorId = "author", updatedById = "author")
+        val ledger = FakeLedgerRepository(initialEntries = listOf(original), holdSaveTask = true)
+        val vm = EntryFormViewModel(ledger, FakeTaxonomyRepository(listOf(
+            Category("food", "home", "Jedzenie", authorId = "author", updatedById = "author"),
+        )), SavedStateHandle())
+        vm.start("home", "actor", entryId = original.id, today = today)
+        advanceUntilIdle()
+        assertEquals("92233720368547758,08", vm.state.value.amount)
+        vm.updateType(EntryType.INCOME)
+        vm.save(today)
+        advanceUntilIdle()
+        assertEquals(EntryFormError.InvalidAmount, vm.state.value.error)
+        assertTrue(ledger.saved.isEmpty())
+        vm.updateType(EntryType.EXPENSE)
+        vm.save(today)
+        advanceUntilIdle()
+        assertEquals(Long.MIN_VALUE, ledger.saved.single().amountGrosze)
+        assertEquals(original.id, ledger.saved.single().id)
+        assertEquals(original.authorId, ledger.saved.single().authorId)
+        assertTrue(vm.state.value.saved)
+        assertTrue(vm.state.value.queuedOffline)
+        assertFalse(vm.state.value.saving)
+    }
+
     @Test
     fun `initial form waits for order and all subcategories without erasing restored IDs`() = runTest {
         val taxonomy = ControlledTaxonomyRepository()
