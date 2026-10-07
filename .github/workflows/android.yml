@@ -65,6 +65,7 @@ jobs:
         timeout-minutes: 25
         env:
           ANDROID_SERIAL: emulator-5554
+          CI_CAPTURE_VISUAL_EVIDENCE: 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 31
@@ -148,6 +149,7 @@ jobs:
         timeout-minutes: 25
         env:
           ANDROID_SERIAL: emulator-5554
+          CI_CAPTURE_VISUAL_EVIDENCE: 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: '37.0'

@@ -1,5 +1,7 @@
 # Thesaurus
 
+Architecture responsibility boundaries are documented in [the responsibility map](docs/responsibility-map.md).
+
 Thesaurus is a Polish-language Android app for a shared household ledger. It keeps income and expenses in Firestore, works from Firestore's persistent local cache, and synchronizes queued changes once a connection returns. The visible app UI is intentionally Polish.
 
 Entry cards in **Podsumowanie** period details include a small author footer inside the category-colored card. The complete author remains available to screen readers even when the visible value is shortened. The footer shares the card's existing edit action and permissions; date headings stay outside the cards. The main **Wpisy** list does not show author metadata.
