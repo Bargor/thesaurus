@@ -9,17 +9,13 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -28,6 +24,7 @@ import pl.bargor.thesaurus.LocalNetworkPermissionRule
 import pl.bargor.thesaurus.ThesaurusTheme
 import pl.bargor.thesaurus.data.firebase.*
 import pl.bargor.thesaurus.data.model.*
+import pl.bargor.thesaurus.testfixtures.FirebaseIntegrationFixture
 
 /** Real repository, authentication, cached listeners, ViewModel and the same add/edit form. */
 @RunWith(AndroidJUnit4::class)
@@ -39,15 +36,12 @@ class EntryFormRepositoryIntegrationTest {
     fun cachedDropdownSelectionAndTypeOverrideQueueSignedEntryThenRestoreEditDraft() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val suffix = UUID.randomUUID().toString()
-        val app = FirebaseApp.initializeApp(instrumentation.targetContext,
-            FirebaseOptions.Builder().setApplicationId("1:1234567890:android:test")
-                .setApiKey("fake-api-key").setProjectId("demo-thesaurus").build(), "entry-form-$suffix")
-        val auth = FirebaseAuthFactory.create(app)
-        FirebaseAuthFactory.connectToLocalEmulator(auth)
-        val firestore = FirebaseFirestoreFactory.create(app, emulatorHost = "10.0.2.2")
-        val store = ViewModelStore()
+        val fixture = FirebaseIntegrationFixture.open("EntryFormRepositoryIntegrationTest")
+        val auth = fixture.auth
+        val firestore = fixture.firestore
+        val store = fixture.store
         try {
-            withTimeout(90_000) {
+            fixture.scenario("EntryFormRepositoryIntegrationTest scenario") {
                 val email = "entry-form-$suffix@example.test"
                 val uid = auth.createUserWithEmailAndPassword(email, "test-password-123").await().user!!.uid
                 val repository = FirestoreRepositories(firestore)
@@ -70,7 +64,7 @@ class EntryFormRepositoryIntegrationTest {
                     store.put("add", vm)
                     vm.start(home, uid, today)
                 }
-                suspend fun state(predicate: (EntryFormUiState) -> Boolean) = withTimeout(15_000) { vm.state.first(predicate) }
+                suspend fun state(predicate: (EntryFormUiState) -> Boolean) = fixture.operation("EntryFormRepositoryIntegrationTest wait 1") { vm.state.first(predicate) }
                 val initial = state { !it.isLoading && it.syncState == SyncState.SYNCED &&
                     it.categories.firstOrNull()?.category?.id == income.id &&
                     it.categories.first().subcategories.any { sub -> sub.id == salary.id } }
@@ -83,7 +77,7 @@ class EntryFormRepositoryIntegrationTest {
                             onSave = { vm.save(today) }, onBack = {})
                     }
                 }
-                firestore.disableNetwork().await()
+                fixture.disableNetwork()
                 state { it.syncState == SyncState.OFFLINE }
                 composeRule.onNodeWithTag("entry-category-picker").performScrollTo().performClick()
                 composeRule.onNodeWithTag("entry-category-${expense.id}").assertIsDisplayed()
@@ -106,7 +100,7 @@ class EntryFormRepositoryIntegrationTest {
                 assertEquals(salary.id, vm.state.value.subcategoryId)
                 composeRule.runOnIdle { vm.updateAmount("12,50"); vm.updateTitle("   "); vm.save(today) }
                 state { it.saved && it.queuedOffline && !it.saving }
-                val queued = withTimeout(15_000) {
+                val queued = fixture.operation("EntryFormRepositoryIntegrationTest wait 2") {
                     repository.observeEntries(home).first { observation ->
                         observation.state == SyncState.PENDING && observation.value.orEmpty().any { it.categoryId == income.id }
                     }.value!!.single()
@@ -115,7 +109,7 @@ class EntryFormRepositoryIntegrationTest {
                 assertEquals(income.id, queued.categoryId)
                 assertEquals(salary.id, queued.subcategoryId)
                 assertNull(queued.title)
-                firestore.enableNetwork().await()
+                fixture.enableNetwork()
                 state { it.saved && !it.queuedOffline && it.syncState == SyncState.SYNCED }
 
                 // The edit route loads this exact signed entry, then retains a newer unsaved draft.
@@ -126,7 +120,7 @@ class EntryFormRepositoryIntegrationTest {
                     store.put("edit", edit)
                     edit.start(home, uid, entryId = queued.id, today = today)
                 }
-                withTimeout(15_000) { edit.state.first { !it.isLoading && it.categoryId == income.id && it.subcategoryId == salary.id } }
+                fixture.operation("EntryFormRepositoryIntegrationTest wait 3") { edit.state.first { !it.isLoading && it.categoryId == income.id && it.subcategoryId == salary.id } }
                 assertEquals("12,50", edit.state.value.amount)
                 assertEquals(EntryType.EXPENSE, edit.state.value.type)
                 instrumentation.runOnMainSync { edit.updateAmount("18"); edit.updateType(EntryType.INCOME) }
@@ -137,20 +131,20 @@ class EntryFormRepositoryIntegrationTest {
                     store.put("restored", restored)
                     restored.start(home, uid, entryId = queued.id, today = today)
                 }
-                withTimeout(15_000) { restored.state.first { !it.isLoading && it.categories.any { category -> category.category.id == income.id } } }
+                fixture.operation("EntryFormRepositoryIntegrationTest wait 4") { restored.state.first { !it.isLoading && it.categories.any { category -> category.category.id == income.id } } }
                 assertEquals("18", restored.state.value.amount)
                 assertEquals(EntryType.INCOME, restored.state.value.type)
                 assertEquals(income.id, restored.state.value.categoryId)
                 assertEquals(salary.id, restored.state.value.subcategoryId)
                 instrumentation.runOnMainSync { restored.save(today) }
-                val persisted = withTimeout(15_000) { repository.observeEntries(home).first { it.state == SyncState.SYNCED && it.value?.singleOrNull()?.amountGrosze == 1800L } }.value!!.single()
+                val persisted = fixture.operation("EntryFormRepositoryIntegrationTest wait 5") { repository.observeEntries(home).first { it.state == SyncState.SYNCED && it.value?.singleOrNull()?.amountGrosze == 1800L } }.value!!.single()
                 assertEquals(income.id, persisted.categoryId)
                 assertEquals(salary.id, persisted.subcategoryId)
                 assertEquals(queued.id, repository.observeEntries(home).first { it.value?.singleOrNull()?.amountGrosze == 1800L }.value!!.single().id)
 
                 // Firestore's signed integer and the edit form must preserve the asymmetric Long limit.
                 repository.save(persisted.copy(amountGrosze = Long.MIN_VALUE))
-                withTimeout(15_000) { repository.observeEntries(home).first {
+                fixture.operation("EntryFormRepositoryIntegrationTest wait 6") { repository.observeEntries(home).first {
                     it.state == SyncState.SYNCED && it.value?.singleOrNull()?.amountGrosze == Long.MIN_VALUE
                 } }
                 lateinit var minimumEdit: EntryFormViewModel
@@ -159,7 +153,7 @@ class EntryFormRepositoryIntegrationTest {
                     store.put("minimum-edit", minimumEdit)
                     minimumEdit.start(home, uid, entryId = persisted.id, today = today)
                 }
-                withTimeout(15_000) { minimumEdit.state.first {
+                fixture.operation("EntryFormRepositoryIntegrationTest wait 7") { minimumEdit.state.first {
                     !it.isLoading && it.amount == "92233720368547758,08"
                 } }
                 assertEquals(EntryType.EXPENSE, minimumEdit.state.value.type)
@@ -167,8 +161,8 @@ class EntryFormRepositoryIntegrationTest {
                     minimumEdit.updateTitle("Granica groszy")
                     minimumEdit.save(today)
                 }
-                withTimeout(15_000) { minimumEdit.state.first { it.saved && !it.saving } }
-                val minimumPersisted = withTimeout(15_000) { repository.observeEntries(home).first {
+                fixture.operation("EntryFormRepositoryIntegrationTest wait 8") { minimumEdit.state.first { it.saved && !it.saving } }
+                val minimumPersisted = fixture.operation("EntryFormRepositoryIntegrationTest wait 9") { repository.observeEntries(home).first {
                     it.state == SyncState.SYNCED && it.value?.singleOrNull()?.let { entry ->
                         entry.amountGrosze == Long.MIN_VALUE && entry.title == "Granica groszy"
                     } == true
@@ -177,10 +171,7 @@ class EntryFormRepositoryIntegrationTest {
                 assertEquals(persisted.authorId, minimumPersisted.authorId)
             }
         } finally {
-            instrumentation.runOnMainSync { store.clear() }
-            runCatching { withTimeout(10_000) { firestore.enableNetwork().await() } }
-            runCatching { withTimeout(10_000) { firestore.terminate().await() } }
-            // Named app/auth avoids touching developer accounts, households or cached entries.
+            fixture.close()
         }
     }
 }

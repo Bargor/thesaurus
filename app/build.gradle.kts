@@ -1,9 +1,63 @@
+import com.android.build.api.variant.Component
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileSystemOperations
+import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import javax.inject.Inject
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.google.services)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+}
+
+/** Canonical sources are inputs, never content roots shared by multiple Android Studio modules. */
+@CacheableTask
+abstract class StageKotlinSources @Inject constructor(
+    private val fileSystemOperations: FileSystemOperations,
+) : DefaultTask() {
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val inputDirectory: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun stage() {
+        fileSystemOperations.sync {
+            from(inputDirectory)
+            into(outputDirectory)
+        }
+    }
+}
+
+fun stageKotlinSources(component: Component, canonicalDirectory: String) {
+    val stage = tasks.register<StageKotlinSources>(component.computeTaskName("stage", "SharedSources")) {
+        inputDirectory.set(layout.projectDirectory.dir(canonicalDirectory))
+    }
+    // AGP assigns a distinct build/generated output for this task/component and wires its producers
+    // into Kotlin/KSP compilation. Kotlin sources must use the Kotlin API with AGP's built-in Kotlin.
+    requireNotNull(component.sources.kotlin).addGeneratedSourceDirectory(stage, StageKotlinSources::outputDirectory)
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        // Build-type initWith/matchingFallbacks do not share sources. Keep devDebug isolated.
+        if (variant.buildType in setOf("debug", "release")) {
+            stageKotlinSources(variant, "src/productionShared/java")
+        }
+        // Each enabled runner owns its generated root; pure policies never enter the app APK.
+        variant.hostTests.values.forEach { stageKotlinSources(it, "src/sharedTest/java") }
+        variant.deviceTests.values.forEach { stageKotlinSources(it, "src/sharedTest/java") }
+    }
 }
 
 android {

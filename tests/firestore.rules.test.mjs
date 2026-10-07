@@ -20,8 +20,9 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 
-const projectId = process.env.THESAURUS_RULES_PROJECT_ID ?? 'demo-thesaurus';
-assert.match(projectId, /^demo-[a-z0-9-]+$/, 'Rules tests require an emulator-only demo project ID');
+import { rulesProjectId } from './emulator-project-policy.mjs';
+
+const projectId = rulesProjectId(process.env.THESAURUS_RULES_PROJECT_ID);
 const householdId = 'dom-1';
 const day = 24 * 60 * 60 * 1000;
 let env;

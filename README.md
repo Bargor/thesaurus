@@ -2,6 +2,8 @@
 
 Architecture responsibility boundaries are documented in [the responsibility map](docs/responsibility-map.md).
 
+Build variant sharing and isolated Firebase test lifecycles are documented in [the variant and fixture guide](docs/variant-test-fixtures.md).
+
 Thesaurus is a Polish-language Android app for a shared household ledger. It keeps income and expenses in Firestore, works from Firestore's persistent local cache, and synchronizes queued changes once a connection returns. The visible app UI is intentionally Polish.
 
 Entry cards in **Podsumowanie** period details include a small author footer inside the category-colored card. The complete author remains available to screen readers even when the visible value is shortened. The footer shares the card's existing edit action and permissions; date headings stay outside the cards. The main **Wpisy** list does not show author metadata.
@@ -177,22 +179,24 @@ Run the fast Firestore Rules and Hosting fallback tests:
 ```sh
 npm run test:rules
 npm run test:hosting
+npm run test:variants
+npm run test:project-safety
 ```
 
-`test:rules` starts only the Firestore emulator for the isolated `demo-thesaurus` project. The Android integration suite needs both local Auth and Firestore and is always invoked through `emulators:exec`; this prevents it from falling through to production Firebase:
+`test:rules` starts only the Firestore emulator for `demo-thesaurus-rules`. The Android integration fixtures use the separate `demo-thesaurus-integration` project, named SDK instances, fake identifiers, and fixed emulator endpoints. Neither suite uses or resets the interactive DEV app's `demo-thesaurus` data. The Android integration suite needs both local Auth and Firestore and is always invoked through `emulators:exec`:
 
 ```sh
-npx firebase emulators:exec --project demo-thesaurus --only auth,firestore \
+npx firebase emulators:exec --project demo-thesaurus-integration --only auth,firestore \
   "./gradlew connectedDebugAndroidTest"
 ```
 
 On Windows, quote the inner command for the current shell, for example:
 
 ```powershell
-npx firebase emulators:exec --project demo-thesaurus --only auth,firestore ".\gradlew.bat connectedDebugAndroidTest"
+npx firebase emulators:exec --project demo-thesaurus-integration --only auth,firestore ".\gradlew.bat connectedDebugAndroidTest"
 ```
 
-For the full local release check, run `lintDebug`, `testDebugUnitTest`, `assembleDebug`, `npm run test:rules`, `npm run test:hosting`, and the emulator-wrapped `connectedDebugAndroidTest` command above. The instrumented suite covers household creation, starter taxonomy, invitations/membership, local pending writes, network recovery, and tombstone protection without using the production project.
+For the full local release check, run `lintDebug`, `testDebugUnitTest`, `assembleDebug assembleRelease assembleDevDebug`, `npm run test:rules`, `npm run test:hosting`, `npm run test:variants`, `npm run test:project-safety`, and the emulator-wrapped `connectedDebugAndroidTest` command above. CI also runs `-PdevTest=true testDevDebugUnitTest compileDevDebugAndroidTestKotlin` to check developer test source wiring without executing DEV instrumentation or changing interactive DEV data. The instrumented suite covers household creation, starter taxonomy, invitations/membership, local pending writes, network recovery, and tombstone protection without using the production project.
 
 ## Create an emulator
 
@@ -255,7 +259,7 @@ Run `npm run test:ci-instrumentation` on Linux to verify the CI wrapper with moc
 | Symptom | Check |
 | --- | --- |
 | Google sign-in says configuration is required | Confirm `google-services.json`, package name, OAuth provider, and the installed APK's SHA-1/SHA-256 in Firebase. Uninstall old builds signed with a different key if necessary. |
-| Emulator tests cannot connect | Start them only through `firebase emulators:exec`; use `demo-thesaurus`, not a production project. Android Emulator reaches the host at `10.0.2.2`. |
+| Emulator tests cannot connect | Use `firebase emulators:exec` with `demo-thesaurus-integration` for normal Android integration tests, `demo-thesaurus-rules` for Rules, or `demo-thesaurus` for focused DEV tests. Never use a production project. Android Emulator reaches the host at `10.0.2.2`. |
 | `npm ci` or emulator startup fails | Use Node 22, remove only the generated local `node_modules` directory if needed, run `npm ci` again, and ensure Java is available for Firebase Emulator Suite. |
 | Gradle cannot find SDK/API 37 | Install Platform 37 and Build Tools 37.0.0, set `ANDROID_HOME`/`ANDROID_SDK_ROOT` if using the CLI, then run the wrapper again. |
 | Instrumented test has no device | Start an API 31 Google APIs emulator in Device Manager and confirm it appears in `adb devices`. |

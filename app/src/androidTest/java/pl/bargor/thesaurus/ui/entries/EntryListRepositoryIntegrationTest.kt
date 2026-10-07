@@ -1,11 +1,8 @@
 package pl.bargor.thesaurus.ui.entries
 
 import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -15,7 +12,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -23,8 +19,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import pl.bargor.thesaurus.LocalNetworkPermissionRule
-import pl.bargor.thesaurus.data.firebase.FirebaseAuthFactory
-import pl.bargor.thesaurus.data.firebase.FirebaseFirestoreFactory
 import pl.bargor.thesaurus.data.firebase.FirstHouseholdResult
 import pl.bargor.thesaurus.data.firebase.FirestoreRepositories
 import pl.bargor.thesaurus.data.firebase.OnboardingIdentity
@@ -32,6 +26,7 @@ import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.ui.balance.GlobalAccountBalanceViewModel
 import pl.bargor.thesaurus.ui.reports.ReportsViewModel
+import pl.bargor.thesaurus.testfixtures.FirebaseIntegrationFixture
 
 @RunWith(AndroidJUnit4::class)
 class EntryListRepositoryIntegrationTest {
@@ -40,15 +35,12 @@ class EntryListRepositoryIntegrationTest {
     @Test fun localRevealSortAndLiveWritesUseCacheWithoutLimitingBalanceOrReports() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val suffix = UUID.randomUUID().toString()
-        val app = FirebaseApp.initializeApp(instrumentation.targetContext,
-            FirebaseOptions.Builder().setApplicationId("1:1234567890:android:test").setApiKey("fake-api-key")
-                .setProjectId("demo-thesaurus").build(), "entry-list-$suffix")
-        val auth = FirebaseAuthFactory.create(app)
-        FirebaseAuthFactory.connectToLocalEmulator(auth)
-        val firestore = FirebaseFirestoreFactory.create(app, emulatorHost = "10.0.2.2")
-        val store = ViewModelStore()
+        val fixture = FirebaseIntegrationFixture.open("EntryListRepositoryIntegrationTest")
+        val auth = fixture.auth
+        val firestore = fixture.firestore
+        val store = fixture.store
         try {
-            withTimeout(90_000) {
+            fixture.scenario("EntryListRepositoryIntegrationTest scenario") {
                 val email = "entry-list-$suffix@example.test"
                 val uid = auth.createUserWithEmailAndPassword(email, "test-password-123").await().user!!.uid
                 val repository = FirestoreRepositories(firestore)
@@ -81,12 +73,12 @@ class EntryListRepositoryIntegrationTest {
                     vm.start(home, uid); balance.start(home, uid); reports.start(home)
                 }
                 suspend fun state(predicate: (EntryListUiState) -> Boolean): EntryListUiState =
-                    withTimeout(15_000) { vm.state.first(predicate) }
+                    fixture.operation("EntryListRepositoryIntegrationTest wait 1") { vm.state.first(predicate) }
                 suspend fun assertCompleteAggregates(expectedIds: Set<String> = original.map { it.id }.toSet(), editedTitle: String? = null) {
-                    val balanceState = withTimeout(15_000) { balance.state.first {
+                    val balanceState = fixture.operation("EntryListRepositoryIntegrationTest wait 2") { balance.state.first {
                         !it.isLoading && !it.hasError && it.amountGrosze == (-2500).toBigInteger()
                     } }
-                    val reportState = withTimeout(15_000) { reports.state.first {
+                    val reportState = fixture.operation("EntryListRepositoryIntegrationTest wait 3") { reports.state.first {
                         !it.isLoading && !it.hasError && it.entries.map { row -> row.entry.id }.toSet() == expectedIds &&
                             it.aggregation.totals.netGrosze == (-2500).toBigInteger() &&
                             (editedTitle == null || it.entries.any { row -> row.entry.title == editedTitle })
@@ -100,7 +92,7 @@ class EntryListRepositoryIntegrationTest {
                 }
                 assertEquals(20, initial.visibleEntries.size)
                 assertCompleteAggregates()
-                firestore.disableNetwork().await()
+                fixture.disableNetwork()
                 state { it.syncState == SyncState.OFFLINE }
                 instrumentation.runOnMainSync { vm.revealMoreEntries() }
                 assertEquals(25, vm.state.value.visibleEntries.size)
@@ -140,8 +132,8 @@ class EntryListRepositoryIntegrationTest {
                     assertEquals(20, vm.state.value.visibleEntries.size)
                     assertEquals(edited.id, vm.state.value.entries.last().entry.id)
                     assertCompleteAggregates(mutatedIds, edited.title)
-                    firestore.enableNetwork().await()
-                    withTimeout(15_000) { writes.forEach { it.await() } }
+                    fixture.enableNetwork()
+                    fixture.operation("EntryListRepositoryIntegrationTest wait 4") { writes.forEach { it.await() } }
                     val synced = state { it.syncState == SyncState.SYNCED && it.entries.size == 25 &&
                         it.entries.any { row -> row.entry.id == local.id && row.entry.createdAt != null }
                     }
@@ -151,9 +143,7 @@ class EntryListRepositoryIntegrationTest {
                 } finally { writes.filter { it.isActive }.forEach { it.cancel() } }
             }
         } finally {
-            instrumentation.runOnMainSync { store.clear() }
-            runCatching { withTimeout(10_000) { firestore.enableNetwork().await() } }
-            runCatching { withTimeout(10_000) { firestore.terminate().await() } }
+            fixture.close()
         }
     }
 }
