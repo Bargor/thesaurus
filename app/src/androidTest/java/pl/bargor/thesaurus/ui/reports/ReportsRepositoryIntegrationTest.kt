@@ -1,11 +1,8 @@
 package pl.bargor.thesaurus.ui.reports
 
 import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.GoogleAuthProvider
 import java.time.Clock
 import java.time.Instant
@@ -13,11 +10,9 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.async
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -29,6 +24,8 @@ import pl.bargor.thesaurus.data.model.Invitation
 import pl.bargor.thesaurus.data.model.Member
 import pl.bargor.thesaurus.data.model.MemberRole
 import pl.bargor.thesaurus.data.model.SyncState
+import pl.bargor.thesaurus.testfixtures.FirebaseIntegrationFixture
+import pl.bargor.thesaurus.testfixtures.FixtureTimeoutException
 
 @RunWith(AndroidJUnit4::class)
 class ReportsRepositoryIntegrationTest {
@@ -36,15 +33,12 @@ class ReportsRepositoryIntegrationTest {
     @Test fun scopedCachedReportsUpdateOfflineTaxonomyAndPendingLedgerThenRecoverAndRemoveTombstones() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val suffix = UUID.randomUUID().toString()
-        val app = FirebaseApp.initializeApp(instrumentation.targetContext,
-            FirebaseOptions.Builder().setApplicationId("1:1234567890:android:test").setApiKey("fake-api-key")
-                .setProjectId("demo-thesaurus").build(), "reports-$suffix")
-        val auth = FirebaseAuthFactory.create(app)
-        FirebaseAuthFactory.connectToLocalEmulator(auth)
-        val firestore = FirebaseFirestoreFactory.create(app, emulatorHost = "10.0.2.2")
-        val store = ViewModelStore()
+        val fixture = FirebaseIntegrationFixture.open("ReportsRepositoryIntegrationTest")
+        val auth = fixture.auth
+        val firestore = fixture.firestore
+        val store = fixture.store
         try {
-            withTimeout(90_000) {
+            fixture.scenario("ReportsRepositoryIntegrationTest scenario") {
                 val email = "reports-$suffix@example.test"
                 val uid = auth.createUserWithEmailAndPassword(email, "test-password-123").await().user!!.uid
                 val repository = FirestoreRepositories(firestore)
@@ -71,8 +65,8 @@ class ReportsRepositoryIntegrationTest {
                 }
                 suspend fun state(stage: String, predicate: (ReportsUiState) -> Boolean): ReportsUiState {
                     try {
-                        return withTimeout(15_000) { vm.state.first(predicate) }
-                    } catch (timeout: TimeoutCancellationException) {
+                        return fixture.operation("reports: $stage") { vm.state.first(predicate) }
+                    } catch (timeout: FixtureTimeoutException) {
                         val last = vm.state.value
                         throw AssertionError("Timed out at $stage: category=${last.selectedCategoryId}, " +
                             "subcategory=${last.selectedSubcategoryId}, " +
@@ -91,7 +85,7 @@ class ReportsRepositoryIntegrationTest {
                 assertGlobalBalance(scoped, 7800, -900)
                 assertEquals(1100.toBigInteger(), scoped.aggregation.categories.single().amountGrosze)
                 assertEquals(setOf(expense.id, refund.id), scoped.entries.map { it.entry.id }.toSet())
-                firestore.disableNetwork().await()
+                fixture.disableNetwork()
                 val cached = state("disable network") { it.syncState == SyncState.OFFLINE }
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectSort(ReportEntrySort.AMOUNT); vm.toggleSortDirection() }
                 assertEquals(cached.entries, vm.state.value.entries)
@@ -145,8 +139,8 @@ class ReportsRepositoryIntegrationTest {
                     assertEquals(pl.bargor.thesaurus.data.model.ReportBalanceGranularity.MONTHLY, annual.balanceTrend!!.granularity)
                     instrumentation.runOnMainSync { vm.selectPeriodMode(ReportPeriodMode.MONTH) }
                     state("return to monthly scope") { it.mode == ReportPeriodMode.MONTH && it.entries.size == 3 }
-                    firestore.enableNetwork().await()
-                    withTimeout(15_000) { writes.forEach { it.await() } }
+                    fixture.enableNetwork()
+                    fixture.operation("ReportsRepositoryIntegrationTest wait 2") { writes.forEach { it.await() } }
                     state("network recovery") { it.syncState == SyncState.SYNCED && it.entries.size == 3 }
                 } finally { writes.filter { it.isActive }.forEach { it.cancel() } }
                 repository.tombstone(home, local.id, uid)
@@ -160,27 +154,21 @@ class ReportsRepositoryIntegrationTest {
                 assertGlobalBalance(all, 7500, -1200)
             }
         } finally {
-            instrumentation.runOnMainSync { store.clear() }
-            runCatching { withTimeout(10_000) { firestore.enableNetwork().await() } }
-            runCatching { withTimeout(10_000) { firestore.terminate().await() } }
-            // Keep the named fake app registered until process exit to avoid Auth worker races.
+            fixture.close()
         }
     }
     @Test fun realMembersAndHistoricalAuthorsFilterByUidAndRemainScopedWhileOffline() = runBlocking<Unit> {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val suffix = UUID.randomUUID().toString()
-        val app = FirebaseApp.initializeApp(instrumentation.targetContext,
-            FirebaseOptions.Builder().setApplicationId("1:1234567890:android:members")
-                .setApiKey("fake-api-key").setProjectId("demo-thesaurus").build(), "report-members-$suffix")
-        val auth = FirebaseAuthFactory.create(app)
-        FirebaseAuthFactory.connectToLocalEmulator(auth)
-        val firestore = FirebaseFirestoreFactory.create(app, emulatorHost = "10.0.2.2")
-        val store = ViewModelStore()
+        val fixture = FirebaseIntegrationFixture.open("ReportsRepositoryIntegrationTest")
+        val auth = fixture.auth
+        val firestore = fixture.firestore
+        val store = fixture.store
         suspend fun signIn(subject: String, email: String) = auth.signInWithCredential(
             GoogleAuthProvider.getCredential("""{"sub":"$subject","email":"$email","email_verified":true}""", null)
         ).await().user!!.uid
         try {
-            withTimeout(90_000) {
+            fixture.scenario("ReportsRepositoryIntegrationTest scenario") {
                 val ownerEmail = "report-owner-$suffix@example.test"
                 val guestEmail = "report-guest-$suffix@example.test"
                 val owner = signIn("owner-$suffix", ownerEmail)
@@ -205,7 +193,7 @@ class ReportsRepositoryIntegrationTest {
                     store.put("reports", vm); vm.start(home)
                 }
                 suspend fun state(predicate: (ReportsUiState) -> Boolean) =
-                    withTimeout(15_000) { vm.state.first(predicate) }
+                    fixture.operation("ReportsRepositoryIntegrationTest wait 3") { vm.state.first(predicate) }
                 // Entries and members can arrive before the independent household settings listener.
                 val all = state { !it.isLoading && it.syncState == SyncState.SYNCED && it.entries.size == 2 &&
                     it.members.size == 2 && it.balanceTrend != null }
@@ -222,7 +210,7 @@ class ReportsRepositoryIntegrationTest {
                 state { it.members.any { option -> option.id == guest && option.former } }
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectMembers(setOf(guest)); vm.applyFilters() }
                 state { it.entries.size == 1 && it.selectedMemberIds == setOf(guest) }
-                firestore.disableNetwork().await()
+                fixture.disableNetwork()
                 val offline = state { it.syncState == SyncState.OFFLINE }
                 assertEquals(listOf(guestEntry.id), offline.entries.map { it.entry.id })
                 assertGlobalBalance(offline, -300, 0)
@@ -232,13 +220,11 @@ class ReportsRepositoryIntegrationTest {
                 assertEquals(offline.balanceTrend, noMembers.balanceTrend)
                 instrumentation.runOnMainSync { vm.openFilters(); vm.selectMembers(null); vm.applyFilters() }
                 state { it.entries.size == 2 }
-                firestore.enableNetwork().await()
+                fixture.enableNetwork()
                 state { it.syncState == SyncState.SYNCED }
             }
         } finally {
-            instrumentation.runOnMainSync { store.clear() }
-            runCatching { withTimeout(10_000) { firestore.enableNetwork().await() } }
-            runCatching { withTimeout(10_000) { firestore.terminate().await() } }
+            fixture.close()
         }
     }
 

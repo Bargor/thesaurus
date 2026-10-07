@@ -4,8 +4,10 @@
   "type": "module",
   "scripts": {
     "test:ci-instrumentation": "node --test scripts/test-ci-instrumentation.mjs",
+    "test:variants": "node --test scripts/test-variant-sources.mjs",
+    "test:project-safety": "node --test tests/emulator-project-policy.test.mjs",
     "test:rules:direct": "node --test tests/firestore.rules.test.mjs",
-    "test:rules": "firebase emulators:exec --project demo-thesaurus --only firestore \"node --test tests/firestore.rules.test.mjs\"",
+    "test:rules": "firebase emulators:exec --project demo-thesaurus-rules --only firestore \"node --test tests/firestore.rules.test.mjs\"",
     "test:hosting": "firebase emulators:exec --project demo-thesaurus --only hosting \"node --test tests/hosting.test.mjs\""
   },
   "devDependencies": {
