@@ -18,7 +18,7 @@ class FixtureCleanupTest {
     @Test fun failureAndTimeoutStillAttemptEveryReleaseAndRemainSuppressedOnScenarioFailure() = runTest {
         val attempted = mutableListOf<String>()
         val original = AssertionError("scenario failure")
-        val failure = IllegalStateException("release failure")
+        val failure = CleanupFailure(Any())
         val failures = cleanupFixtureStages(listOf(
             FixtureCleanupStage("first") { attempted += "first"; throw failure },
             FixtureCleanupStage("stuck") { attempted += "stuck"; awaitCancellation() },
@@ -49,4 +49,8 @@ class FixtureCleanupTest {
         assertTrue(sibling.isActive)
         assertEquals(false, siblingCancelled)
     }
+
+    // Coroutine debug recovery can clone stock exceptions. Additional state makes this
+    // marker non-copyable, so assertSame checks the cleanup's actual identity preservation.
+    private class CleanupFailure(val identityMarker: Any) : IllegalStateException("release failure")
 }

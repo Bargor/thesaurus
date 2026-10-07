@@ -70,7 +70,7 @@ class FirebaseIntegrationFixtureTest {
     @Test fun failedOfflineScenarioCancelsAwaitersFlushesItsWriteAndClearsOnlyOwnedViewModels() = runBlocking<Unit> {
         val fixture = FirebaseIntegrationFixture.open("failure-cleanup")
         val auth = fixture.auth
-        val sentinel = AssertionError("expected scenario failure")
+        val sentinel = ScenarioFailure(Any())
         var childCancelled = false
         var cleared = false
         var clearedOnMain = false
@@ -120,4 +120,7 @@ class FirebaseIntegrationFixtureTest {
         }
         return uid to home
     }
+
+    // Keep the sentinel itself across coroutine stack-trace recovery, not only its message.
+    private class ScenarioFailure(val identityMarker: Any) : AssertionError("expected scenario failure")
 }
