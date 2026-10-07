@@ -87,6 +87,19 @@ test('canonical inputs stage into distinct generated roots per production varian
   assert.ok(roots.filter(item => item.input === 'src/sharedTest/java').every(item => /Test$/.test(item.owner)));
 });
 
+test('KSP receives only its component staging producer as processing and resolution inputs', () => {
+  assert.match(gradle, /import com\.google\.devtools\.ksp\.gradle\.KspAATask/);
+  assert.match(gradle, /val stagedSources = stage\.flatMap \{ it\.outputDirectory \}\.map \{ it\.asFileTree \}/);
+  assert.match(gradle, /val kspTaskName = component\.computeTaskName\("ksp", "Kotlin"\)/);
+  assert.match(gradle, /tasks\.withType<KspAATask>\(\)\.configureEach\s*\{\s*if \(name == kspTaskName\)\s*\{\s*kspConfig\.sourceRoots\.from\(stagedSources\)\s+kspConfig\.javaSourceRoots\.from\(stagedSources\)/);
+  assert.doesNotMatch(gradle, /component\.sources\.kotlin(?:\?|!!)\.all|sources\.java(?:\?|!!)\.all|kspConfig\.(?:kotlinOutputDir|javaOutputDir)/,
+    'The KSP bridge must not add KSP output or all generated roots as its own inputs');
+  const owners = ['debug', 'release', 'debugUnitTest', 'releaseUnitTest', 'devDebugUnitTest', 'debugAndroidTest', 'devDebugAndroidTest'];
+  const processors = owners.map(owner => `ksp${owner[0].toUpperCase()}${owner.slice(1)}Kotlin`);
+  assert.equal(new Set(processors).size, owners.length);
+  owners.forEach((owner, index) => assert.notEqual(generatedRoot(owner, 'input').producer, processors[index]));
+});
+
 test('each variant has exactly one implementation of every variant API with no main shadow', () => {
   for (const variant of ['debug', 'release', 'devDebug']) {
     for (const contract of contracts) {

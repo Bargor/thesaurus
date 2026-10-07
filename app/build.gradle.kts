@@ -1,4 +1,5 @@
 import com.android.build.api.variant.Component
+import com.google.devtools.ksp.gradle.KspAATask
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileSystemOperations
@@ -43,9 +44,19 @@ fun stageKotlinSources(component: Component, canonicalDirectory: String) {
     val stage = tasks.register<StageKotlinSources>(component.computeTaskName("stage", "SharedSources")) {
         inputDirectory.set(layout.projectDirectory.dir(canonicalDirectory))
     }
-    // AGP assigns a distinct build/generated output for this task/component and wires its producers
-    // into Kotlin/KSP compilation. Kotlin sources must use the Kotlin API with AGP's built-in Kotlin.
+    // AGP assigns a distinct build/generated output for this task/component and wires Kotlin compilation.
     requireNotNull(component.sources.kotlin).addGeneratedSourceDirectory(stage, StageKotlinSources::outputDirectory)
+    // KSP 2.3.9's built-in Kotlin integration reads static roots, omitting generated Kotlin roots.
+    // Pass this producer-backed file tree explicitly for both processing and symbol resolution.
+    // Do not use all component sources: that would also include KSP's own outputs and create a cycle.
+    val stagedSources = stage.flatMap { it.outputDirectory }.map { it.asFileTree }
+    val kspTaskName = component.computeTaskName("ksp", "Kotlin")
+    tasks.withType<KspAATask>().configureEach {
+        if (name == kspTaskName) {
+            kspConfig.sourceRoots.from(stagedSources)
+            kspConfig.javaSourceRoots.from(stagedSources)
+        }
+    }
 }
 
 androidComponents {
