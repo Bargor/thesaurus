@@ -46,3 +46,5 @@ New JVM tests exercise field/type/boundary contracts, timestamp and deletion inv
 New emulator tests seed malformed records only through a test-only, fixed emulator REST endpoint in `demo-thesaurus-integration`. The helper verifies fixture ownership, binds the authenticated owner, limits writes to one owned household and UUID entry allowlist, disables redirects/proxies, bounds requests/responses and I/O, and disconnects on cancellation. There is no arbitrary-path, database-clear, production, or DEV write API. Tests cover missing date/deleted fields, incompatible money, offline cache validation, uninterrupted-listener recovery, balance hiding/recovery, and current-balance rejection without household mutations.
 
 A synthetic Compose test captures report states before corruption, while unavailable, and after recovery into `Pictures/ThesaurusTestEvidence/issue96/` on disposable CI emulators. The CI harness retrieves that folder for PR review; it contains no real account data. All builds and tests for this change run in CI, not locally.
+
+Reviewed captures from the passing API 31 run are available in [the visual proof](visual-proofs/issue96/README.md).

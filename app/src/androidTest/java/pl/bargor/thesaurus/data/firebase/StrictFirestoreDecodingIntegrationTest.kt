@@ -112,8 +112,9 @@ class StrictFirestoreDecodingIntegrationTest {
                         val corrected = next("corrected $field recovers the existing listener") {
                             it.state == SyncState.SYNCED && it.value?.size == 2 && it.error == null
                         }
-                        assertEquals(entries.map { it.id }.toSet(), corrected.value!!.map { it.id }.toSet())
-                        assertEquals(1000L, corrected.value!!.sumOf { it.amountGrosze })
+                        val correctedEntries = requireNotNull(corrected.value)
+                        assertEquals(entries.map { it.id }.toSet(), correctedEntries.map { it.id }.toSet())
+                        assertEquals(1000L, correctedEntries.sumOf { it.amountGrosze })
                     }
 
                     seed.replaceEntry(entries.first().id, validFields + ("amountGrosze" to "cached-invalid"))
