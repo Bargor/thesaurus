@@ -30,7 +30,7 @@ class FirestoreDecodeObservationTest {
             transform = { throw IllegalStateException("private payload") })
         assertEquals(SyncState.ERROR, transformFailure.state)
         assertNull(transformFailure.value)
-        val nullRecord = decodeCollectionObservation(listOf("missing"), SyncState.SYNCED, decoder = { _: String -> null as String? })
+        val nullRecord = decodeCollectionObservation<String, String>(listOf("missing"), SyncState.SYNCED, decoder = { null })
         assertEquals(SyncState.ERROR, nullRecord.state)
         assertNull(nullRecord.value)
     }

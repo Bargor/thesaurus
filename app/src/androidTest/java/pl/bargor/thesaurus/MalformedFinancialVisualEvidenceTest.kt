@@ -2,15 +2,22 @@ package pl.bargor.thesaurus
 
 import android.content.ContentValues
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,6 +25,8 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -59,7 +68,9 @@ class MalformedFinancialVisualEvidenceTest {
             compose.waitUntil(15_000) { !reports.state.value.isLoading && reports.state.value.entries.size == 1 }
             compose.onNodeWithTag("reports-total-cards").assertIsDisplayed()
             compose.onNodeWithTag("reports-error").assertDoesNotExist()
-            capture("reports-valid")
+            compose.onNodeWithTag("reports-expense", useUnmergedTree = true)
+                .assertTextEquals(PlnMoney.currency(1250.toBigInteger()))
+            capture("reports-valid", "reports-expense")
             compose.runOnIdle {
                 sources.entries.value = SyncObservation(state = SyncState.ERROR,
                     error = FirestoreDecodeException(FirestoreDocumentType.LEDGER_ENTRY,
@@ -74,23 +85,35 @@ class MalformedFinancialVisualEvidenceTest {
             compose.onNodeWithTag("report-entry-synthetic").assertDoesNotExist()
             assertTrue(reports.state.value.aggregation.totals.isEmpty)
             assertNull(reports.state.value.balanceTrend)
-            capture("reports-malformed-unavailable")
+            capture("reports-malformed-unavailable", "reports-error")
             compose.runOnIdle { sources.entries.value = SyncObservation(listOf(sources.entry.copy(amountGrosze = -1800)), SyncState.SYNCED) }
             compose.waitUntil(15_000) { !reports.state.value.hasError && reports.state.value.entries.size == 1 }
             compose.onNodeWithTag("reports-total-cards").assertIsDisplayed()
             compose.onNodeWithTag("reports-error").assertDoesNotExist()
             assertTrue(reports.state.value.aggregation.totals.netGrosze == (-1800).toBigInteger())
-            capture("reports-repaired")
+            compose.onNodeWithTag("reports-expense", useUnmergedTree = true)
+                .assertTextEquals(PlnMoney.currency(1800.toBigInteger()))
+            capture("reports-repaired", "reports-expense")
         } finally {
             instrumentation.runOnMainSync { store.clear() }
         }
     }
 
-    private fun capture(name: String) {
+    private fun capture(name: String, proofTag: String) {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot()) { "CI screenshot unavailable: $name" }
+        val root = compose.onRoot()
+        val rootBounds = root.fetchSemanticsNode().boundsInRoot
+        val header = compose.onNodeWithText(instrumentation.targetContext.getString(R.string.navigation_reports))
+        val proof = compose.onNodeWithTag(proofTag, useUnmergedTree = true)
+        header.assertIsDisplayed()
+        proof.assertIsDisplayed()
+        // Compose capture synchronizes layout/drawing and PixelCopy for this actual root.
+        // Semantics alone can pass before the system screenshot has caught up to the frame.
+        val bitmap = root.captureToImage().asAndroidBitmap()
         try {
+            assertPaintedText(bitmap, rootBounds, header, "$name header")
+            assertPaintedText(bitmap, rootBounds, proof, "$name $proofTag")
             val resolver = instrumentation.targetContext.contentResolver
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.png")
@@ -111,6 +134,25 @@ class MalformedFinancialVisualEvidenceTest {
                 throw error
             }
         } finally { bitmap.recycle() }
+    }
+
+    private fun assertPaintedText(bitmap: Bitmap, rootBounds: Rect, node: SemanticsNodeInteraction, label: String) {
+        val bounds = node.fetchSemanticsNode().boundsInRoot
+        val left = floor(bounds.left - rootBounds.left).toInt()
+        val top = floor(bounds.top - rootBounds.top).toInt()
+        val right = ceil(bounds.right - rootBounds.left).toInt()
+        val bottom = ceil(bounds.bottom - rootBounds.top).toInt()
+        assertTrue("Captured text bounds must be fully visible: $label",
+            left >= 0 && top >= 0 && right <= bitmap.width && bottom <= bitmap.height && right > left && bottom > top)
+        val width = right - left
+        val pixels = IntArray(width * (bottom - top))
+        bitmap.getPixels(pixels, 0, width, left, top, width, bottom - top)
+        fun brightness(pixel: Int) = Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)
+        val backgroundBrightness = pixels.maxOf(::brightness)
+        // Actual foreground glyph pixels must appear in the exact text bounds of the saved
+        // frame; a blank or stale background cannot satisfy a visible semantics assertion.
+        val glyphPixels = pixels.count { backgroundBrightness - brightness(it) >= 96 }
+        assertTrue("Captured frame must paint text glyphs: $label ($glyphPixels pixels)", glyphPixels >= 20)
     }
 
     private class Sources : LedgerRepository, TaxonomyRepository, HouseholdRepository {

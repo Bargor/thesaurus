@@ -89,6 +89,15 @@ internal class EmulatorMalformedDocumentSeed private constructor(
                 }
             }
         }
+        fixture.operation("verify owned seed server fields and wire types") {
+            val snapshot = fixture.firestore.document(ownedPath).get(Source.SERVER).await()
+            check(snapshot.exists() && !snapshot.metadata.isFromCache && !snapshot.metadata.hasPendingWrites()) {
+                "Owned seed requires a settled server snapshot"
+            }
+            // Map equality preserves Long versus Double even when their numeric values are equal.
+            // Never include actual fields, expected fields or document paths in diagnostics.
+            check(snapshot.data == fields) { "Owned seed server fields or wire types differ from the requested snapshot" }
+        }
     }
 
     companion object {

@@ -91,7 +91,8 @@ class StrictFirestoreDecodingIntegrationTest {
                         Triple("date", FirestoreDecodeReason.MISSING_FIELD, validFields - "date"),
                         Triple("deleted", FirestoreDecodeReason.MISSING_FIELD, validFields - "deleted"),
                         Triple("amountGrosze", FirestoreDecodeReason.WRONG_TYPE, validFields + ("amountGrosze" to "not-money")),
-                        Triple("amountGrosze", FirestoreDecodeReason.WRONG_TYPE, validFields + ("amountGrosze" to 1234.0)),
+                        // Numerically distinct too: watch streams may suppress an equal Long/Double change.
+                        Triple("amountGrosze", FirestoreDecodeReason.WRONG_TYPE, validFields + ("amountGrosze" to 1234.5)),
                     )
                     for ((field, reason, fields) in malformed) {
                         seed.replaceEntry(entries.first().id, fields)
@@ -166,6 +167,12 @@ class StrictFirestoreDecodingIntegrationTest {
                     "amountGrosze" to (validEntry + ("amountGrosze" to "invalid-money")),
                     "amountGrosze" to (validEntry + ("amountGrosze" to 1234.0)),
                 )) {
+                    val wholeDouble = malformed["amountGrosze"] is Double
+                    if (wholeDouble) {
+                        // Keep the integral Double regression, but force a distinct numeric transition
+                        // before corrupting/restoring it so the emulator and SDK both acknowledge types.
+                        seed.replaceEntry(entries.first().id, validEntry + ("amountGrosze" to 1235L))
+                    }
                     seed.replaceEntry(entries.first().id, malformed)
                     val error = fixture.operation("reject malformed $field during current balance preparation") {
                         runCatching { repository.prepareCurrentBalance(home, 5000L) }.exceptionOrNull()
@@ -176,9 +183,11 @@ class StrictFirestoreDecodingIntegrationTest {
                         household.get(Source.SERVER).await().data
                     }
                     assertEquals(validHome, after)
+                    if (wholeDouble) seed.replaceEntry(entries.first().id, validEntry + ("amountGrosze" to 1235L))
                     seed.replaceEntry(entries.first().id, validEntry)
                 }
                 val malformedHome = validHome + ("openingBalanceGrosze" to 0.0)
+                seed.replaceHousehold(validHome + ("openingBalanceGrosze" to 1L))
                 seed.replaceHousehold(malformedHome)
                 val error = fixture.operation("reject malformed household during current balance preparation") {
                     runCatching { repository.prepareCurrentBalance(home, 5000L) }.exceptionOrNull()
@@ -189,6 +198,7 @@ class StrictFirestoreDecodingIntegrationTest {
                     household.get(Source.SERVER).await().data
                 }
                 assertEquals(malformedHome, after)
+                seed.replaceHousehold(validHome + ("openingBalanceGrosze" to 1L))
                 seed.replaceHousehold(validHome)
                 val prepared = fixture.operation("current balance preparation recovers after corrections") {
                     repository.prepareCurrentBalance(home, 5000L)
@@ -227,14 +237,14 @@ class StrictFirestoreDecodingIntegrationTest {
                     !it.isLoading && !it.hasError && it.syncState == SyncState.SYNCED && it.amountGrosze == 1000.toBigInteger()
                 }
                 ready("initial balance includes both complete records")
-                seed.replaceEntry(entries.first().id, validEntry + ("amountGrosze" to 1234.0))
+                seed.replaceEntry(entries.first().id, validEntry + ("amountGrosze" to 1234.5))
                 val invalidLedger = fixture.awaitFlow("balance hides invalid monetary type", vm.state) { it.hasError }
                 assertEquals(SyncState.ERROR, invalidLedger.syncState)
                 assertFalse(invalidLedger.isLoading)
                 assertNull(invalidLedger.amountGrosze)
                 seed.replaceEntry(entries.first().id, validEntry)
                 ready("balance recovers after valid ledger correction")
-                seed.replaceHousehold(validHome + ("openingBalanceGrosze" to 0.0))
+                seed.replaceHousehold(validHome + ("openingBalanceGrosze" to 0.5))
                 val invalidHome = fixture.awaitFlow("balance hides malformed opening balance", vm.state) { it.hasError }
                 assertEquals(SyncState.ERROR, invalidHome.syncState)
                 assertNull(invalidHome.amountGrosze)
