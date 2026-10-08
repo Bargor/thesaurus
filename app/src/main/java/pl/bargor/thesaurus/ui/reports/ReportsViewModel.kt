@@ -105,7 +105,12 @@ class ReportsViewModel @Inject constructor(
                     if (this@ReportsViewModel.householdId != householdId) return@collect
                     readModel = snapshot
                     observations.clear(); observations.putAll(snapshot.observations)
-                    snapshot.entries.value?.let { latestEntries = it }
+                    if (snapshot.hasInvalidData) {
+                        latestEntries = null
+                        cachedEntries = null; cachedSelection = null
+                        cachedSelectedEntries = emptyList(); cachedAggregation = ReportAggregation()
+                        cachedBalanceTrend = null
+                    } else snapshot.entries.value?.let { latestEntries = it }
                     latestCategories = snapshot.categories.value.orEmpty()
                     latestMembers = snapshot.members.value.orEmpty()
                     latestSubcategories.clear(); latestSubcategories.putAll(snapshot.subcategoryValues)
@@ -356,6 +361,10 @@ class ReportsViewModel @Inject constructor(
         syncState: SyncState = this.syncState,
         hasError: Boolean = this.hasError,
     ): ReportsUiState {
+        if (readModel?.hasInvalidData == true) return copy(
+            aggregation = ReportAggregation(), entries = emptyList(), balanceTrend = null,
+            isLoading = false, syncState = SyncState.ERROR, hasError = true,
+        )
         val period = if (mode == ReportPeriodMode.CUSTOM) appliedCustomPeriod else period()
         val categoryId = selectedCategoryId
         val availableSubs = latestSubcategories[categoryId].orEmpty()

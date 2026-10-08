@@ -1,9 +1,7 @@
 package pl.bargor.thesaurus.data.firebase
 
-import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.tasks.await
@@ -17,11 +15,12 @@ internal class FirestoreLedgerRepository(private val firestore: FirebaseFirestor
         householdId: String,
         includeDeleted: Boolean,
     ): Flow<SyncObservation<List<LedgerEntry>>> {
-        var query: Query = household(householdId)
-            .collection(FirestorePaths.ENTRIES)
-            .orderBy("date", Query.Direction.DESCENDING)
-        if (!includeDeleted) query = query.whereEqualTo("deleted", false)
-        return query.observations(DocumentSnapshot::toLedgerEntry)
+        // Server filters/orderBy omit malformed records with absent fields. Validate everything,
+        // including tombstones, before applying the previous visible ordering/filter locally.
+        return household(householdId).collection(FirestorePaths.ENTRIES).observations(
+            mapper = { it.toLedgerEntry(expectedHouseholdId = householdId) },
+            transform = { entries -> visibleLedgerEntries(entries, includeDeleted) },
+        )
     }
 
     override suspend fun save(entry: LedgerEntry) {
@@ -55,3 +54,7 @@ internal class FirestoreLedgerRepository(private val firestore: FirebaseFirestor
         }.await()
     }
 }
+
+internal fun visibleLedgerEntries(entries: List<LedgerEntry>, includeDeleted: Boolean): List<LedgerEntry> =
+    entries.filter { includeDeleted || !it.deleted }
+        .sortedWith(compareByDescending<LedgerEntry> { it.date }.thenByDescending(firestoreStringOrder) { it.id })

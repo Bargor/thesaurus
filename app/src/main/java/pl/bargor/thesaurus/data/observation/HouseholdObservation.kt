@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import pl.bargor.thesaurus.data.firebase.HouseholdRepository
+import pl.bargor.thesaurus.data.firebase.FirestoreDecodeException
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
@@ -25,14 +26,19 @@ import pl.bargor.thesaurus.data.model.SyncState
 data class ObservedSource<T>(
     val observation: SyncObservation<T>? = null,
     val value: T? = null,
+    val hasInvalidData: Boolean = false,
 ) {
     val isLoading: Boolean get() = observation == null
     val hasSnapshot: Boolean get() = value != null
     val hasError: Boolean get() = observation?.let { it.error != null || it.state == SyncState.ERROR } == true
-    fun accept(next: SyncObservation<T>): ObservedSource<T> = copy(
-        observation = next,
-        value = next.value?.let { if (it == value) value else it } ?: value,
-    )
+    fun accept(next: SyncObservation<T>): ObservedSource<T> {
+        // A network error can retain a decoded cache. Corrupt data invalidates that cache until
+        // this source supplies a fresh decoded snapshot, including a valid empty collection.
+        val invalid = next.error is FirestoreDecodeException ||
+            (hasInvalidData && (next.value == null || next.error != null || next.state == SyncState.ERROR))
+        return copy(observation = next, hasInvalidData = invalid,
+            value = if (invalid) null else next.value?.let { if (it == value) value else it } ?: value)
+    }
 }
 
 /** Error > queued writes > cache/offline > synced, including errors without an ERROR flag. */
@@ -79,8 +85,10 @@ data class HouseholdReadModel(
         this@HouseholdReadModel.household.observation?.let { put("household", it) }
         subcategories.forEach { (id, source) -> source.observation?.let { put("sub:$id", it) } }
     }
-    val syncState: SyncState get() = reduceSyncState(observations.values)
-    val hasError: Boolean get() = observations.values.any { it.error != null || it.state == SyncState.ERROR }
+    val syncState: SyncState get() = if (hasInvalidData) SyncState.ERROR else reduceSyncState(observations.values)
+    val hasError: Boolean get() = hasInvalidData || observations.values.any { it.error != null || it.state == SyncState.ERROR }
+    val hasInvalidData: Boolean get() = listOf(entries, categories, members, order, household)
+        .any { it.hasInvalidData } || subcategories.values.any { it.hasInvalidData }
     val subcategoryValues: Map<String, List<Subcategory>> get() =
         subcategories.mapNotNull { (id, source) -> source.value?.let { id to it } }.toMap()
 }

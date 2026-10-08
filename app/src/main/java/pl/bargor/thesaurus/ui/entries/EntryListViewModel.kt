@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,7 @@ import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.SyncState
 import pl.bargor.thesaurus.data.observation.HouseholdObservation
+import pl.bargor.thesaurus.data.observation.HouseholdReadModel
 
 /** Number of already observed entries exposed by each local reveal action. */
 const val ENTRY_LIST_REVEAL_SIZE = 20
@@ -72,24 +74,37 @@ class EntryListViewModel @Inject constructor(
     private var actorId: String? = null
     private var observeJob: Job? = null
     private var deleteJob: Job? = null
+    private var readModel: HouseholdReadModel? = null
     private val locallyHiddenEntryIds = mutableSetOf<String>()
 
     fun start(householdId: String) = start(householdId, actorId = "")
 
     fun start(householdId: String, actorId: String) {
         if (this.householdId == householdId && this.actorId == actorId && observeJob?.isActive == true) return
+        if (this.householdId != householdId || this.actorId != actorId) readModel = null
         this.householdId = householdId
         this.actorId = actorId
         observeJob?.cancel()
         deleteJob?.cancel()
         locallyHiddenEntryIds.clear()
         val sort = sortPreference.read()
-        mutableState.value = EntryListUiState(sort = sort)
+        val invalid = readModel?.hasInvalidData == true
+        mutableState.value = EntryListUiState(sort = sort, isLoading = !invalid,
+            syncState = if (invalid) SyncState.ERROR else SyncState.SYNCED,
+            error = if (invalid) EntryListError.LoadFailed else null)
         observeJob = viewModelScope.launch {
             HouseholdObservation(ledgerRepository, taxonomyRepository, householdRepository)
-                .observe(householdId).collect { snapshot ->
+                .observe(householdId, initial = readModel).collect { snapshot ->
                     if (this@EntryListViewModel.householdId != householdId ||
                         this@EntryListViewModel.actorId != actorId) return@collect
+                    readModel = snapshot
+                    if (snapshot.hasInvalidData) {
+                        deleteJob?.cancel()
+                        locallyHiddenEntryIds.clear()
+                        mutableState.update { it.copy(entries = emptyList(), pendingDeletion = null,
+                            isLoading = false, syncState = SyncState.ERROR, error = EntryListError.LoadFailed) }
+                        return@collect
+                    }
                     if (!snapshot.isReady) {
                         mutableState.update { old -> old.copy(
                             isLoading = old.isLoading && !snapshot.hasError,
@@ -153,7 +168,8 @@ class EntryListViewModel @Inject constructor(
         deleteJob = viewModelScope.launch {
             delay(ENTRY_DELETE_UNDO_WINDOW_MILLIS)
             runCatching { ledgerRepository.tombstone(household, current.entry.id, actor) }
-                .onFailure {
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
                     locallyHiddenEntryIds -= current.entry.id
                     mutableState.update { old ->
                         old.copy(

@@ -29,17 +29,17 @@ internal class FirestoreOpeningBalanceRepository(private val firestore: Firebase
         check(before.exists() && syncState(before.metadata) == SyncState.SYNCED) {
             "Bieżące saldo wymaga zsynchronizowanego gospodarstwa."
         }
+        checkNotNull(before.toHousehold())
         val snapshot = reference.collection(FirestorePaths.ENTRIES).get(Source.SERVER).await()
         check(syncState(snapshot.metadata) == SyncState.SYNCED &&
             snapshot.documents.none { it.metadata.hasPendingWrites() }) {
             "Bieżące saldo wymaga pełnej synchronizacji wpisów."
         }
         val entries = snapshot.documents.map { document ->
-            check(document.get("amountGrosze") is Long && document.get("deleted") is Boolean &&
-                document.getString("householdId") == householdId) { "Nie można odczytać wszystkich wpisów." }
-            checkNotNull(document.toLedgerEntry()) { "Nie można odczytać wszystkich wpisów." }
+            checkNotNull(document.toLedgerEntry(expectedHouseholdId = householdId))
         }
         val after = reference.get(Source.SERVER).await()
+        checkNotNull(after.toHousehold())
         check(after.exists() && syncState(after.metadata) == SyncState.SYNCED &&
             before.ledgerRevision() == after.ledgerRevision()) {
             "Wpisy zmieniły się podczas obliczania salda. Spróbuj ponownie."
@@ -58,6 +58,7 @@ internal class FirestoreOpeningBalanceRepository(private val firestore: Firebase
         val reference = household(prepared.householdId)
         firestore.runTransaction { transaction ->
             val latest = transaction.get(reference)
+            checkNotNull(latest.toHousehold())
             check(latest.exists() && !latest.metadata.hasPendingWrites() &&
                 latest.ledgerRevision() == prepared.expectedRevision &&
                 latest.get("openingBalanceGrosze") == prepared.expectedOpeningBalanceGrosze) {

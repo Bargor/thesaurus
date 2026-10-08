@@ -110,7 +110,10 @@ class SummaryViewModel @Inject constructor(
                     if (identity != nextIdentity) return@collect
                     readModel = snapshot
                     observations.clear(); observations.putAll(snapshot.observations)
-                    snapshot.entries.value?.let { entriesLoaded = true; entries = it }
+                    if (snapshot.hasInvalidData) {
+                        entriesLoaded = false; entries = emptyList()
+                        preparedSource = null; preparedCards.clear()
+                    } else snapshot.entries.value?.let { entriesLoaded = true; entries = it }
                     categories = snapshot.categories.value.orEmpty()
                     members = snapshot.members.value.orEmpty()
                     subcategories.clear(); subcategories.putAll(snapshot.subcategoryValues)
@@ -212,8 +215,9 @@ class SummaryViewModel @Inject constructor(
         }
         val sync = reduceSyncState(observations.values)
         mutableState.value = old.copy(cards = overview, detailCard = detail, detailEntries = items,
-            isLoading = !entriesObserved, syncState = sync, currentYear = today.year,
-            hasError = observations.values.any { observation -> observation.error != null || observation.state == SyncState.ERROR })
+            isLoading = !entriesObserved, currentYear = today.year,
+            hasError = readModel?.hasInvalidData == true || observations.values.any { observation -> observation.error != null || observation.state == SyncState.ERROR },
+            syncState = if (readModel?.hasInvalidData == true) SyncState.ERROR else sync)
     }
 
     private fun decodeKey(encoded: String?): SummaryPeriodKey? = runCatching {

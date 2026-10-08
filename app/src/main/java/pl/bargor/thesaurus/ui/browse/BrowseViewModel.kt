@@ -116,7 +116,11 @@ class BrowseViewModel @Inject constructor(
                     if (identity != nextIdentity) return@collect
                     readModel = snapshot
                     observations.clear(); observations.putAll(snapshot.observations)
-                    snapshot.entries.value?.let { entries = it }
+                    if (snapshot.hasInvalidData) {
+                        entries = emptyList(); preparedSource = null; preparedPeriod = null
+                        prepared = emptyList(); groups = emptyList(); boundPrepared = null
+                        entryItems = emptyMap(); itemGroups = null
+                    } else snapshot.entries.value?.let { entries = it }
                     snapshot.categories.value?.let { categories = it }
                     order = snapshot.order.value
                     snapshot.members.value?.let { members = it }
@@ -178,6 +182,10 @@ class BrowseViewModel @Inject constructor(
     private fun recalculate() {
         val (householdId, actorId) = identity ?: return
         mutableState.update { old ->
+            if (readModel?.hasInvalidData == true) return@update old.copy(
+                categories = emptyList(), entryItems = emptyMap(), expandedCategoryIds = emptySet(),
+                expandedSubcategories = emptySet(), isLoading = false, hasError = true, syncState = SyncState.ERROR,
+            )
             val period = when (old.mode) {
                 SummaryPeriodMode.MONTH -> old.month.summaryPeriod()
                 SummaryPeriodMode.YEAR -> old.year.summaryPeriod()
