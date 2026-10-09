@@ -64,6 +64,8 @@ This indicator is independent of Firestore snapshot/cache metadata and pending w
 
 Summary, overview, reports, and entry screens reuse a household read model and entry-presentation helpers. Each ViewModel owns its listener group; account/household changes cancel obsolete subscriptions. Historical taxonomy, cached values, pending writes, and errors remain explicit. See [Household observation ownership](docs/household-observation.md) for the subscription, retry, and stricter balance contracts.
 
+Reports refresh calendar boundaries at local midnight while resumed and immediately when returning to a retained screen. Explicit months, years, custom ranges, filters and sorting remain selected; only eligibility through today and navigation/default limits advance. See [Reports calendar refresh](docs/report-date-refresh.md) for rollover, time-zone, lifecycle and test contracts.
+
 ## Requirements
 
 - JDK 21

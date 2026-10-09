@@ -19,6 +19,7 @@ import pl.bargor.thesaurus.ui.entry.EntryFormViewModel
 import pl.bargor.thesaurus.ui.family.FamilyScreen
 import pl.bargor.thesaurus.ui.family.FamilyViewModel
 import pl.bargor.thesaurus.ui.reports.ReportsScreen
+import pl.bargor.thesaurus.ui.reports.ReportsCalendarEffect
 import pl.bargor.thesaurus.ui.reports.ReportsViewModel
 import pl.bargor.thesaurus.ui.settings.OpeningBalanceScreen
 import pl.bargor.thesaurus.ui.settings.OpeningBalanceUiState
@@ -116,6 +117,7 @@ internal fun ReportsRoute(
     reportsViewModel: ReportsViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(householdId) { reportsViewModel.start(householdId) }
+    ReportsCalendarEffect(householdId, reportsViewModel)
     val state by reportsViewModel.state.collectAsState()
     ReportsScreen(
         state = state,
