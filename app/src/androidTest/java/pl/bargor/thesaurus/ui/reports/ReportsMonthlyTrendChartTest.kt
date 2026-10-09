@@ -46,10 +46,12 @@ class ReportsMonthlyTrendChartTest {
             assertTrue("Exact monthly description must include $it", it in description)
         }
         val pixels = chart.captureToImage().toPixelMap()
+        val plot = chart.fetchSemanticsNode().config[ReportAmountChartPlotBounds]
+        val februaryX = plot.left + plot.width * (31f / 334f)
         // February is only 31 days after January but 303 days before December. At its
         // +2 PLN height it must be near January, rather than at an equal-index midpoint.
         assertTrue("Nonconsecutive monthly points must use elapsed calendar spacing", countColor(pixels, primary,
-            (pixels.width * .43f).toInt(), (pixels.width * .55f).toInt(),
+            (februaryX - plot.width * .03f).toInt(), (februaryX + plot.width * .03f).toInt(),
             (pixels.height * .18f).toInt(), (pixels.height * .36f).toInt()) >= 8)
         assertAxesAndNoLegend()
     }

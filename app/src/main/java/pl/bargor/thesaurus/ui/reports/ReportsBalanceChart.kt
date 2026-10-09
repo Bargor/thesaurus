@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
@@ -22,6 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.getTextLayoutResult
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -101,6 +103,9 @@ fun ReportsBalanceChart(trend: ReportBalanceTrend) {
 
 internal data class ReportAmountChartPoint(val from: LocalDate, val to: LocalDate, val amountGrosze: BigInteger)
 
+/** Local pixel bounds shared by the drawing and date axis; exposed for layout verification. */
+internal val ReportAmountChartPlotBounds = SemanticsPropertyKey<Rect>("ReportAmountChartPlotBounds")
+
 /** Shared exact amount scale and measured axes for cumulative steps and monthly results. */
 @Composable
 internal fun LabeledReportAmountChart(
@@ -138,44 +143,39 @@ internal fun LabeledReportAmountChart(
         val compact = tickValues.any { measurer.measure(it.balanceCurrency(), labelStyle).size.width > axisCap }
         val ticks = tickValues.map { it to measurer.measure(it.axisCurrency(compact, axisUnits),
             labelStyle.copy(textAlign = TextAlign.End),
-            constraints = Constraints(minWidth = axisCap, maxWidth = axisCap)) }
-        val axisWidth = (ticks.maxOfOrNull { it.second.size.width } ?: 0).toFloat()
+            constraints = Constraints(maxWidth = axisCap)) }
+        val inset = with(density) { 8.dp.toPx() }
+        val chartHeight = maxOf(with(density) { 180.dp.toPx() }, ticks.maxOf { it.second.size.height } + inset * 2)
+        val range = high - low
+        val plotHeight = (chartHeight - inset * 2).coerceAtLeast(0f)
+        fun y(value: BigInteger): Float = if (range.signum() == 0) chartHeight / 2f else
+            inset + plotHeight * (1f - BigDecimal(value - low).divide(BigDecimal(range), MathContext.DECIMAL64).toFloat())
+        val prioritizedTicks = ticks.sortedBy { if (it.first.signum() == 0) 0 else 1 }
+        val axisLayout = reportAxisLayout(prioritizedTicks.map { (amount, label) ->
+            ReportAxisTickSize(label.size.width, label.size.height, y(amount))
+        }, chartHeight, with(density) { 4.dp.toPx() })
+        val visibleTicks = axisLayout.ticks.map { prioritizedTicks[it.index] }
+        val axisWidth = axisLayout.width.toFloat()
+        val plotBounds = Rect(axisWidth + inset, inset, widthPx - inset, chartHeight - inset)
         val axisDescription = ticks.joinToString("; ") { it.first.balanceCurrency() }
         Column(Modifier.fillMaxWidth().testTag("$axisTag-y-axis")
             .semantics { contentDescription = axisDescription }) {
-            Canvas(Modifier.fillMaxWidth().height(180.dp).testTag(chartTag)
+            Canvas(Modifier.fillMaxWidth().height(with(density) { chartHeight.toDp() }).testTag(chartTag)
                 .semantics {
                     contentDescription = "$description $pointDescriptions"
+                    this[ReportAmountChartPlotBounds] = plotBounds
                     // Expose the actual measured Canvas labels for accessibility/layout QA.
-                    getTextLayoutResult { results -> results.addAll(ticks.map { it.second }); true }
+                    getTextLayoutResult { results -> results.addAll(visibleTicks.map { it.second }); true }
                 }) {
-                val range = high - low
-                val inset = 8.dp.toPx()
-                val left = axisWidth + 8.dp.toPx()
-                val plotWidth = (size.width - left - inset).coerceAtLeast(0f)
-                val plotHeight = (size.height - inset * 2).coerceAtLeast(0f)
-                fun y(value: BigInteger): Float = if (range.signum() == 0) size.height / 2f else
-                    inset + plotHeight * (1f - BigDecimal(value - low).divide(BigDecimal(range), MathContext.DECIMAL64).toFloat())
-                val firstDay = period.from.toEpochDay()
-                val span = period.to.toEpochDay() - firstDay
-                fun x(date: LocalDate): Float = when {
-                    step -> left + plotWidth * ((date.toEpochDay() - firstDay + 1).toDouble() / (span + 1)).toFloat()
-                    span == 0L -> left + plotWidth / 2f
-                    else -> left + plotWidth * ((date.toEpochDay() - firstDay).toDouble() / span).toFloat()
-                }
+                val left = plotBounds.left
+                val plotWidth = plotBounds.width.coerceAtLeast(0f)
+                fun x(date: LocalDate): Float = left + plotWidth * reportDateFraction(date, period.from, period.to, step)
                 val zero = y(BigInteger.ZERO)
                 drawLine(baselineColor, Offset(left, zero), Offset(left + plotWidth, zero), 1.dp.toPx())
-                // Reserve zero first, then omit any measured tick that would collide.
-                val occupied = mutableListOf<Pair<Float, Float>>()
-                ticks.sortedBy { if (it.first.signum() == 0) 0 else 1 }.forEach { (amount, label) ->
-                    val top = (y(amount) - label.size.height / 2f)
-                        .coerceIn(0f, (size.height - label.size.height).coerceAtLeast(0f))
-                    val bottom = top + label.size.height
-                    if (occupied.none { top < it.second + 4.dp.toPx() && bottom > it.first - 4.dp.toPx() }) {
-                        drawText(label, topLeft = Offset(axisWidth - label.size.width, top))
-                        drawLine(baselineColor, Offset(left - 4.dp.toPx(), y(amount)), Offset(left, y(amount)), 1.dp.toPx())
-                        occupied += top to bottom
-                    }
+                axisLayout.ticks.forEach { placement ->
+                    val (amount, label) = prioritizedTicks[placement.index]
+                    drawText(label, topLeft = Offset(axisWidth - label.size.width, placement.top))
+                    drawLine(baselineColor, Offset(left - 4.dp.toPx(), y(amount)), Offset(left, y(amount)), 1.dp.toPx())
                 }
                 var previous: Offset? = openingBalance?.let { Offset(left, y(it)) }
                 previous?.let { drawCircle(lineColor, 4.dp.toPx(), it) }
@@ -201,8 +201,8 @@ internal fun LabeledReportAmountChart(
             val labels = dates.map(dateLabel)
             val widths = labels.map { measurer.measure(it, labelStyle).size.width + 2 }
             val axisPadding = with(density) { axisWidth.toDp() } + 8.dp
-            val plotWidthPx = widthPx - axisWidth - with(density) { 16.dp.toPx() }
-            val middleRatio = if (dateSpan == 0L) .5 else (midpoint.toEpochDay() - dates.first().toEpochDay()).toDouble() / dateSpan
+            val plotWidthPx = plotBounds.width.coerceAtLeast(0f)
+            val middleRatio = reportDateFraction(midpoint, period.from, period.to, step)
             val middleCenter = plotWidthPx * middleRatio
             val gap = with(density) { 8.dp.toPx() }
             val showMiddle = midpoint != dates.first() && midpoint != dates.last() &&

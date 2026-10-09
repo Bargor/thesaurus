@@ -103,6 +103,7 @@ test('optional visual evidence collection stays scoped and preserves the test re
   assert.match(enabled.calls, /pull \/sdcard\/Pictures\/ThesaurusTestEvidence\/issue94 /);
   assert.match(enabled.calls, /pull \/sdcard\/Pictures\/ThesaurusTestEvidence\/issue96 /);
   assert.match(enabled.calls, /pull \/sdcard\/Pictures\/ThesaurusTestEvidence\/issue97 /);
+  assert.match(enabled.calls, /pull \/sdcard\/Pictures\/ThesaurusTestEvidence\/issue105 /);
   assert.doesNotMatch(enabled.calls, /pull \/sdcard\/Android\/data\//);
   const failed = runCase({ command: 'sleep 1; exit 42', diagnostic: 'failed',
     env: { CI_CAPTURE_VISUAL_EVIDENCE: 'true' } });
