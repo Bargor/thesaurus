@@ -25,6 +25,9 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import pl.bargor.thesaurus.data.firebase.FirestoreDecodeException
+import pl.bargor.thesaurus.data.firebase.FirestoreDecodeReason
+import pl.bargor.thesaurus.data.firebase.FirestoreDocumentType
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.*
@@ -99,6 +102,60 @@ class ReportsDateRefreshTest {
         assertEquals(LocalDate.parse("2026-09-13"), vm.state.value.today)
         advanceTimeBy(86_400_000L); runCurrent()
         assertEquals(LocalDate.parse("2026-09-14"), vm.state.value.today)
+        vm.setForeground("home", false); advanceUntilIdle()
+    }
+
+    @Test fun malformedLedgerCannotReviveAcrossCalendarRefreshResumeOrMidnightAndValidSnapshotRecovers() = runTest {
+        val clock = MovingClock(testScheduler, "2026-09-12T12:00:00Z")
+        val ledger = Ledger(listOf(entry("cached", 600, "2026-09-12")))
+        val vm = model(clock, ledger = ledger)
+        vm.start("home"); runCurrent()
+        assertEquals(600.toBigInteger(), vm.state.value.aggregation.totals.netGrosze)
+        assertEquals(listOf("cached"), vm.state.value.entries.map { it.entry.id })
+        assertNotNull(vm.state.value.balanceTrend)
+
+        ledger.home.value = SyncObservation(state = SyncState.ERROR,
+            error = FirestoreDecodeException(FirestoreDocumentType.LEDGER_ENTRY,
+                "amountGrosze", FirestoreDecodeReason.WRONG_TYPE))
+        runCurrent()
+        fun assertUnavailable() {
+            assertTrue(vm.state.value.hasError)
+            assertEquals(SyncState.ERROR, vm.state.value.syncState)
+            assertTrue(vm.state.value.aggregation.totals.isEmpty)
+            assertTrue(vm.state.value.entries.isEmpty())
+            assertTrue(vm.state.value.aggregation.categories.isEmpty())
+            assertTrue(vm.state.value.aggregation.trend.isEmpty())
+            assertNull(vm.state.value.balanceTrend)
+        }
+        assertUnavailable()
+        clock.jumpTo("2026-09-13T12:00:00Z"); vm.refreshCalendar()
+        assertEquals(LocalDate.parse("2026-09-13"), vm.state.value.today)
+        assertUnavailable()
+        ledger.home.value = SyncObservation(state = SyncState.OFFLINE)
+        runCurrent()
+        clock.jumpTo("2026-09-14T23:59:59Z")
+        vm.setForeground("home", true); runCurrent()
+        assertEquals(LocalDate.parse("2026-09-14"), vm.state.value.today)
+        assertUnavailable()
+        advanceTimeBy(1_000); runCurrent()
+        assertEquals(LocalDate.parse("2026-09-15"), vm.state.value.today)
+        assertUnavailable()
+
+        ledger.home.value = SyncObservation(listOf(entry("repaired-income", 800, "2026-09-15"),
+            entry("repaired-expense", -200, "2026-09-15"),
+            entry("future", 99_999, "2026-09-16")), SyncState.SYNCED)
+        runCurrent()
+        val recovered = vm.state.value
+        assertFalse(recovered.hasError)
+        assertEquals(SyncState.SYNCED, recovered.syncState)
+        assertEquals(setOf("repaired-income", "repaired-expense"), recovered.entries.map { it.entry.id }.toSet())
+        assertEquals(800.toBigInteger(), recovered.aggregation.totals.incomeGrosze)
+        assertEquals(200.toBigInteger(), recovered.aggregation.totals.expenseGrosze)
+        assertEquals(600.toBigInteger(), recovered.aggregation.totals.netGrosze)
+        assertEquals(listOf(ReportCategoryValue("food", 1_000.toBigInteger())), recovered.aggregation.categories)
+        assertEquals(listOf(ReportTrendValue(recovered.today, 600.toBigInteger())), recovered.aggregation.trend)
+        assertEquals(recovered.today, recovered.balanceTrend!!.period.to)
+        assertEquals(600.toBigInteger(), recovered.balanceTrend!!.endBalanceGrosze)
         vm.setForeground("home", false); advanceUntilIdle()
     }
 

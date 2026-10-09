@@ -22,7 +22,7 @@ Ordinary `start(householdId)` does not activate the timer. This keeps source-onl
 
 ## CI verification
 
-New controllable-clock JVM tests cover midnight, month/year/leap-day boundaries, historical selection and drafts, refreshed validation/defaults/navigation, signed aggregates/charts, clock rollback, DST deadlines, foreground restart, household ownership, and ViewModel clearing. Existing tests and assertions are preserved.
+New controllable-clock JVM tests cover midnight, month/year/leap-day boundaries, historical selection and drafts, refreshed validation/defaults/navigation, signed aggregates/charts, clock rollback, DST deadlines, foreground restart, household ownership, and ViewModel clearing. A regression verifies that malformed financial snapshots stay unavailable through calendar refresh, resume, and midnight until a valid snapshot recovers the refreshed scope. Existing tests and assertions are preserved.
 
 Three new Android tests use the real Reports route, a retained ViewModel, a controlled lifecycle owner, and synthetic repositories. They verify background/resume without replacing the source subscription, foreground midnight eligibility, and cancellation on pause/stop/disposal/household change. They change only the injected clock, never the emulator's date or a Firebase account.
 
