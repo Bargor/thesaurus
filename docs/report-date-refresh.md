@@ -27,3 +27,5 @@ New controllable-clock JVM tests cover midnight, month/year/leap-day boundaries,
 Three new Android tests use the real Reports route, a retained ViewModel, a controlled lifecycle owner, and synthetic repositories. They verify background/resume without replacing the source subscription, foreground midnight eligibility, and cancellation on pause/stop/disposal/household change. They change only the injected clock, never the emulator's date or a Firebase account.
 
 The foreground test records painted Compose-root PNGs before midnight, after midnight, at the updated balance chart, and at the newly eligible entry under `Pictures/ThesaurusTestEvidence/issue97/`. CI retrieves this explicit synthetic-only folder for visual review. No local builds, tests, or emulators are run for this change; the normal complete CI suites remain authoritative.
+
+Reviewed captures and their exact CI provenance are available in [visual evidence](visual-proofs/issue97/README.md).

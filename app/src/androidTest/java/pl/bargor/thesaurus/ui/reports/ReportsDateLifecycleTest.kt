@@ -168,8 +168,17 @@ class ReportsDateLifecycleTest {
         compose.runOnIdle { owner.moveTo(Lifecycle.State.RESUMED) }
         compose.runOnIdle { household = "other" }
         compose.waitUntil(5_000) { repository.starts.get() == 2 && repository.cancellations.get() == 1 }
+        compose.waitUntil(5_000) {
+            !vm.state.value.isLoading && vm.state.value.balanceTrend != null &&
+                vm.state.value.categories.singleOrNull()?.householdId == "other"
+        }
         assertEquals(1, repository.active.get())
         compose.runOnIdle { visible = false }
+        // runOnIdle waits before its action. Removing the route still needs a composition pass:
+        // ReportsScreen.onDispose dismisses filters and legitimately refreshes the clock once.
+        // Complete that disposal before advancing time and observing cancelled midnight work.
+        compose.waitForIdle()
+        compose.onNodeWithTag("reports-open-filters").assertDoesNotExist()
         clock.setInstant("2026-02-18T00:00:00Z")
         assertNoClockReadForScheduledMidnight()
         assertEquals(LocalDate.of(2026, 2, 17), vm.state.value.today)
