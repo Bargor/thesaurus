@@ -11,6 +11,8 @@ import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,13 +43,14 @@ import pl.bargor.thesaurus.ui.entries.presentEntry
 class ReportsViewModel @Inject constructor(
     private val ledgerRepository: LedgerRepository,
     private val taxonomyRepository: TaxonomyRepository,
-    clock: Clock,
+    private val clock: Clock,
     private val savedStateHandle: SavedStateHandle,
     private val householdRepository: HouseholdRepository,
 ) : ViewModel() {
-    private val today = LocalDate.now(clock)
+    private val today: LocalDate get() = mutableState.value.today
+    private val initialToday = LocalDate.now(clock)
     private val mutableState = MutableStateFlow(
-        ReportsUiState(today = today, month = YearMonth.from(today), year = Year.from(today),
+        ReportsUiState(today = initialToday, month = YearMonth.from(initialToday), year = Year.from(initialToday),
             sort = ReportEntrySort.entries.firstOrNull { it.name == savedStateHandle.get<String>("reports.sort") }
                 ?: ReportEntrySort.DATE,
             direction = ReportSortDirection.entries.firstOrNull { it.name == savedStateHandle.get<String>("reports.direction") }
@@ -56,6 +59,8 @@ class ReportsViewModel @Inject constructor(
     val state: StateFlow<ReportsUiState> = mutableState.asStateFlow()
     private var householdId: String? = null
     private var observeJob: Job? = null
+    private var calendarJob: Job? = null
+    private var foregroundHouseholdId: String? = null
     private var latestEntries: List<LedgerEntry>? = null
     private var latestOpeningBalance: Long? = null
     private var cachedOpeningBalance: Long? = null
@@ -80,8 +85,11 @@ class ReportsViewModel @Inject constructor(
     }
 
     fun start(householdId: String) {
+        refreshCalendar()
         if (this.householdId == householdId && observeJob?.isActive == true) return
         val changed = this.householdId != householdId
+        calendarJob?.cancel()
+        calendarJob = null
         observeJob?.cancel()
         this.householdId = householdId
         if (changed) {
@@ -126,18 +134,69 @@ class ReportsViewModel @Inject constructor(
                     refresh()
                 }
         }
+        startCalendarTimer()
     }
 
-    private fun refresh() = mutableState.update { old ->
-        val current = latestMembers.associateBy { it.uid }
-        val former = (latestEntries.orEmpty().filterNot { it.deleted }.map { it.authorId } +
-            old.selectedMemberIds.orEmpty() + old.filterDraft?.selectedMemberIds.orEmpty()).distinct()
-            .filterNot { it in current }.map { ReportMemberOption(it, it, former = true) }
-        old.copy(members = (current.values.map { ReportMemberOption(it.uid,
-            it.displayName?.takeIf(String::isNotBlank)?.let { name -> "$name (${it.email})" } ?: it.email) } + former).sortedBy { it.name.lowercase() })
-            .recalculated(latestEntries.orEmpty(), latestCategories, isLoading = !entriesObserved,
-            syncState = reduceSyncState(observations.values),
-            hasError = observations.values.any { it.error != null || it.state == SyncState.ERROR })
+    /** Foreground ownership is independent of the existing ledger observation. */
+    fun setForeground(householdId: String, active: Boolean) {
+        if (!active) {
+            if (foregroundHouseholdId != householdId) return
+            foregroundHouseholdId = null
+            calendarJob?.cancel()
+            calendarJob = null
+            return
+        }
+        foregroundHouseholdId = householdId
+        refreshCalendar()
+        calendarJob?.cancel()
+        calendarJob = null
+        startCalendarTimer()
+    }
+
+    private fun startCalendarTimer() {
+        val owner = householdId ?: return
+        if (foregroundHouseholdId != owner || calendarJob?.isActive == true) return
+        calendarJob = viewModelScope.launch {
+            while (isActive && householdId == owner && foregroundHouseholdId == owner) {
+                delay(nextReportMidnightDelayMillis(clock))
+                refreshCalendar()
+            }
+        }
+    }
+
+    /** Keep explicit periods and drafts fixed; only the current date and report bounds change. */
+    fun refreshCalendar() {
+        val currentToday = LocalDate.now(clock)
+        if (currentToday == today) return
+        cachedSelection = null
+        mutableState.update { old ->
+            old.copy(today = currentToday,
+                customDateError = old.customDateError && !validCustomDates(old.customFromInput, old.customToInput, currentToday),
+                filterDraft = old.filterDraft?.let { draft -> draft.copy(customDateError = draft.customDateError &&
+                    !validCustomDates(draft.customFromInput, draft.customToInput, currentToday)) })
+                .recalculated(latestEntries.orEmpty(), latestCategories)
+        }
+    }
+
+    private fun validCustomDates(fromInput: String, toInput: String, date: LocalDate): Boolean = runCatching {
+        val from = LocalDate.parse(fromInput)
+        val to = LocalDate.parse(toInput)
+        from <= to && from <= date && to <= date
+    }.getOrDefault(false)
+
+    private fun refresh() {
+        refreshCalendar()
+        mutableState.update { old ->
+            val current = latestMembers.associateBy { it.uid }
+            val former = (latestEntries.orEmpty().filterNot { it.deleted }.map { it.authorId } +
+                old.selectedMemberIds.orEmpty() + old.filterDraft?.selectedMemberIds.orEmpty()).distinct()
+                .filterNot { it in current }.map { ReportMemberOption(it, it, former = true) }
+            old.copy(members = (current.values.map { ReportMemberOption(it.uid,
+                it.displayName?.takeIf(String::isNotBlank)?.let { name -> "$name (${it.email})" } ?: it.email) } + former).sortedBy { it.name.lowercase() })
+                .recalculated(latestEntries.orEmpty(), latestCategories, isLoading = !entriesObserved,
+                syncState = reduceSyncState(observations.values),
+                hasError = observations.values.any { it.error != null || it.state == SyncState.ERROR })
+        }
     }
 
     fun selectCategory(id: String?) {
@@ -249,6 +308,7 @@ class ReportsViewModel @Inject constructor(
     }
 
     fun applyCustomPeriod() {
+        refreshCalendar()
         if (mutableState.value.filterDraft != null) { applyFilters(); return }
         mutableState.update { old ->
             val parsed = runCatching { old.period() }.getOrNull()
@@ -265,12 +325,13 @@ class ReportsViewModel @Inject constructor(
         selectedSubcategoryId = selectedSubcategoryId, selectedMemberIds = selectedMemberIds,
         sort = sort, direction = direction)
 
-    fun openFilters() { mutableState.update { it.copy(filterDraft = it.toDraft()) } }
+    fun openFilters() { refreshCalendar(); mutableState.update { it.copy(filterDraft = it.toDraft()) } }
     fun dismissFilters() {
         mutableState.update { it.copy(filterDraft = null) }
         refresh()
     }
     private fun editDraft(change: (ReportFilterDraft) -> ReportFilterDraft): Boolean {
+        refreshCalendar()
         val draft = mutableState.value.filterDraft ?: return false
         mutableState.update { it.copy(filterDraft = change(draft)) }
         return true
@@ -296,6 +357,7 @@ class ReportsViewModel @Inject constructor(
         refresh()
     }
     fun applyFilters() {
+        refreshCalendar()
         val draft = mutableState.value.filterDraft ?: return
         val period = runCatching {
             val from = LocalDate.parse(draft.customFromInput)
@@ -340,7 +402,7 @@ class ReportsViewModel @Inject constructor(
         val from = savedStateHandle.get<String>("reports.from") ?: today.withDayOfMonth(1).toString()
         val to = savedStateHandle.get<String>("reports.to") ?: today.toString()
         appliedCustomPeriod = runCatching { SummaryPeriod(LocalDate.parse(from), LocalDate.parse(to)).also {
-            require(it.from <= it.to && it.to <= today)
+            require(it.from <= it.to)
         } }.getOrDefault(SummaryPeriod(today.withDayOfMonth(1), today))
         mutableState.update { it.copy(
             mode = ReportPeriodMode.entries.firstOrNull { mode -> mode.name == savedStateHandle.get<String>("reports.mode") } ?: ReportPeriodMode.MONTH,
@@ -365,7 +427,14 @@ class ReportsViewModel @Inject constructor(
             aggregation = ReportAggregation(), entries = emptyList(), balanceTrend = null,
             isLoading = false, syncState = SyncState.ERROR, hasError = true,
         )
-        val period = if (mode == ReportPeriodMode.CUSTOM) appliedCustomPeriod else period()
+        val requestedPeriod = when (mode) {
+            ReportPeriodMode.CUSTOM -> appliedCustomPeriod
+            ReportPeriodMode.MONTH -> SummaryPeriod(month.atDay(1), month.atEndOfMonth())
+            ReportPeriodMode.YEAR -> SummaryPeriod(year.atDay(1), year.atMonth(12).atEndOfMonth())
+        }
+        val period = requestedPeriod.takeIf { it.from <= today }?.let {
+            SummaryPeriod(it.from, it.to.coerceAtMost(today))
+        }
         val categoryId = selectedCategoryId
         val availableSubs = latestSubcategories[categoryId].orEmpty()
         val subcategoryId = selectedSubcategoryId?.takeIf { categoryId != null }
@@ -375,13 +444,13 @@ class ReportsViewModel @Inject constructor(
             cachedOpeningBalance = latestOpeningBalance
             cachedEntries = entries
             cachedSelection = selection
-            cachedSelectedEntries = selectReportEntries(entries, selection.householdId, period, typeFilter,
+            cachedSelectedEntries = if (period == null) emptyList() else selectReportEntries(entries, selection.householdId, period, typeFilter,
                 categoryId, subcategoryId, sort, direction, selectedMemberIds)
             val bucket: (LocalDate) -> LocalDate = if (selection.monthlyTrend) {
                 date -> date.withDayOfMonth(1)
             } else { date -> date }
-            val rawAggregation = aggregateReportEntries(cachedSelectedEntries, period, typeFilter, bucket)
-            cachedBalanceTrend = latestOpeningBalance?.let { opening -> buildReportBalanceTrend(entries, period,
+            val rawAggregation = if (period == null) ReportAggregation() else aggregateReportEntries(cachedSelectedEntries, period, typeFilter, bucket)
+            cachedBalanceTrend = if (period == null) null else latestOpeningBalance?.let { opening -> buildReportBalanceTrend(entries, period,
                 if (mode == ReportPeriodMode.YEAR || (mode == ReportPeriodMode.CUSTOM &&
                     ChronoUnit.DAYS.between(period.from, period.to) >= 62)) ReportBalanceGranularity.MONTHLY
                 else ReportBalanceGranularity.DAILY, opening) }
@@ -415,7 +484,7 @@ class ReportsViewModel @Inject constructor(
 
 private data class ReportSelection(
     val householdId: String,
-    val period: SummaryPeriod,
+    val period: SummaryPeriod?,
     val type: ReportTypeFilter,
     val categoryId: String?,
     val subcategoryId: String?,
