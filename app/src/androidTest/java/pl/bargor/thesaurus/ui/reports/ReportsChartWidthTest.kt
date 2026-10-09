@@ -174,8 +174,10 @@ class ReportsChartWidthTest {
             val midpoint = period.from.plusDays(167)
             val ratio = (midpoint.toEpochDay() - period.from.toEpochDay() + 1f) /
                 (period.to.toEpochDay() - period.from.toEpochDay() + 1f)
+            // Integer Layout placement adds up to one pixel to the half-pixel
+            // inset rounding; the Canvas keeps the unrounded calendar coordinate.
             assertEquals("Middle date uses the same end-of-day calendar coordinate as the step line",
-                chartBounds.left + plot.left + plot.width * ratio, dates[1].boundsInRoot.center.x, 1.1f)
+                chartBounds.left + plot.left + plot.width * ratio, dates[1].boundsInRoot.center.x, 1.5f)
         }
         dates.forEach { date ->
             val bounds = date.boundsInRoot
