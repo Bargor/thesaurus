@@ -1,6 +1,5 @@
 package pl.bargor.thesaurus.data.firebase
 
-import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.flow.Flow
@@ -18,7 +17,7 @@ internal class FirestoreInvitationRepository(private val firestore: FirebaseFire
     override fun observeInvitations(householdId: String): Flow<SyncObservation<List<Invitation>>> =
         household(householdId)
             .collection(FirestorePaths.INVITATIONS)
-            .observations(DocumentSnapshot::toInvitation)
+            .observations(mapper = { it.toInvitation(expectedHouseholdId = householdId) })
 
     override fun observeInvitation(
         householdId: String,
@@ -27,7 +26,7 @@ internal class FirestoreInvitationRepository(private val firestore: FirebaseFire
         household(householdId)
             .collection(FirestorePaths.INVITATIONS)
             .document(invitationId)
-            .observations(DocumentSnapshot::toInvitation)
+            .observations { it.toInvitation(expectedHouseholdId = householdId) }
 
     override suspend fun create(invitation: Invitation) {
         household(invitation.householdId).collection(FirestorePaths.INVITATIONS)

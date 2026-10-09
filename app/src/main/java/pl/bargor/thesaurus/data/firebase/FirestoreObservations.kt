@@ -8,6 +8,7 @@ import com.google.firebase.firestore.SnapshotMetadata
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.CancellationException
 import pl.bargor.thesaurus.data.model.SyncObservation
 import pl.bargor.thesaurus.data.model.SyncState
 
@@ -19,17 +20,36 @@ fun syncState(hasPendingWrites: Boolean, fromCache: Boolean): SyncState = when {
 
 fun syncState(metadata: SnapshotMetadata): SyncState = syncState(metadata.hasPendingWrites(), metadata.isFromCache)
 
+/** A callback either publishes its complete decoded snapshot or an error with no partial value. */
+internal fun <T> decodeObservation(state: SyncState, decoder: () -> T?): SyncObservation<T> = try {
+    SyncObservation(value = decoder(), state = state)
+} catch (error: CancellationException) {
+    throw error
+} catch (error: Exception) {
+    SyncObservation(state = SyncState.ERROR, error = if (error is FirestoreDecodeException) error else
+        FirestoreDecodeException(FirestoreDocumentType.UNKNOWN, "_document", FirestoreDecodeReason.INVALID_VALUE))
+}
+
+internal fun <D, T> decodeCollectionObservation(
+    documents: Iterable<D>,
+    state: SyncState,
+    decoder: (D) -> T?,
+    transform: (List<T>) -> List<T> = { it },
+): SyncObservation<List<T>> = decodeObservation(state) {
+    transform(documents.map { document -> decoder(document) ?: throw FirestoreDecodeException(
+        FirestoreDocumentType.UNKNOWN, "_document", FirestoreDecodeReason.MISSING_FIELD,
+    ) })
+}
+
 internal fun <T> Query.observations(
     mapper: (DocumentSnapshot) -> T?,
+    transform: (List<T>) -> List<T> = { it },
 ): Flow<SyncObservation<List<T>>> = callbackFlow {
     val registration = addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
         when {
             error != null -> trySend(SyncObservation(state = SyncState.ERROR, error = error))
             snapshot != null -> trySend(
-                SyncObservation(
-                    value = snapshot.documents.mapNotNull(mapper),
-                    state = syncState(snapshot.metadata),
-                ),
+                decodeCollectionObservation(snapshot.documents, syncState(snapshot.metadata), mapper, transform),
             )
         }
     }
@@ -43,10 +63,7 @@ internal fun <T> DocumentReference.observations(
         when {
             error != null -> trySend(SyncObservation(state = SyncState.ERROR, error = error))
             snapshot != null -> trySend(
-                SyncObservation(
-                    value = mapper(snapshot),
-                    state = syncState(snapshot.metadata),
-                ),
+                decodeObservation(syncState(snapshot.metadata)) { mapper(snapshot) },
             )
         }
     }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.bargor.thesaurus.data.firebase.LedgerRepository
+import pl.bargor.thesaurus.data.firebase.FirestoreDecodeException
 import pl.bargor.thesaurus.data.firebase.TaxonomyRepository
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.EntryType
@@ -108,6 +109,8 @@ class EntryFormViewModel @Inject constructor(
     private var context: Triple<String, String, String?>? = null
     private var pendingEntryId: String? = null
     private var editingEntry: LedgerEntry? = null
+    private var ledgerInvalid = false
+    private var taxonomyInvalid = false
     private var draftInitialized = false
     private var entryObservationJob: Job? = null
     private var taxonomyObservationJob: Job? = null
@@ -130,6 +133,8 @@ class EntryFormViewModel @Inject constructor(
             savedStateHandle.get<Boolean>("entry.hasDraft") == true
         context = Triple(householdId, actorId, entryId)
         editingEntry = null
+        ledgerInvalid = false
+        taxonomyInvalid = false
         pendingEntryId = if (restoreDraft) savedStateHandle["entry.pendingId"] else null
         draftInitialized = restoreDraft || entryId == null
         mutableState.value = if (restoreDraft) {
@@ -150,6 +155,18 @@ class EntryFormViewModel @Inject constructor(
         entryObservationJob = viewModelScope.launch {
             ledgerRepository.observeEntries(householdId).withObservationErrors().collect { observation ->
                 if (context != Triple(householdId, actorId, entryId)) return@collect
+                if (observation.error is FirestoreDecodeException) ledgerInvalid = true
+                else if (observation.value != null && observation.error == null && observation.state != SyncState.ERROR)
+                    ledgerInvalid = false
+                if (ledgerInvalid) {
+                    editingEntry = null
+                    // Preserve the id of an already queued draft; repairing a read must not
+                    // turn its retry into a second entry under a newly generated id.
+                    mutableState.update { it.copy(isLoading = false, saving = false, saved = false,
+                        queuedOffline = false, syncState = SyncState.ERROR, error = EntryFormError.SaveFailed) }
+                    persistDraft()
+                    return@collect
+                }
                 val stored = entryId?.let { requestedId ->
                     observation.value.orEmpty().firstOrNull { it.id == requestedId }
                 }
@@ -163,11 +180,12 @@ class EntryFormViewModel @Inject constructor(
                     val becameUnavailable = entryId != null && editingEntry != null && stored == null && observation.error == null
                     if (becameUnavailable) editingEntry = null
                     val loaded = stored?.takeIf { editingEntry?.id != it.id }
+                    val populateDraft = !draftInitialized
                     if (loaded != null) {
                         editingEntry = loaded
                         draftInitialized = true
                     }
-                    val populated = if (loaded != null && !restoreDraft) {
+                    val populated = if (loaded != null && !restoreDraft && populateDraft) {
                         old.copy(
                             amount = PlnMoney.entryInput(loaded.amountGrosze),
                             date = loaded.date,
@@ -179,6 +197,9 @@ class EntryFormViewModel @Inject constructor(
                         )
                     } else old
                     when {
+                        taxonomyInvalid -> populated.copy(isLoading = false, saving = false,
+                            saved = false, queuedOffline = false, syncState = SyncState.ERROR,
+                            error = EntryFormError.SaveFailed)
                         observation.error != null && pendingId != null -> {
                             pendingEntryId = null
                             populated.copy(saving = false, saved = false, queuedOffline = false, error = EntryFormError.SaveFailed)
@@ -208,10 +229,18 @@ class EntryFormViewModel @Inject constructor(
                 .observe(householdId, actorId)
                 .collect { model ->
                     if (context != Triple(householdId, actorId, entryId)) return@collect
+                    taxonomyInvalid = model.hasInvalidData
+                    if (taxonomyInvalid) {
+                        mutableState.update { it.copy(categories = emptyList(), isLoading = false,
+                            saving = false, saved = false, queuedOffline = false,
+                            syncState = SyncState.ERROR, error = EntryFormError.SaveFailed) }
+                        persistDraft()
+                        return@collect
+                    }
                     if (!model.isTaxonomyReady) {
                         mutableState.update { old -> old.copy(
                             isLoading = old.isLoading && !model.hasError,
-                            syncState = model.syncState,
+                            syncState = if (ledgerInvalid) SyncState.ERROR else model.syncState,
                             error = if (model.hasError) EntryFormError.SaveFailed else old.error,
                         ) }
                         return@collect
@@ -233,7 +262,7 @@ class EntryFormViewModel @Inject constructor(
                         if (!snapshot.hasCategorySnapshot) {
                             return@update old.copy(
                                 isLoading = old.isLoading && snapshot.observation.error == null,
-                                syncState = snapshot.observation.state,
+                                syncState = if (ledgerInvalid) SyncState.ERROR else snapshot.observation.state,
                                 error = snapshot.observation.error?.let { EntryFormError.SaveFailed } ?: old.error,
                             )
                         }
@@ -255,8 +284,9 @@ class EntryFormViewModel @Inject constructor(
                             },
                             categoryId = categoryId,
                             subcategoryId = old.subcategoryId.takeIf { validSubcategory },
-                            syncState = snapshot.observation.state,
-                            error = snapshot.observation.error?.let { EntryFormError.SaveFailed } ?: old.error,
+                            syncState = if (ledgerInvalid) SyncState.ERROR else snapshot.observation.state,
+                            error = if (ledgerInvalid) EntryFormError.SaveFailed else
+                                snapshot.observation.error?.let { EntryFormError.SaveFailed } ?: old.error,
                         )
                     }
                     persistDraft()
@@ -294,6 +324,10 @@ class EntryFormViewModel @Inject constructor(
 
     fun save(today: LocalDate = LocalDate.now()) {
         val (householdId, actorId) = context ?: return
+        if (ledgerInvalid || taxonomyInvalid) {
+            update { copy(error = EntryFormError.SaveFailed, syncState = SyncState.ERROR) }
+            return
+        }
         // An edit route is never a create route. In particular, a stale local edit must not turn a
         // remotely tombstoned/missing document into a new active entry under a different id.
         if (state.value.editingEntryId != null && editingEntry == null) {
@@ -319,6 +353,9 @@ class EntryFormViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
+            // The listener may invalidate the edit base between the click and this job.
+            if (context != Triple(householdId, actorId, current.editingEntryId) || ledgerInvalid || taxonomyInvalid ||
+                (current.editingEntryId != null && editingEntry == null)) return@launch
             update { copy(saving = true, error = null) }
             val existing = editingEntry
             val entry = LedgerEntry(
@@ -353,7 +390,11 @@ class EntryFormViewModel @Inject constructor(
     }
 
     private fun update(transform: EntryFormUiState.() -> EntryFormUiState) {
-        mutableState.update(transform)
+        mutableState.update { old ->
+            val next = transform(old)
+            if (ledgerInvalid || taxonomyInvalid) next.copy(error = EntryFormError.SaveFailed,
+                syncState = SyncState.ERROR) else next
+        }
         draftInitialized = true
         persistDraft()
     }

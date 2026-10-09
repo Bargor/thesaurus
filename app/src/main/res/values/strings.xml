@@ -32,7 +32,7 @@
     <string name="navigation_entries">Wpisy</string>
     <string name="navigation_summary">Podsumowanie</string>
     <string name="navigation_browse">Przegląd</string>
-    <string name="browse_load_error">Nie udało się wczytać przeglądu. Spróbuj ponownie po odzyskaniu połączenia.</string>
+    <string name="browse_load_error">Nie można wyświetlić pełnych danych przeglądu. Spróbuj ponownie.</string>
     <string name="browse_no_subcategory">Bez podkategorii</string>
     <string name="browse_unknown_subcategory">Nieznana podkategoria</string>
     <string name="browse_expanded">Rozwinięta</string>
@@ -73,7 +73,7 @@
     <string name="summary_chart_description">Udział przychodów i wydatków. Przychody: %1$s. Wydatki: %2$s.</string>
     <string name="summary_chart_income">Przychody: %1$s%%</string>
     <string name="summary_chart_expense">Wydatki: %1$s%%</string>
-    <string name="summary_load_error">Nie udało się wczytać podsumowania. Spróbuj ponownie po odzyskaniu połączenia.</string>
+    <string name="summary_load_error">Nie można wyświetlić pełnych danych podsumowania. Spróbuj ponownie.</string>
     <string name="summary_sync_pending">Zmiany oczekują na synchronizację. Kwoty uwzględniają lokalne wpisy.</string>
     <string name="empty_reports">Brak wpisów w wybranym okresie.</string>
     <string name="reports_mode_month">Miesiąc</string>
@@ -117,7 +117,7 @@
     <string name="reports_type_all">Wszystkie</string>
     <string name="reports_type_income">Przychody</string>
     <string name="reports_type_expense">Wydatki</string>
-    <string name="reports_load_error">Nie udało się wczytać raportu. Spróbuj ponownie po odzyskaniu połączenia.</string>
+    <string name="reports_load_error">Nie można wyświetlić pełnych danych raportu. Spróbuj ponownie.</string>
     <string name="reports_sync_pending">Zmiany oczekują na synchronizację. Raport uwzględnia lokalne wpisy.</string>
     <string name="reports_category_chart">Kategorie</string>
     <string name="reports_category_legend_heading">Kategorie na wykresie</string>
@@ -193,7 +193,7 @@
     <string name="entries_sort_date">Data księgowania</string>
     <string name="entries_sort_created">Kolejność utworzenia</string>
     <string name="entries_load_more">Pokaż więcej</string>
-    <string name="entries_load_error">Nie udało się wczytać wpisów. Spróbuj ponownie po odzyskaniu połączenia.</string>
+    <string name="entries_load_error">Nie można wyświetlić pełnych danych wpisów. Spróbuj ponownie.</string>
     <string name="entries_sync_pending">Zmiany oczekują na synchronizację.</string>
     <string name="entries_unknown_category">Nieznana kategoria</string>
     <string name="entries_author_and_date">%1$s · %2$s</string>

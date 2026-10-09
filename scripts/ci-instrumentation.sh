@@ -49,6 +49,7 @@ capture_diagnostics() {
         # MediaStore images survive UTP's target-app uninstall at suite teardown.
         mkdir -p "$diagnostics_dir/visual-evidence" || true
         bounded_adb pull /sdcard/Pictures/ThesaurusTestEvidence/issue94 "$diagnostics_dir/visual-evidence/" > "$diagnostics_dir/visual-evidence-capture.txt" 2>&1 || true
+        bounded_adb pull /sdcard/Pictures/ThesaurusTestEvidence/issue96 "$diagnostics_dir/visual-evidence/" > "$diagnostics_dir/visual-evidence-issue96-capture.txt" 2>&1 || true
     fi
 }
 

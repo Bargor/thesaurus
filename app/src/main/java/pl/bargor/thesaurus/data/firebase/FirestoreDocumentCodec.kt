@@ -3,33 +3,47 @@ package pl.bargor.thesaurus.data.firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
+import kotlinx.coroutines.CancellationException
 import pl.bargor.thesaurus.data.model.Category
 import pl.bargor.thesaurus.data.model.CategoryOrder
 import pl.bargor.thesaurus.data.model.CategoryPalette
-import pl.bargor.thesaurus.data.model.EntryType
 import pl.bargor.thesaurus.data.model.Household
 import pl.bargor.thesaurus.data.model.Invitation
-import pl.bargor.thesaurus.data.model.InvitationStatus
 import pl.bargor.thesaurus.data.model.LedgerEntry
 import pl.bargor.thesaurus.data.model.Member
-import pl.bargor.thesaurus.data.model.MemberRole
 import pl.bargor.thesaurus.data.model.Subcategory
 import pl.bargor.thesaurus.data.model.User
 import java.time.Instant
-import java.time.LocalDate
 import java.util.Locale
 
-/** Shared document mapping retains the existing legacy coercions and default values. */
-private fun DocumentSnapshot.instant(name: String): Instant? = getTimestamp(name)?.toDate()?.toInstant()
-internal fun DocumentSnapshot.ledgerRevision(): Long {
-    val value = get("ledgerRevision") ?: return 0L
-    check(value is Long && value >= 0L) { "Nieprawidłowa wersja księgi." }
-    return value
+/** Missing documents are valid null results; existing documents must decode in full. */
+private fun <T> DocumentSnapshot.decodeDocument(type: FirestoreDocumentType,
+    decoder: (String, Map<String, Any?>, Boolean) -> T): T? {
+    try {
+        if (!exists()) return null
+        val fields = data ?: throw FirestoreDecodeException(type, "_document", FirestoreDecodeReason.MISSING_FIELD)
+        return decoder(id, fields, metadata.hasPendingWrites())
+    } catch (error: FirestoreDecodeException) {
+        throw error.atDocumentPath(reference.path)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        throw FirestoreDecodeException(type, "_document", FirestoreDecodeReason.INVALID_VALUE)
+            .atDocumentPath(reference.path)
+    }
 }
-private fun Any?.string() = this as? String
-private fun Any?.long() = this as? Long ?: (this as? Number)?.toLong()
-private fun Any?.boolean() = this as? Boolean ?: false
-private fun Any?.stringList() = (this as? List<*>)?.filterIsInstance<String>().orEmpty()
+
+internal fun DocumentSnapshot.ledgerRevision(): Long = try {
+    FirestoreDocumentDecoder.ledgerRevision(data ?: throw FirestoreDecodeException(
+        FirestoreDocumentType.HOUSEHOLD, "_document", FirestoreDecodeReason.MISSING_FIELD))
+} catch (error: FirestoreDecodeException) {
+    throw error.atDocumentPath(reference.path)
+} catch (error: CancellationException) {
+    throw error
+} catch (_: Exception) {
+    throw FirestoreDecodeException(FirestoreDocumentType.HOUSEHOLD, "_document", FirestoreDecodeReason.INVALID_VALUE)
+        .atDocumentPath(reference.path)
+}
 private fun Instant.toTimestamp() = Timestamp(epochSecond, nano)
 
 internal fun User.toDocument() = buildMap<String, Any?> {
@@ -40,16 +54,10 @@ internal fun User.toDocument() = buildMap<String, Any?> {
     if (createdAt == null) put("createdAt", FieldValue.serverTimestamp())
 }
 
-internal fun DocumentSnapshot.toUser(): User? = data?.let { fields ->
-    User(
-        id = id,
-        email = fields["email"].string() ?: return null,
-        householdId = fields["householdId"].string() ?: return null,
-        displayName = fields["displayName"].string(),
-        createdAt = instant("createdAt"),
-        updatedAt = instant("updatedAt"),
-    )
-}
+internal fun DocumentSnapshot.toUser(): User? =
+    decodeDocument(FirestoreDocumentType.USER) { id, fields, pending ->
+        FirestoreDocumentDecoder.user(id, fields, pending)
+    }
 
 internal fun Household.toDocument() = buildMap<String, Any?> {
     put("name", name.trim())
@@ -58,17 +66,10 @@ internal fun Household.toDocument() = buildMap<String, Any?> {
     if (createdAt == null) put("createdAt", FieldValue.serverTimestamp())
 }
 
-internal fun DocumentSnapshot.toHousehold(): Household? = data?.let { fields ->
-    Household(
-        id = id,
-        name = fields["name"].string() ?: return null,
-        ownerId = fields["ownerId"].string() ?: return null,
-        createdAt = instant("createdAt"),
-        updatedAt = instant("updatedAt"),
-        openingBalanceGrosze = fields["openingBalanceGrosze"] as? Long ?: 0L,
-        ledgerRevision = fields["ledgerRevision"] as? Long ?: 0L,
-    )
-}
+internal fun DocumentSnapshot.toHousehold(): Household? =
+    decodeDocument(FirestoreDocumentType.HOUSEHOLD) { id, fields, pending ->
+        FirestoreDocumentDecoder.household(id, fields, pending)
+    }
 
 internal fun LedgerEntry.toDocument() = buildMap<String, Any?> {
     put("householdId", householdId)
@@ -87,28 +88,10 @@ internal fun LedgerEntry.toDocument() = buildMap<String, Any?> {
     put("deletedById", if (deleted) deletedById else null)
 }
 
-internal fun DocumentSnapshot.toLedgerEntry(): LedgerEntry? = data?.let { fields ->
-    val date = fields["date"].string()
-        ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        ?: return null
-    LedgerEntry(
-        id = id,
-        householdId = fields["householdId"].string() ?: return null,
-        amountGrosze = fields["amountGrosze"].long() ?: return null,
-        date = date,
-        title = fields["title"].string(),
-        categoryId = fields["categoryId"].string() ?: return null,
-        subcategoryId = fields["subcategoryId"].string(),
-        tags = fields["tags"].stringList(),
-        authorId = fields["authorId"].string() ?: return null,
-        updatedById = fields["updatedById"].string() ?: return null,
-        createdAt = instant("createdAt"),
-        updatedAt = instant("updatedAt"),
-        deleted = fields["deleted"].boolean(),
-        deletedAt = instant("deletedAt"),
-        deletedById = fields["deletedById"].string(),
-    )
-}
+internal fun DocumentSnapshot.toLedgerEntry(expectedHouseholdId: String? = null): LedgerEntry? =
+    decodeDocument(FirestoreDocumentType.LEDGER_ENTRY) { id, fields, pending ->
+        FirestoreDocumentDecoder.ledgerEntry(id, fields, pending, expectedHouseholdId)
+    }
 
 internal fun Category.toDocument() = buildMap<String, Any?> {
     put("householdId", householdId)
@@ -122,24 +105,10 @@ internal fun Category.toDocument() = buildMap<String, Any?> {
     if (createdAt == null) put("createdAt", FieldValue.serverTimestamp())
 }
 
-internal fun DocumentSnapshot.toCategory(): Category? {
-    val fields = data ?: return null
-    val defaultEntryType = runCatching {
-        EntryType.valueOf(fields["defaultEntryType"].string() ?: EntryType.EXPENSE.name)
-    }.getOrDefault(EntryType.EXPENSE)
-    return Category(
-        id = id,
-        householdId = fields["householdId"].string() ?: return null,
-        name = fields["name"].string() ?: return null,
-        color = CategoryPalette.normalizedToken(fields["color"].string()),
-        archived = fields["archived"].boolean(),
-        defaultEntryType = defaultEntryType,
-        authorId = fields["authorId"].string() ?: return null,
-        updatedById = fields["updatedById"].string() ?: return null,
-        createdAt = instant("createdAt"),
-        updatedAt = instant("updatedAt"),
-    )
-}
+internal fun DocumentSnapshot.toCategory(expectedHouseholdId: String? = null): Category? =
+    decodeDocument(FirestoreDocumentType.CATEGORY) { id, fields, pending ->
+        FirestoreDocumentDecoder.category(id, fields, pending, expectedHouseholdId)
+    }
 
 internal fun CategoryOrder.toDocument() = mapOf(
     "householdId" to householdId,
@@ -148,15 +117,10 @@ internal fun CategoryOrder.toDocument() = mapOf(
     "updatedAt" to FieldValue.serverTimestamp(),
 )
 
-internal fun DocumentSnapshot.toCategoryOrder(): CategoryOrder? {
-    val fields = data ?: return null
-    return CategoryOrder(
-        householdId = fields["householdId"].string() ?: return null,
-        userId = fields["userId"].string() ?: return null,
-        categoryIds = fields["categoryIds"].stringList(),
-        updatedAt = instant("updatedAt"),
-    )
-}
+internal fun DocumentSnapshot.toCategoryOrder(expectedHouseholdId: String? = null, expectedUserId: String? = null): CategoryOrder? =
+    decodeDocument(FirestoreDocumentType.CATEGORY_ORDER) { id, fields, pending ->
+        FirestoreDocumentDecoder.categoryOrder(id, fields, pending, expectedHouseholdId, expectedUserId)
+    }
 
 internal fun Subcategory.toDocument() = buildMap<String, Any?> {
     put("householdId", householdId)
@@ -169,20 +133,10 @@ internal fun Subcategory.toDocument() = buildMap<String, Any?> {
     if (createdAt == null) put("createdAt", FieldValue.serverTimestamp())
 }
 
-internal fun DocumentSnapshot.toSubcategory(): Subcategory? {
-    val fields = data ?: return null
-    return Subcategory(
-        id = id,
-        householdId = fields["householdId"].string() ?: return null,
-        categoryId = fields["categoryId"].string() ?: return null,
-        name = fields["name"].string() ?: return null,
-        archived = fields["archived"].boolean(),
-        authorId = fields["authorId"].string() ?: return null,
-        updatedById = fields["updatedById"].string() ?: return null,
-        createdAt = instant("createdAt"),
-        updatedAt = instant("updatedAt"),
-    )
-}
+internal fun DocumentSnapshot.toSubcategory(expectedHouseholdId: String? = null, expectedCategoryId: String? = null): Subcategory? =
+    decodeDocument(FirestoreDocumentType.SUBCATEGORY) { id, fields, pending ->
+        FirestoreDocumentDecoder.subcategory(id, fields, pending, expectedHouseholdId, expectedCategoryId)
+    }
 
 internal fun Invitation.toDocument() = mapOf(
     "householdId" to householdId,
@@ -193,23 +147,10 @@ internal fun Invitation.toDocument() = mapOf(
     "acceptedBy" to acceptedById,
     "createdAt" to (createdAt?.toTimestamp() ?: FieldValue.serverTimestamp()),
 )
-internal fun DocumentSnapshot.toInvitation(): Invitation? {
-    val fields = data ?: return null
-    val expiry = getTimestamp("expiresAt")?.toDate()?.toInstant() ?: return null
-    val status = runCatching {
-        InvitationStatus.valueOf(fields["status"].string() ?: InvitationStatus.PENDING.name)
-    }.getOrDefault(InvitationStatus.PENDING)
-    return Invitation(
-        id = id,
-        householdId = fields["householdId"].string() ?: return null,
-        email = fields["email"].string() ?: return null,
-        invitedBy = fields["invitedBy"].string() ?: return null,
-        expiresAt = expiry,
-        status = status,
-        acceptedById = fields["acceptedBy"].string(),
-        createdAt = instant("createdAt"),
-    )
-}
+internal fun DocumentSnapshot.toInvitation(expectedHouseholdId: String? = null): Invitation? =
+    decodeDocument(FirestoreDocumentType.INVITATION) { id, fields, pending ->
+        FirestoreDocumentDecoder.invitation(id, fields, pending, expectedHouseholdId)
+    }
 
 internal fun Member.toDocument() = mapOf(
     "email" to email.trim().lowercase(Locale.ROOT),
@@ -219,18 +160,7 @@ internal fun Member.toDocument() = mapOf(
     "joinedAt" to (joinedAt?.toTimestamp() ?: FieldValue.serverTimestamp()),
 )
 
-internal fun DocumentSnapshot.toMember(): Member? {
-    val fields = data ?: return null
-    val role = runCatching {
-        MemberRole.valueOf(fields["role"].string() ?: MemberRole.MEMBER.name)
-    }.getOrDefault(MemberRole.MEMBER)
-    val email = fields["email"].string() ?: return null
-    return Member(
-        uid = id,
-        email = email,
-        displayName = fields["displayName"].string(),
-        role = role,
-        invitationId = fields["invitationId"].string(),
-        joinedAt = instant("joinedAt"),
-    )
-}
+internal fun DocumentSnapshot.toMember(): Member? =
+    decodeDocument(FirestoreDocumentType.MEMBER) { id, fields, pending ->
+        FirestoreDocumentDecoder.member(id, fields, pending)
+    }

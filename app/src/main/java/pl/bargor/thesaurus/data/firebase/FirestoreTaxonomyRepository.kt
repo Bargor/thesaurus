@@ -1,6 +1,5 @@
 package pl.bargor.thesaurus.data.firebase
 
-import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.flow.Flow
@@ -16,8 +15,8 @@ internal class FirestoreTaxonomyRepository(private val firestore: FirebaseFirest
     override fun observeCategories(householdId: String): Flow<SyncObservation<List<Category>>> =
         household(householdId)
             .collection(FirestorePaths.CATEGORIES)
-            .orderBy("name")
-            .observations(DocumentSnapshot::toCategory)
+            .observations(mapper = { it.toCategory(expectedHouseholdId = householdId) },
+                transform = ::orderedCategories)
 
     override fun observeSubcategories(
         householdId: String,
@@ -26,8 +25,8 @@ internal class FirestoreTaxonomyRepository(private val firestore: FirebaseFirest
         .collection(FirestorePaths.CATEGORIES)
         .document(categoryId)
         .collection(FirestorePaths.SUBCATEGORIES)
-        .orderBy("name")
-        .observations(DocumentSnapshot::toSubcategory)
+        .observations(mapper = { it.toSubcategory(expectedHouseholdId = householdId, expectedCategoryId = categoryId) },
+            transform = ::orderedSubcategories)
 
     override suspend fun save(category: Category) {
         household(category.householdId)
@@ -55,7 +54,7 @@ internal class FirestoreTaxonomyRepository(private val firestore: FirebaseFirest
         .document(userId)
         .collection(FirestorePaths.CATEGORY_ORDERS)
         .document(householdId)
-        .observations(DocumentSnapshot::toCategoryOrder)
+        .observations { it.toCategoryOrder(expectedHouseholdId = householdId, expectedUserId = userId) }
 
     override suspend fun saveCategoryOrder(order: CategoryOrder) {
         firestore.collection(FirestorePaths.USERS)
