@@ -70,7 +70,7 @@ Reports refresh calendar boundaries at local midnight while resumed and immediat
 
 ## Requirements
 
-Import/export is being delivered incrementally in issues #108–#115. JSON contracts and the locale-independent CSV exporter are documented in [Import/export contracts](docs/data-transfer-contracts.md); Settings actions and system document pickers arrive in #114, not in these file-layer features.
+Import/export is being delivered incrementally in issues #108–#115. JSON contracts, the locale-independent CSV exporter, and CSV parsing/mapping/validation are documented in [Import/export contracts](docs/data-transfer-contracts.md); Settings actions and system document pickers arrive in #114, not in these file-layer features. CSV validation never writes to Firestore.
 
 - JDK 21
 - Android SDK Platform 37, Build Tools 37.0.0, and platform-tools

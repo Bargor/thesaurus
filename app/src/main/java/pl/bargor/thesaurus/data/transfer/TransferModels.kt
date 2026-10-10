@@ -137,6 +137,7 @@ data class ImportSummary(
 
 enum class TransferErrorCode {
     MALFORMED_JSON, MALFORMED_UTF8, UNSUPPORTED_VERSION, INVALID_VALUE, LIMIT_EXCEEDED,
+    MALFORMED_CSV, AMBIGUOUS_DELIMITER,
 }
 
 /** No parser cause, offending value or path can escape into logs/UI. */
@@ -150,4 +151,5 @@ object BackupLimits {
     const val MAX_SUBCATEGORIES = 10_000
     const val MAX_JSON_DEPTH = 32
     const val MAX_RAW_FIELD_CHARS = 16 * 1024
+    const val MAX_CSV_COLUMNS = 128
 }
