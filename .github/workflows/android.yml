@@ -56,8 +56,14 @@ jobs:
         run: npm run test:hosting
       - name: Test instrumentation CI watchdog
         run: npm run test:ci-instrumentation
+      - name: Test APK assembly resource policy
+        run: npm run test:ci-assembly
       - name: Assemble debug, release and developer APKs
-        run: bash ./gradlew assembleDebug assembleRelease assembleDevDebug --stacktrace
+        # Isolate D8 work; the larger heap exits before the emulator phase.
+        run: |
+          bash ./gradlew assembleDebug --stacktrace --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
+          bash ./gradlew assembleRelease --stacktrace --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
+          bash ./gradlew assembleDevDebug --stacktrace --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
       - name: Verify developer test source wiring
         run: bash ./gradlew -PdevTest=true testDevDebugUnitTest compileDevDebugAndroidTestKotlin --stacktrace
       - name: Enable KVM acceleration
@@ -144,8 +150,14 @@ jobs:
         run: npm run test:hosting
       - name: Test instrumentation CI watchdog
         run: npm run test:ci-instrumentation
+      - name: Test APK assembly resource policy
+        run: npm run test:ci-assembly
       - name: Assemble debug, release and developer APKs
-        run: bash ./gradlew assembleDebug assembleRelease assembleDevDebug --stacktrace
+        # Isolate D8 work; the larger heap exits before the emulator phase.
+        run: |
+          bash ./gradlew assembleDebug --stacktrace --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
+          bash ./gradlew assembleRelease --stacktrace --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
+          bash ./gradlew assembleDevDebug --stacktrace --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
       - name: Verify developer test source wiring
         run: bash ./gradlew -PdevTest=true testDevDebugUnitTest compileDevDebugAndroidTestKotlin --stacktrace
       - name: Enable KVM acceleration
