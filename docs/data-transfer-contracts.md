@@ -1,6 +1,6 @@
 # Import/export contracts (format version 1)
 
-Issue [#108](https://github.com/Bargor/thesaurus/issues/108) introduces file-layer contracts only. CSV parsing/export, Firestore writes, import preview/repair and Android document pickers are delivered by #109–#115. No import/export actions appear in Settings yet.
+Issue [#108](https://github.com/Bargor/thesaurus/issues/108) introduces file-layer contracts only. CSV export (#109) and parsing/validation (#110) build on those contracts; Firestore writes, import preview/repair and Android document pickers follow in #111–#115. No import/export actions appear in Settings yet.
 
 ## JSON scope
 
@@ -60,7 +60,38 @@ The export enforces 50,000 **active** rows and the 16 MiB byte limit (including 
 
 CSV contains financial details and author labels. Treat it as sensitive. Import it into spreadsheet software using **UTF-8, comma delimiter and text column types** when preserving values; avoid automatic formula evaluation. Literal formula-like text is deliberately retained for lossless transfer. CSV quoting alone does not prevent [spreadsheet formula injection](https://community.owasp.org/attacks/CSV_Injection); do not blindly open files containing untrusted text as executable spreadsheet cells. A future UI warning is part of #114.
 
-### Import models
+### CSV parsing and validation (issue #110)
+
+Import has three independent stages: `CsvParser.parse(bytes, delimiter?)`, `CsvHeaderDetector.detect(headers, extraAliases?)`, and `CsvRowValidator.validate(parsed, mapping, today, dateFormat?, typeAliases?)`. These are pure file operations: they do not read accounts, resolve taxonomy IDs, authorize imports, or write to Firestore. The caller must handle `requiresManualMapping` before importing candidates. Unknown categories/subcategories and current-user ownership are decisions for #111; preview/repair UI belongs to #112, and file selection to #114.
+
+The parser requires UTF-8 (optional single leading BOM), supports comma, semicolon and tab delimiters, doubled quotes, quoted delimiters and multiline fields, and accepts CRLF, LF or CR record endings. Separator detection never consults the device locale. An ambiguous separator produces `AMBIGUOUS_DELIMITER`; the caller can retry with an explicit supported delimiter. The first record is the header. Raw cell contents are retained, and `ImportRow.rowNumber` is the **physical starting line**, so a quoted multiline record advances the following row's source number. Empty records remain available as invalid rows rather than being silently dropped. A header-only file is valid and contains zero data rows.
+
+Header recognition trims and lowercases with `Locale.ROOT`. Neutral headers take precedence over custom aliases; duplicate matching columns, or an alias matching multiple logical fields, require manual mapping even for optional fields. Unknown columns stay in the raw row. `author` is recognized for export compatibility but never becomes an identity for writing entries. Callers may extend aliases without changing the parser or the CSV schema.
+
+| Logical field | Built-in headers (neutral first) |
+| --- | --- |
+| Date | `date`, `data`, `datum` |
+| Amount | `amount`, `kwota`, `betrag`, `montant` |
+| Type | `type`, `typ`, `art` |
+| Title | `title`, `tytuł`, `tytul`, `titel`, `titre` |
+| Category | `category`, `kategoria`, `kategorie`, `catégorie`, `categorie` |
+| Subcategory | `subcategory`, `podkategoria`, `unterkategorie`, `sous-catégorie`, `sous-categorie` |
+| Tags | `tags`, `tagi`, `schlagwörter`, `schlagworter`, `étiquettes`, `etiquettes` |
+| Author | `author`, `autor`, `auteur` |
+
+Required columns are date, amount and category. An incomplete mapping or an index outside the header width returns a pending validation result (`requiresManualMapping = true`), with raw rows retained and zero valid/invalid counts. A complete mapping validates each row independently: a wrong column count or invalid field does not prevent later valid rows from being returned. Each `CsvValidatedRow` retains its source and safe `ValidationIssue` codes; `entry` is null when that row has an error. No raw values are interpolated into diagnostic codes or exceptions.
+
+Dates always accept strict ISO `YYYY-MM-DD`. `AUTO` also accepts dotted day-month-year (`D.M.YYYY`) and slash dates (`D/M/YYYY` or `M/D/YYYY`) only when one interpretation is valid, or both produce the same date. For example, `13/02/2024` and `02/13/2024` are February 13, while `01/02/2024` requires repair (`AMBIGUOUS_DATE`). A caller may explicitly select `DAY_MONTH_YEAR` or `MONTH_DAY_YEAR` for regional dates. Invalid calendar dates and dates after the explicitly supplied `today` produce row issues; neither locale nor a hidden clock chooses their meaning.
+
+Amounts are ungrouped PLN with an optional sign and at most two decimal places, using a dot or comma. Decimal-comma cells must be quoted when the CSV delimiter is comma. Currency symbols, grouping separators, exponents, rounding, zero and overflowing grosze are rejected. Conversion is exact across the full signed `Long` range. With no declared type, the sign determines direction (unsigned positive amounts mean income). An unsigned magnitude with a declared type receives that direction; an explicit `+`/`-` sign must agree with the declared type. A conflict produces `AMOUNT_TYPE_CONFLICT`. Neutral `income`/`expense` always work; built-in aliases are `przychód`, `przychod`, `wpływ`, `wplyw`, `einnahme`, `revenu` and `wydatek`, `koszt`, `ausgabe`, `dépense`, `depense`, respectively. Extra aliases cannot replace built-in meanings.
+
+Tags use the exporter's strict JSON string-array cell, or a blank cell for no tags. Delimiter-separated tag lists are not guessed: malformed JSON, non-string items, duplicate literal tags, blank tags, more than ten tags or tags longer than forty characters require row repair. Titles/names/tags retain their literal whitespace and case in this file layer; #111 applies domain normalization before duplicate detection and persistence. Empty optional title/subcategory cells are null; a supplied whitespace-only subcategory requires repair rather than becoming a name. Taxonomy names over sixty characters and titles over 160 characters are row errors and remain in the raw source for repair.
+
+File failures throw sanitized `BackupContractException` codes (`MALFORMED_UTF8`, `MALFORMED_CSV`, `AMBIGUOUS_DELIMITER`, `LIMIT_EXCEEDED`) without a partial result or parser cause. Limits are 16 MiB including BOM, 50,000 data records, 128 cells per record and 16,384 UTF-16 code units per decoded raw cell. These transport limits are enforced during parsing, separately from stricter ledger-field row validation. Malformed quoting fails the whole file even after earlier valid records. UTF-16 and other non-UTF-8 encodings are not guessed.
+
+The neutral CSV exported by #109, including JSON tags and signed extreme amounts, is automatically mapped regardless of UI language or device locale. Source author labels remain raw reference data only; the import coordinator must assign the authenticated importing user.
+
+### Import state
 
 `CsvColumnMapping` uses optional zero-based indices while mapping is incomplete; date, amount and category are required for `isComplete`. Type, title, subcategory and tags are optional. Assigned columns must be distinct and nonnegative.
 
