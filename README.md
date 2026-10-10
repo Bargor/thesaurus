@@ -70,6 +70,8 @@ Reports refresh calendar boundaries at local midnight while resumed and immediat
 
 ## Requirements
 
+Import/export is being delivered incrementally in issues #108–#115. The initial file contracts are documented in [Import/export contracts](docs/data-transfer-contracts.md); Settings actions and system document pickers arrive in the later UI feature, not in the foundation PR.
+
 - JDK 21
 - Android SDK Platform 37, Build Tools 37.0.0, and platform-tools
 - Android Studio (current stable is recommended) or the checked-in Gradle wrapper
