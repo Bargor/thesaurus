@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:ci-assembly": "node --test scripts/test-ci-assembly.mjs",
     "test:ci-instrumentation": "node --test scripts/test-ci-instrumentation.mjs",
     "test:variants": "node --test scripts/test-variant-sources.mjs",
     "test:project-safety": "node --test tests/emulator-project-policy.test.mjs",
