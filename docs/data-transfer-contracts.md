@@ -35,6 +35,33 @@ The raw-cell limit is distinct from valid ledger-field limits: a 161-character t
 
 ## Shared CSV/import state
 
+### CSV export (issue #109)
+
+`CsvExporter.export(entries, names, exportDate)` accepts household-scoped `BackupEntry` values and explicit `CsvNameLookup` maps. The caller selects the household and provides readable names; this pure file layer never reads Firestore or a UI repository. Deleted entries are omitted, including when their unused fields are malformed. Active entries are sorted by accounting date ascending, then stable entry ID. Duplicate active IDs are rejected instead of silently dropping an entry.
+
+The returned `CsvExportArtifact` contains complete validated bytes and the locale-independent suggested filename `thesaurus-YYYY-MM-DD.csv`. It does not open or close a destination stream. Date is supplied explicitly; exporting the same snapshot and export date produces identical bytes/name, independent of the device language. There is no document-picker action yet; that belongs to #114.
+
+CSV uses UTF-8 with a single BOM (`EF BB BF`), a comma delimiter and `CRLF` after every record, including the header/final record. Common quoting follows [RFC 4180](https://www.rfc-editor.org/rfc/rfc4180.html): cells with commas, double quotes or line breaks are quoted; embedded double quotes are doubled. Text inside a cell is preserved, including its original newlines. The column order is fixed:
+
+| Column | File representation |
+| --- | --- |
+| `date` | ISO `YYYY-MM-DD` |
+| `amount` | Signed PLN amount, decimal dot, exactly two places; no grouping or currency symbol |
+| `type` | `expense` for negative amounts, `income` for positive amounts |
+| `title` | Original optional title; empty cell when absent |
+| `category` | Readable category name, or `unknown-category` |
+| `subcategory` | Name looked up by `(categoryId, subcategoryId)`, or `unknown-subcategory`; empty when unassigned |
+| `tags` | Sorted JSON string array in one CSV cell; `[]` when empty |
+| `author` | Readable author name supplied by the caller, or `unknown-author` |
+
+Tags use a JSON array rather than a delimiter within the cell: literal commas, semicolons, quotes and line breaks in a tag remain unambiguous and reversible. The CSV importer in #110 must decode this representation. Tag case/whitespace is preserved, not silently normalized. Missing/blank historical names use neutral markers without exposing opaque IDs. Archived taxonomy names are still usable for active historical entries.
+
+The export enforces 50,000 **active** rows and the 16 MiB byte limit (including BOM/escaping), and validates exported field lengths/Unicode before returning a file. Titles are limited to 160 characters, taxonomy names to 60, up to ten tags of 40 characters, and author labels to 254 (allowing e-mail labels when supplied by later integration). Unrelated unused lookup records and deletion/audit fields are not exported or validated. Zero entry amounts and dates outside four-digit years are rejected. Signed `Long` extremes are converted exactly without floating-point arithmetic.
+
+CSV contains financial details and author labels. Treat it as sensitive. Import it into spreadsheet software using **UTF-8, comma delimiter and text column types** when preserving values; avoid automatic formula evaluation. Literal formula-like text is deliberately retained for lossless transfer. CSV quoting alone does not prevent [spreadsheet formula injection](https://community.owasp.org/attacks/CSV_Injection); do not blindly open files containing untrusted text as executable spreadsheet cells. A future UI warning is part of #114.
+
+### Import models
+
 `CsvColumnMapping` uses optional zero-based indices while mapping is incomplete; date, amount and category are required for `isComplete`. Type, title, subcategory and tags are optional. Assigned columns must be distinct and nonnegative.
 
 `ImportRow` retains its positive original row number and raw cells, together with field/row `ValidationIssue` values. Issues use safe codes and field names so later UI can provide Polish resource-based messages. Row-associated issues must match their source row.
