@@ -156,3 +156,11 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     add("devDebugImplementation", libs.androidx.compose.ui.test.manifest)
 }
+
+// CI runners have limited memory; test JVMs are separate from the Gradle heap.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (providers.environmentVariable("CI").orNull == "true") {
+        maxParallelForks = 1
+        maxHeapSize = "768m"
+    }
+}
