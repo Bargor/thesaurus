@@ -9,7 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Only instrumentation cache files are touched; no household/account/backend is required. */
+/** Only the Debug target's cache files are touched; no household/account/backend is required. */
 @RunWith(AndroidJUnit4::class)
 class BackupFileIntegrationTest {
     @Test fun utf8BackupRoundTripsThroughAndroidFileStreams() {
@@ -43,7 +43,10 @@ class BackupFileIntegrationTest {
     }
 
     private fun withTemporaryFile(action: (File) -> Unit) {
-        val cache = InstrumentationRegistry.getInstrumentation().context.cacheDir
+        // Instrumentation executes as the target app's UID; the runner package's data directory
+        // need not exist. Use the installed Debug target's cache, never the separate DEV package.
+        val cache = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+        check(cache.isDirectory || cache.mkdirs()) { "Test cache directory could not be created." }
         val file = File.createTempFile("issue108-backup-contract-", ".json", cache)
         try { action(file) } finally { check(file.delete()) }
     }
