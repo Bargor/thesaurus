@@ -146,17 +146,17 @@ test('all numeric limits and explicit emulator serial are validated before adb',
 });
 test('both workflow jobs run the harness, wrapper and always-upload diagnostics within budget', () => {
   const workflow = readFileSync(join(root, '.github/workflows/android.yml'), 'utf8');
-  const jobs = workflow.split(/^  verify-api-/m).slice(1);
+  const jobs = workflow.split(/^  instrumentation-api/m).slice(1);
   assert.equal(jobs.length, 2);
   for (const job of jobs) {
-    assert.match(job, /timeout-minutes: 45/);
-    assert.match(job, /npm run test:ci-instrumentation/);
+    assert.match(job, /timeout-minutes: 30/);
+    assert.match(workflow, /npm run test:ci-instrumentation/);
     assert.match(job, /timeout-minutes: 25/);
     assert.match(job, /ANDROID_SERIAL: emulator-5554/);
-    assert.match(job, /firebase emulators:exec[^\n]+"bash scripts\/ci-instrumentation.sh"/);
-    assert.match(job, /Upload instrumentation diagnostics\s+if: always\(\)/);
+    assert.match(job, /firebase emulators:exec[^\n]+"bash scripts\/ci-instrumentation.sh node scripts\/ci-shard.mjs"/);
+    assert.match(job, /uses: actions\/upload-artifact@v4\s+if: always\(\)/);
     assert.match(job, /app\/build\/ci-instrumentation\//);
-    for (const name of ['firebase-debug.log', 'firestore-debug.log', 'ui-debug.log']) assert.ok(job.includes(name));
+    assert.ok(job.includes('*debug.log'));
   }
   assert.match(source, /CI_INSTRUMENTATION_TIMEOUT_SECONDS:-1200/);
   // The 25m step also includes emulator boot and Firebase startup/shutdown.
