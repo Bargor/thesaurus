@@ -21,10 +21,12 @@ class CsvImportController(
     private var session: CsvImportSession? = null
     private var checkpoint: CsvImportCheckpoint? = null
     private var token: String? = null
+    private val unacknowledgedDraftRows = mutableSetOf<Int>()
     private val attentionStatuses = setOf(CsvImportRowStatus.INVALID, CsvImportRowStatus.SERVER_ERROR, CsvImportRowStatus.PENDING)
 
     suspend fun reset() = mutex.withLock {
         session = null; checkpoint = null; token = null
+        unacknowledgedDraftRows.clear()
         mutableState.value = CsvImportUiState()
     }
 
@@ -61,6 +63,7 @@ class CsvImportController(
         checkpoint = preparedCheckpoint
         session = prepared
         token = preparedToken
+        unacknowledgedDraftRows.clear()
         mutableState.value = CsvImportUiState(headers = parsed.headers, mapping = detection.mapping,
             total = parsed.rows.size, phase = if (detection.requiresManualMapping) CsvImportPhase.MAPPING else CsvImportPhase.READY,
             busy = true, checkpointToken = preparedToken)
@@ -87,6 +90,7 @@ class CsvImportController(
         val restored = coordinator.prepare(householdId, saved.parsed, saved.mapping, saved.dateFormat)
         coordinator.restoreRows(restored, saved.rows, saved.repaired, saved.fingerprints, saved.categorySelections, saved.subcategorySelections)
         session = restored; checkpoint = saved; this.token = token
+        unacknowledgedDraftRows.clear()
         mutableState.value = CsvImportUiState(headers = saved.parsed.headers, mapping = saved.mapping,
             dateFormat = saved.dateFormat, drafts = saved.drafts, checkpointToken = token, busy = true)
         publish(restored.report, if (!saved.mapping.isComplete || !saved.mappingConfirmed) CsvImportPhase.MAPPING else
@@ -104,6 +108,7 @@ class CsvImportController(
     private suspend fun commitLocked() {
         val current = checkNotNull(session)
         check(checkpoint!!.mapping.isComplete && checkpoint!!.mappingConfirmed)
+        check(current.rows.none { it.source.rowNumber in unacknowledgedDraftRows && it.status in attentionStatuses })
         val drafts = state.value.drafts.filterKeys { number -> current.rows[current.rowIndices.getValue(number)].status in attentionStatuses }
         if (drafts.isNotEmpty()) {
             coordinator.draftBatch(current, drafts.map { (number, cells) -> CsvImportDraft(number, cells) })
@@ -134,11 +139,17 @@ class CsvImportController(
     suspend fun editRow(rowNumber: Int, cells: List<String>) = mutex.withLock {
         try {
             requireAttention(rowNumber)
+            // A failed edit must not let later commands silently use an older acknowledged draft.
+            unacknowledgedDraftRows.add(rowNumber)
             ImportRow(rowNumber, cells)
-            mutableState.value = mutableState.value.copy(drafts = state.value.drafts + (rowNumber to cells.toList()), errorCode = null)
-            require(state.value.drafts.values.sumOf { it.sumOf(String::length).toLong() } <= BackupLimits.MAX_BYTES)
-            checkpoint = checkNotNull(checkpoint).copy(drafts = state.value.drafts)
-            checkpoints.saveDraft(checkNotNull(token), rowNumber, cells)
+            val copiedCells = cells.toList()
+            val drafts = state.value.drafts + (rowNumber to copiedCells)
+            require(drafts.values.sumOf { it.sumOf(String::length).toLong() } <= BackupLimits.MAX_BYTES)
+            checkpoints.saveDraft(checkNotNull(token), rowNumber, copiedCells)
+            checkpoint = checkNotNull(checkpoint).copy(drafts = drafts)
+            unacknowledgedDraftRows.remove(rowNumber)
+            // Observers may recreate the ViewModel as soon as this acknowledgement is visible.
+            mutableState.value = mutableState.value.copy(drafts = drafts, errorCode = null)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { mutableState.value = mutableState.value.copy(errorCode = "IMPORT_OPERATION_FAILED") }
     }
@@ -163,12 +174,14 @@ class CsvImportController(
     suspend fun discard(rowNumber: Int) = command {
         requireAttention(rowNumber)
         publish(coordinator.discard(checkNotNull(session), rowNumber))
+        unacknowledgedDraftRows.remove(rowNumber)
         mutableState.value = mutableState.value.copy(drafts = state.value.drafts - rowNumber)
         persist()
     }
     suspend fun finishDiscardingRemaining() = command {
         val current = checkNotNull(session)
         val report = coordinator.discardRemaining(current)
+        unacknowledgedDraftRows.clear()
         mutableState.value = mutableState.value.copy(drafts = emptyMap())
         publish(report, CsvImportPhase.COMPLETE); persist()
     }
@@ -205,8 +218,10 @@ class CsvImportController(
         publish(current.report); persist()
     }
     private fun requireAttention(number: Int) { require(state.value.report?.rows?.any { it.source.rowNumber == number && it.status in attentionStatuses } == true) }
-    private fun workingCells(number: Int): List<String> = state.value.drafts[number]
-        ?: checkNotNull(session).sources.getValue(number).cells
+    private fun workingCells(number: Int): List<String> {
+        check(number !in unacknowledgedDraftRows)
+        return state.value.drafts[number] ?: checkNotNull(session).sources.getValue(number).cells
+    }
     private fun publish(report: CsvImportReport, phase: CsvImportPhase? = null) {
         val taxonomy = coordinator.taxonomy(checkNotNull(session))
         val attention = report.rows.count { it.status in attentionStatuses }

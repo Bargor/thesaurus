@@ -1,6 +1,8 @@
 package pl.bargor.thesaurus.ui.importcsv
 
 import java.time.LocalDate
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -269,6 +271,98 @@ class CsvImportControllerTest {
                 assertEquals(1, subject.state.value.attention)
             }
         }
+    }
+
+    @Test fun draftAcknowledgementWaitsForDurableSaveAndSurvivesFreshControllerRestore() = runBlocking {
+        val backend = Backend()
+        val delegate = InMemoryCsvImportCheckpointStore()
+        val enteredSave = CompletableDeferred<Unit>()
+        val releaseSave = CompletableDeferred<Unit>()
+        val store = object : CsvImportCheckpointStore by delegate {
+            override suspend fun saveDraft(token: String, rowNumber: Int, cells: List<String>) {
+                enteredSave.complete(Unit)
+                releaseSave.await()
+                delegate.saveDraft(token, rowNumber, cells)
+            }
+        }
+        val subject = CsvImportController(CsvImportCoordinator(backend) { LocalDate.of(2026, 10, 10) }, store)
+        subject.loadParsed("house", parsed("bad;-1;Food;;Original"))
+        subject.start()
+        val token = checkNotNull(subject.state.value.checkpointToken)
+        val cells = listOf("2026-10-09", "-1", "Food", "", "Durable draft")
+        val edit = launch { subject.editRow(2, cells) }
+        try {
+            enteredSave.await()
+            assertNull("A suspended store has not acknowledged the draft", subject.state.value.drafts[2])
+            assertNull(delegate.read(token)!!.drafts[2])
+        } finally { releaseSave.complete(Unit) }
+        edit.join()
+        assertEquals(cells, subject.state.value.drafts[2])
+        val restored = CsvImportController(CsvImportCoordinator(backend) { LocalDate.of(2026, 10, 10) }, delegate)
+        restored.restore(token, "house", "owner")
+        assertEquals(cells, restored.state.value.drafts[2])
+        assertTrue(backend.writes.isEmpty())
+    }
+
+    @Test fun cancelledDraftSaveDoesNotAcknowledgeAnUnpersistedEdit() = runBlocking {
+        val delegate = InMemoryCsvImportCheckpointStore()
+        val enteredSave = CompletableDeferred<Unit>()
+        val blockedSave = CompletableDeferred<Unit>()
+        val store = object : CsvImportCheckpointStore by delegate {
+            override suspend fun saveDraft(token: String, rowNumber: Int, cells: List<String>) {
+                enteredSave.complete(Unit)
+                blockedSave.await()
+                delegate.saveDraft(token, rowNumber, cells)
+            }
+        }
+        val subject = CsvImportController(CsvImportCoordinator(Backend()) { LocalDate.of(2026, 10, 10) }, store)
+        subject.loadParsed("house", parsed("bad;-1;Food;;Original"))
+        subject.start()
+        val token = checkNotNull(subject.state.value.checkpointToken)
+        val edit = launch { subject.editRow(2, listOf("2026-10-09", "-2", "Food", "", "Cancelled")) }
+        enteredSave.await()
+        edit.cancel()
+        edit.join()
+        assertNull(subject.state.value.drafts[2])
+        val restored = CsvImportController(CsvImportCoordinator(Backend()) { LocalDate.of(2026, 10, 10) }, delegate)
+        restored.restore(token, "house", "owner")
+        assertNull(restored.state.value.drafts[2])
+    }
+
+    @Test fun failedLatestDraftBlocksOlderCellsUntilSuccessfulRetry() = runBlocking {
+        val backend = Backend()
+        val delegate = InMemoryCsvImportCheckpointStore()
+        var failDraft = false
+        val store = object : CsvImportCheckpointStore by delegate {
+            override suspend fun saveDraft(token: String, rowNumber: Int, cells: List<String>) {
+                if (failDraft) error("SECRET checkpoint path")
+                delegate.saveDraft(token, rowNumber, cells)
+            }
+        }
+        val subject = CsvImportController(CsvImportCoordinator(backend) { LocalDate.of(2026, 10, 10) }, store)
+        subject.loadParsed("house", parsed("bad;-1;Food;;Original"))
+        subject.start()
+        val acknowledged = listOf("2026-10-09", "-1", "Food", "", "Older")
+        subject.editRow(2, acknowledged)
+        val latest = listOf("2026-10-09", "-2", "Food", "", "Latest")
+        failDraft = true
+        subject.editRow(2, latest)
+        assertEquals(acknowledged, subject.state.value.drafts[2])
+        assertEquals("IMPORT_OPERATION_FAILED", subject.state.value.errorCode)
+        subject.revalidate(2)
+        assertEquals("bad", subject.state.value.report!!.rows.single().source.cells[0])
+        subject.selectCategory(2, "food")
+        assertEquals("bad", subject.state.value.report!!.rows.single().source.cells[0])
+        subject.saveRepair(2)
+        subject.resume()
+        assertTrue("An unsaved edit must never cause an older draft to be imported", backend.writes.isEmpty())
+        assertEquals("IMPORT_OPERATION_FAILED", subject.state.value.errorCode)
+        failDraft = false
+        subject.editRow(2, latest)
+        assertNull(subject.state.value.errorCode)
+        subject.resume()
+        assertEquals(-200L, backend.writes.single().amountGrosze)
+        assertEquals("Latest", backend.writes.single().title)
     }
 
     @Test fun largeImportJournalsOneRowPerCallbackWithoutRewritingWholeCheckpointOrReloadingLedger() = runBlocking {
