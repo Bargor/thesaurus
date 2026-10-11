@@ -1,6 +1,7 @@
 package pl.bargor.thesaurus.testfixtures
 
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Source
 import java.net.HttpURLConnection
 import java.net.Proxy
@@ -11,7 +12,10 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
@@ -47,7 +51,9 @@ internal class EmulatorMalformedDocumentSeed private constructor(
                     val worker = launch(Dispatchers.IO) {
                         var request: HttpURLConnection? = null
                         try {
-                            request = URL(ENDPOINT).openConnection(Proxy.NO_PROXY) as HttpURLConnection
+                            val policy = fixture.policy
+                            val endpoint = "http://${policy.host}:${policy.firestorePort}/v1/projects/${FirebaseIntegrationPolicy.PROJECT_ID}/databases/(default)/documents:commit"
+                            request = URL(endpoint).openConnection(Proxy.NO_PROXY) as HttpURLConnection
                             connection.set(request)
                             ensureActive()
                             request.instanceFollowRedirects = false
@@ -90,18 +96,26 @@ internal class EmulatorMalformedDocumentSeed private constructor(
             }
         }
         fixture.operation("verify owned seed server fields and wire types") {
-            val snapshot = fixture.firestore.document(ownedPath).get(Source.SERVER).await()
-            check(snapshot.exists() && !snapshot.metadata.isFromCache && !snapshot.metadata.hasPendingWrites()) {
-                "Owned seed requires a settled server snapshot"
-            }
+            // Source.SERVER get() is itself a one-shot watch listener. An existing target can
+            // deliver its previous synchronized snapshot before the REST write reaches the watch.
+            // Keep listening until the requested document arrives, bounded by fixture.operation.
             // Map equality preserves Long versus Double even when their numeric values are equal.
             // Never include actual fields, expected fields or document paths in diagnostics.
-            check(snapshot.data == fields) { "Owned seed server fields or wire types differ from the requested snapshot" }
+            callbackFlow {
+                val listener = fixture.firestore.document(ownedPath)
+                    .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+                        if (error != null) close(AssertionError("Owned seed server listener failed"))
+                        else if (snapshot != null) trySend(snapshot)
+                    }
+                awaitClose { listener.remove() }
+            }.first { snapshot ->
+                snapshot.exists() && !snapshot.metadata.isFromCache &&
+                    !snapshot.metadata.hasPendingWrites() && snapshot.data == fields
+            }
         }
     }
 
     companion object {
-        private const val ENDPOINT = "http://10.0.2.2:8080/v1/projects/demo-thesaurus-integration/databases/(default)/documents:commit"
         private val uuid = Regex("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")
         private val generatedHousehold = Regex("[A-Za-z0-9]{20}")
 

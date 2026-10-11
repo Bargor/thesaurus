@@ -1,6 +1,6 @@
 # Import/export contracts (format version 1)
 
-Issue [#108](https://github.com/Bargor/thesaurus/issues/108) introduces file-layer contracts. CSV export (#109), parsing/validation (#110), owner-only persistence (#111), mapping/repair UI (#112) and full JSON backup merge (#113) build on those contracts. Android document pickers follow in #114. No import/export actions appear in production Settings yet.
+Issue [#108](https://github.com/Bargor/thesaurus/issues/108) introduces file-layer contracts. CSV export (#109), parsing/validation (#110), owner-only persistence (#111), mapping/repair UI (#112) and full JSON backup merge (#113) build on those contracts. Issue #114 connects these components to **Ustawienia → Dane** and Android's system document picker.
 
 ## JSON scope
 
@@ -8,7 +8,7 @@ Issue [#108](https://github.com/Bargor/thesaurus/issues/108) introduces file-lay
 
 Categories preserve names, optional color tokens, archive state, default direction and audit references. Subcategory identifiers are scoped by parent category. Entries preserve signed non-zero integer grosze, ISO calendar dates, optional title/subcategory, tags, author/editor references, timestamps and deletion state. Entry direction is not duplicated: signs retain the existing expense/income meaning. Opening balance may be zero.
 
-The file has no users, e-mail addresses, passwords, tokens, authentication configuration, invitations or membership lists. Author/editor/deleter IDs are opaque references, not account exports. Files still contain private financial information and must be treated as sensitive; the document-picker feature will add the user-facing warning.
+The file has no users, e-mail addresses, passwords, tokens, authentication configuration, invitations or membership lists. Author/editor/deleter IDs are opaque references, not account exports. Files still contain private financial information and must be treated as sensitive; every Settings export requires a user-facing privacy warning before destination selection.
 
 The DTOs are independent of domain document models, Firebase maps and `FieldValue`. They preserve nullable audit timestamps, including pending tombstone timestamps, as allowed by existing in-memory models. A tombstone must identify its deleter; an active entry cannot carry deletion metadata. This does not authorize replaying pending/audit values directly into Firestore: later import coordinators must apply current ownership, synchronization and server-write rules.
 
@@ -144,7 +144,17 @@ The ViewModel keeps only a random checkpoint token, household ID and user ID in 
 
 Reconstruction rechecks the current server owner before exposing a session and never automatically writes entries. Confirmed terminal outcomes stay terminal even if entries or taxonomy names were subsequently edited. An unacknowledged write is deduplicated against server history on explicit resume. Configuration changes keep operations in a retained scope rather than cancelling them with the composition. Switching identity/household clears exposed state and cancels the old action scope.
 
-The DEV-only preview activity uses the real screen/controller with a synthetic in-memory backend and separate private checkpoint directory. It cannot mutate the interactive DEV household. Its backend survives rotation through its ViewModel, but is not a persistent Firebase replacement across process death; reconstruction correctness is tested separately against a persistent test backend. The production screen has no file picker yet (#114).
+The DEV-only preview activity uses the real screen/controller with a synthetic in-memory backend and separate private checkpoint directory. It cannot mutate the interactive DEV household. Its backend survives rotation through its ViewModel, but is not a persistent Firebase replacement across process death; reconstruction correctness is tested separately against a persistent test backend. The production screen is reached through Settings document selection.
+
+### System documents and Settings (issue #114)
+
+**Ustawienia → Dane** contains separate CSV/JSON export and import actions. Exports require a privacy warning before requesting a destination. `CreateDocument` uses `text/csv` or `application/json`, with `thesaurus-wpisy-YYYY-MM-DD.csv` and `thesaurus-kopia-YYYY-MM-DD.json` suggested names. `OpenDocument` filters CSV-compatible text MIME types or JSON MIME types. Neither flow requests broad filesystem/media permissions or enumerates shared storage.
+
+Exports require the existing complete, authorized member server snapshot. Import actions are hidden for a known nonowner and disabled with an explanation while ownership or synchronization is unavailable. A server-only owner/synchronization preflight runs before publishing an import picker request, again before reading the selected file, and through the existing preview/commit coordinator. Opening the picker is not authorization to write: CSV Start/repair and JSON merge confirmation remain explicit.
+
+The retained Data ViewModel owns picker requests and serializes operations, so duplicate taps/results cannot replay a transfer. Raw file bytes remain in private memory or the existing private CSV checkpoint, never a Bundle. Saved state contains only binding, leaf selection and opaque picker/checkpoint scalar tokens. A launched picker is not relaunched on configuration change; a returned export destination after process recreation regenerates the artifact through the authorized server snapshot. JSON source bytes are not restored after process death; selecting a backup again creates a new read-only preview. Account/household changes cancel and await old work before clearing controllers, tokens and visible state.
+
+ContentResolver streams, bounded import reads and export serialization run off the UI thread. Reads reject files larger than 16 MiB even when the provider reports no size. Streams are closed; write, flush or close errors cannot report success. Cancelling document selection or failing to access a URI leaves the existing leaf controller state intact and never starts an import write. Providers may leave a partial destination after a failed export; the app does not delete an arbitrary provider-owned file or treat it as a valid backup. Rapid CSV edits are queued rather than dropped during private checkpoint IO, and subsequent repair uses the last edit.
 
 ### Summary contracts
 
@@ -158,4 +168,4 @@ The DEV-only preview activity uses the real screen/controller with a synthetic i
 
 JVM tests cover round trips, Polish text, signed `Long` extremes, ISO/locale independence, canonical ordering, strict malformed input, relationships and limits, plus mapping/row/summary invariants and coordinator failure policies. Android file tests use owned temporary cache files; coordinator integration tests use separate demo Firebase services to verify actual rules, normalized persistence, owner/member gates, revision races, partial network failures, repair and tombstone replay without changing interactive DEV data.
 
-The delivery sequence is #108 → #109/#110/#113; #111 follows #110, #112 follows #111, #114 joins CSV/JSON/UI flows, and #115 adds complete end-to-end verification/documentation. Each feature uses its own PR. Local tests run before PR submission, and the DEV emulator is launched after each feature at the user's request. This first foundation has no new visible controls to manually exercise.
+The delivery sequence is #108 → #109/#110/#113; #111 follows #110, #112 follows #111, #114 joins CSV/JSON/UI flows, and #115 adds complete end-to-end verification/documentation. Each feature uses its own PR. Local tests run before PR submission, and the DEV emulator is launched after each feature at the user's request. Settings now exposes the system document flows for manual verification.

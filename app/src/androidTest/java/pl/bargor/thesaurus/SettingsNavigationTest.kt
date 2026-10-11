@@ -53,7 +53,7 @@ class SettingsNavigationTest {
             compose.onNodeWithTag(if (form == "new") "fixture-add" else "fixture-edit").performClick()
             compose.onNodeWithTag("draft-$form").performTextReplacement("Niezapisane $form")
             openSettings()
-            for (child in listOf("categories", "family", "opening-balance")) {
+            for (child in listOf("categories", "family", "opening-balance", "data")) {
                 compose.onNodeWithTag("settings-$child").performScrollTo().performClick()
                 compose.onNodeWithTag("child-$child").assertIsDisplayed()
                 compose.onNodeWithTag("child-draft-$child").performTextReplacement("Niezapisane ustawienia $child")
@@ -94,6 +94,7 @@ class SettingsNavigationTest {
         compose.onNodeWithTag("settings-categories").assertIsDisplayed()
         compose.onNodeWithTag("settings-family").assertIsDisplayed()
         compose.onNodeWithTag("settings-opening-balance").assertIsDisplayed()
+        compose.onNodeWithTag("settings-data").assertExists()
     }
 
     @Test fun reportsFilterRemainsImmediatelyLeftOfAccessibleGlobalGear() {
@@ -177,6 +178,7 @@ class SettingsNavigationTest {
                 taxonomyContent = { back -> Child("categories", back) },
                 familyContent = { back -> Child("family", back) },
                 openingBalanceContent = { back -> Child("opening-balance", back) },
+                dataContent = { back -> Child("data", back) },
             )
         }
     }

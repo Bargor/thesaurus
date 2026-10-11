@@ -22,6 +22,7 @@ import pl.bargor.thesaurus.data.firebase.FirebaseFirestoreFactory
 
 /** Owns only one named test app/cache and one UI store. No global clears or default Firebase app. */
 internal class FirebaseIntegrationFixture private constructor(
+    val policy: FirebaseIntegrationPolicy,
     private val namedApp: FirebaseApp,
     private val namedAuth: FirebaseAuth,
     private val namedFirestore: FirebaseFirestore,
@@ -104,7 +105,7 @@ internal class FirebaseIntegrationFixture private constructor(
                     FirebaseAuthFactory.connectToLocalEmulator(createdAuth, host = policy.host, port = policy.authPort)
                     val createdFirestore = FirebaseFirestoreFactory.create(created, emulatorHost = policy.host, emulatorPort = policy.firestorePort)
                     firestore = createdFirestore
-                    FirebaseIntegrationFixture(created, createdAuth, createdFirestore)
+                    FirebaseIntegrationFixture(policy, created, createdAuth, createdFirestore)
                 }
                 currentCoroutineContext().ensureActive()
                 return finished ?: throw FixtureTimeoutException("$name setup timed out after 10000ms")

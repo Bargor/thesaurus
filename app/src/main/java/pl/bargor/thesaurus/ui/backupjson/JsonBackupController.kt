@@ -31,6 +31,13 @@ class JsonBackupController(private val coordinator: JsonBackupCoordinator) {
     private var householdId: String? = null
     private var session: JsonMergeSession? = null
 
+    fun reset() {
+        source = null
+        householdId = null
+        session = null
+        mutableState.value = JsonBackupUiState()
+    }
+
     suspend fun prepare(householdId: String, bytes: ByteArray) {
         if (state.value.busy) return
         this.householdId = householdId
