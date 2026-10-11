@@ -1,6 +1,8 @@
 package pl.bargor.thesaurus.data.firebase
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Source
 import java.time.LocalDate
 import java.util.UUID
@@ -251,6 +253,93 @@ class StrictFirestoreDecodingIntegrationTest {
                 assertNull(invalidHome.amountGrosze)
                 seed.replaceHousehold(validHome)
                 ready("balance recovers after valid household correction")
+            }
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test fun externalSeedWaitsForExactSettledWireTypesWithActiveBalanceAndDocumentListeners() = runBlocking<Unit> {
+        val fixture = FirebaseIntegrationFixture.open("strict-seed-watch")
+        try {
+            fixture.scenario("external seed waits for exact settled snapshots with existing watch targets") {
+                val (uid, home) = createHome(fixture)
+                val repository = FirestoreRepositories(fixture.firestore)
+                val record = entry(home, uid, 1234)
+                repository.save(record)
+                val household = fixture.firestore.collection(FirestorePaths.HOUSEHOLDS).document(home)
+                val reference = household.collection(FirestorePaths.ENTRIES).document(record.id)
+                val validEntry = fixture.operation("read seed watch entry baseline") {
+                    requireNotNull(reference.get(Source.SERVER).await().data)
+                }
+                val validHome = fixture.operation("read seed watch household baseline") {
+                    requireNotNull(household.get(Source.SERVER).await().data)
+                }
+                val seed = EmulatorMalformedDocumentSeed.owned(fixture, home, setOf(record.id))
+                lateinit var vm: GlobalAccountBalanceViewModel
+                withContext(Dispatchers.Main) {
+                    vm = GlobalAccountBalanceViewModel(repository, repository)
+                    fixture.store.put("balance", vm)
+                    vm.start(home, uid)
+                }
+                val snapshots = Channel<DocumentSnapshot>(Channel.UNLIMITED)
+                val listener = reference.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+                    if (error != null) snapshots.close(AssertionError("Seed regression listener failed"))
+                    else if (snapshot != null) snapshots.trySend(snapshot)
+                }
+                try {
+                    fixture.operation("establish synchronized document target before external writes") {
+                        var snapshot = snapshots.receive()
+                        while (snapshot.metadata.isFromCache || snapshot.metadata.hasPendingWrites() || snapshot.data != validEntry) {
+                            snapshot = snapshots.receive()
+                        }
+                    }
+                    fixture.awaitFlow("establish real balance listener before external writes", vm.state) {
+                        !it.isLoading && !it.hasError && it.syncState == SyncState.SYNCED && it.amountGrosze == 1234.toBigInteger()
+                    }
+                    repeat(3) {
+                        // Make the integer-to-integral-double transition numerically distinct so
+                        // Firestore's numeric equality cannot suppress the wire-type-only change.
+                        for (amount in listOf<Any>(1235L, 1234.0, "invalid-money", 1234L)) {
+                            val expected = validEntry + ("amountGrosze" to amount)
+                            seed.replaceEntry(record.id, expected)
+                            val cached = fixture.operation("seed return guarantees exact SDK wire types") {
+                                reference.get(Source.CACHE).await()
+                            }
+                            assertTrue("Seed must populate the SDK document", cached.exists())
+                            assertFalse("Seed must finish pending SDK writes", cached.metadata.hasPendingWrites())
+                            assertTrue("Seed must retain exact fields and wire types", cached.data == expected)
+                            assertEquals(amount.javaClass, cached.get("amountGrosze")!!.javaClass)
+                            val server = fixture.operation("seed return guarantees a settled server document") {
+                                reference.get(Source.SERVER).await()
+                            }
+                            assertTrue("Seed must return a settled server document", server.exists() &&
+                                !server.metadata.isFromCache && !server.metadata.hasPendingWrites())
+                            assertTrue("Server fields and wire types must match the external write", server.data == expected)
+                            fixture.awaitFlow("real balance observes external monetary replacement", vm.state) { state ->
+                                if (amount is Long) !state.isLoading && !state.hasError &&
+                                    state.syncState == SyncState.SYNCED && state.amountGrosze == amount.toBigInteger()
+                                else state.hasError && state.syncState == SyncState.ERROR && state.amountGrosze == null
+                            }
+                        }
+                        for (fields in listOf(validHome + ("openingBalanceGrosze" to 0.5), validHome)) {
+                            seed.replaceHousehold(fields)
+                            val cached = fixture.operation("seed return guarantees exact household wire types") {
+                                household.get(Source.CACHE).await()
+                            }
+                            assertTrue("Seed must retain exact household fields and wire types", cached.data == fields)
+                            fixture.awaitFlow("real balance observes external household replacement", vm.state) { state ->
+                                if (fields["openingBalanceGrosze"] is Double)
+                                    state.hasError && state.syncState == SyncState.ERROR && state.amountGrosze == null
+                                else !state.isLoading && !state.hasError && state.syncState == SyncState.SYNCED &&
+                                    state.amountGrosze == 1234.toBigInteger()
+                            }
+                        }
+                    }
+                } finally {
+                    listener.remove()
+                    snapshots.close()
+                }
             }
         } finally {
             fixture.close()
