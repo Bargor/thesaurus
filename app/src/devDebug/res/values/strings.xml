@@ -1,4 +1,8 @@
 <resources>
+    <string name="dev_csv_import_preview">Symulacja importu CSV</string>
+    <string name="dev_csv_import_banner">SYMULACJA — fikcyjny właściciel i dane w pamięci. Brak zapisów do bazy danych.</string>
+    <string name="dev_csv_import_auto">Przykład: rozpoznane nagłówki</string>
+    <string name="dev_csv_import_manual">Przykład: ręczne przypisanie kolumn</string>
     <string name="app_name">Thesaurus DEV</string>
     <string name="auth_title">Thesaurus DEV</string>
     <string name="dev_login_description">Tryb deweloperski — lokalne emulatory Firebase. Użyj owner@example.test lub member@example.test.</string>
