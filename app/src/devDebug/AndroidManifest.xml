@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <application android:usesCleartextTraffic="true">
+        <activity android:name=".CsvImportPreviewActivity" android:exported="true" />
         <provider
             android:name="com.google.firebase.provider.FirebaseInitProvider"
             tools:node="remove" />

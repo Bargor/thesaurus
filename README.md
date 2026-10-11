@@ -70,7 +70,9 @@ Reports refresh calendar boundaries at local midnight while resumed and immediat
 
 ## Requirements
 
-Import/export is being delivered incrementally in issues #108–#115. JSON contracts, CSV export/parsing/validation and the owner-only CSV persistence coordinator are documented in [Import/export contracts](docs/data-transfer-contracts.md). Parsing never writes to Firestore; coordinator saves are explicit. Preview/repair UI arrives in #112 and Settings actions/system document pickers in #114.
+Import/export is being delivered incrementally in issues #108–#115. JSON contracts, CSV export/parsing/validation, the owner-only persistence coordinator and CSV mapping/repair UI are documented in [Import/export contracts](docs/data-transfer-contracts.md). Parsing and restoration never write entries; importing and saving repairs require explicit actions. Settings actions/system document pickers follow in #114.
+
+In a DEV build, open the developer tools and choose **Symulacja importu CSV** to exercise automatic/manual mapping, errors, repairs and the final summary. This uses synthetic data and an in-memory backend: it does not change the household you use for manual testing. The production CSV screen is a leaf component awaiting the document-picker integration in #114. [Visual evidence for #112](docs/visual-proofs/issue-112/README.md) includes the repair workflow and enlarged-font mapping screen.
 
 - JDK 21
 - Android SDK Platform 37, Build Tools 37.0.0, and platform-tools

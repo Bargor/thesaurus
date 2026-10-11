@@ -1,6 +1,6 @@
 # Import/export contracts (format version 1)
 
-Issue [#108](https://github.com/Bargor/thesaurus/issues/108) introduces file-layer contracts only. CSV export (#109) and parsing/validation (#110) build on those contracts; Firestore writes, import preview/repair and Android document pickers follow in #111–#115. No import/export actions appear in Settings yet.
+Issue [#108](https://github.com/Bargor/thesaurus/issues/108) introduces file-layer contracts. CSV export (#109), parsing/validation (#110), owner-only persistence (#111) and mapping/repair UI (#112) build on those contracts. Android document pickers follow in #114. No import/export actions appear in production Settings yet.
 
 ## JSON scope
 
@@ -105,7 +105,19 @@ Writes use **one-entry transactions** (entry plus household revision update), a 
 
 There are no offline batches or optimistic import writes. Before each new transaction, a household preflight uses [Source.SERVER](https://firebase.google.com/docs/reference/android/com/google/firebase/firestore/Source) and rejects cached/pending data, an unavailable server or a changed revision. This also respects the SDK's `disableNetwork()` state, which the regression test showed was not sufficient by itself to stop direct transactions. Server reads have a 30-second deadline. Android Firestore does not expose cancellation of an already dispatched transaction: the backend waits non-cancellably for its terminal result, and checks a deadline inside its callback. This is **not** a hard deadline on a network acknowledgement. Caller cancellation may suppress delivery of an already-confirmed result; a subsequent resume observes that entry as a duplicate, with no second write. A fresh session's counters describe that retry, not the old session's historical success counts.
 
-This stage is an application-layer coordinator, not a new screen or an automatically deployed rules change. Member clients retain their existing ordinary single-entry permissions; the import API itself rejects non-owner principals. Owner-only preview/repair controls follow in #112, document-picker actions in #114.
+This stage is an application-layer coordinator, not an automatically deployed rules change. Member clients retain their existing ordinary single-entry permissions; the import API itself rejects non-owner principals. Document-picker actions follow in #114.
+
+### CSV mapping and repair UI (issue #112)
+
+`CsvImportController` exposes explicit commands and `CsvImportUiState`. Complete, unambiguous headers skip manual mapping; ambiguous or incomplete headers require confirmation. A source column cannot serve two logical fields. Import starts only after an explicit action, reports progress, and leaves invalid or failed rows in a repair queue with physical source row numbers, original cells and Polish field-specific errors. Editing, revalidation, saving and discarding are separate actions; finishing with unresolved rows requires confirmation before discarding them.
+
+Taxonomy choices resolve to stable IDs, including when multiple names are ambiguous. Categories/subcategories are never created implicitly. Bulk category mapping affects only pending rows with exactly the same original category cell; subcategory mapping additionally requires the same original subcategory cell. Whitespace and case are not silently broadened for this matching. Completed rows are not rewritten. Final counters distinguish added, repaired-and-added, duplicate, discarded and unsaved rows.
+
+The ViewModel keeps only a random checkpoint token, household ID and user ID in saved instance state. Raw financial cells stay in bounded, versioned private files under `noBackupFilesDir`, not Android Bundles or cloud backup. Atomic base checkpoints use generation-scoped, synchronized outcome journals and small atomic draft files. JSON is streamed with strict UTF-8, scalar/depth/file limits. At most four base sessions are retained; old sessions are pruned after fourteen days when another checkpoint is saved. These files contain financial source data, not authentication credentials.
+
+Reconstruction rechecks the current server owner before exposing a session and never automatically writes entries. Confirmed terminal outcomes stay terminal even if entries or taxonomy names were subsequently edited. An unacknowledged write is deduplicated against server history on explicit resume. Configuration changes keep operations in a retained scope rather than cancelling them with the composition. Switching identity/household clears exposed state and cancels the old action scope.
+
+The DEV-only preview activity uses the real screen/controller with a synthetic in-memory backend and separate private checkpoint directory. It cannot mutate the interactive DEV household. Its backend survives rotation through its ViewModel, but is not a persistent Firebase replacement across process death; reconstruction correctness is tested separately against a persistent test backend. The production screen has no file picker yet (#114).
 
 ### Summary contracts
 
