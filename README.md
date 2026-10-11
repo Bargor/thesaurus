@@ -70,7 +70,7 @@ Reports refresh calendar boundaries at local midnight while resumed and immediat
 
 ## Requirements
 
-Import/export is being delivered incrementally in issues #108–#115. JSON contracts, the locale-independent CSV exporter, and CSV parsing/mapping/validation are documented in [Import/export contracts](docs/data-transfer-contracts.md); Settings actions and system document pickers arrive in #114, not in these file-layer features. CSV validation never writes to Firestore.
+Import/export is being delivered incrementally in issues #108–#115. JSON contracts, CSV export/parsing/validation and the owner-only CSV persistence coordinator are documented in [Import/export contracts](docs/data-transfer-contracts.md). Parsing never writes to Firestore; coordinator saves are explicit. Preview/repair UI arrives in #112 and Settings actions/system document pickers in #114.
 
 - JDK 21
 - Android SDK Platform 37, Build Tools 37.0.0, and platform-tools
@@ -191,7 +191,7 @@ npm run test:variants
 npm run test:project-safety
 ```
 
-`test:rules` starts only the Firestore emulator for `demo-thesaurus-rules`. The Android integration fixtures use the separate `demo-thesaurus-integration` project, named SDK instances, fake identifiers, and fixed emulator endpoints. Neither suite uses or resets the interactive DEV app's `demo-thesaurus` data. The Android integration suite needs both local Auth and Firestore and is always invoked through `emulators:exec`:
+`test:rules` starts only the Firestore emulator for `demo-thesaurus-rules`. The Android integration fixtures use `demo-thesaurus-integration`, named SDK instances, fake identifiers and literal local emulator endpoints. **Separate project names alone do not isolate an Authentication emulator process. Do not connect integration fixtures to the running DEV services.** With the default ports free, the suite needs both Auth and Firestore and is invoked through `emulators:exec`:
 
 ```sh
 npx firebase emulators:exec --project demo-thesaurus-integration --only auth,firestore \
@@ -203,6 +203,23 @@ On Windows, quote the inner command for the current shell, for example:
 ```powershell
 npx firebase emulators:exec --project demo-thesaurus-integration --only auth,firestore ".\gradlew.bat connectedDebugAndroidTest"
 ```
+
+To test while keeping interactive DEV services/data intact, start the separate process using `firebase.integration.json` (Auth 9199, Firestore 8180, separate hub/logging ports), then pass **both** port arguments. The fixture rejects mixed or arbitrary endpoints; CI retains its existing defaults.
+
+```powershell
+npx --no-install firebase emulators:start --project demo-thesaurus-integration --only auth,firestore --config firebase.integration.json
+```
+
+In a second terminal, run all import/export integration tests:
+
+```powershell
+.\gradlew.bat :app:connectedDebugAndroidTest `
+  '-Pandroid.testInstrumentationRunnerArguments.package=pl.bargor.thesaurus.data.transfer' `
+  '-Pandroid.testInstrumentationRunnerArguments.firebaseIntegrationAuthPort=9199' `
+  '-Pandroid.testInstrumentationRunnerArguments.firebaseIntegrationFirestorePort=8180'
+```
+
+Omit the package argument to run the full Android suite against these isolated services. Stop only this integration process afterwards; do not clear the DEV app or restart its Firebase services.
 
 For the full local release check, run `lintDebug`, `testDebugUnitTest`, `assembleDebug assembleRelease assembleDevDebug`, `npm run test:rules`, `npm run test:hosting`, `npm run test:variants`, `npm run test:project-safety`, and the emulator-wrapped `connectedDebugAndroidTest` command above. CI also runs `-PdevTest=true testDevDebugUnitTest compileDevDebugAndroidTestKotlin` to check developer test source wiring without executing DEV instrumentation or changing interactive DEV data. The instrumented suite covers household creation, starter taxonomy, invitations/membership, local pending writes, network recovery, and tombstone protection without using the production project.
 

@@ -5,6 +5,22 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class FirebaseIntegrationPolicyTest {
+    @Test fun runnerArgumentsSupportIsolatedLocalServicesAndRetainCiDefaults() {
+        assertEquals(FirebaseIntegrationPolicy(), FirebaseIntegrationPolicy.fromRunnerArguments(emptyMap()))
+        val isolated = FirebaseIntegrationPolicy.fromRunnerArguments(mapOf(
+            "firebaseIntegrationAuthPort" to "9199", "firebaseIntegrationFirestorePort" to "8180"))
+        assertEquals(9199, isolated.authPort)
+        assertEquals(8180, isolated.firestorePort)
+        assertEquals(FirebaseIntegrationPolicy.PROJECT_ID, isolated.projectId)
+        assertThrows(IllegalArgumentException::class.java) { FirebaseIntegrationPolicy(authPort = 9199) }
+        assertThrows(IllegalArgumentException::class.java) { FirebaseIntegrationPolicy(firestorePort = 8180) }
+        assertThrows(IllegalArgumentException::class.java) {
+            FirebaseIntegrationPolicy.fromRunnerArguments(mapOf("firebaseIntegrationAuthPort" to "443"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            FirebaseIntegrationPolicy.fromRunnerArguments(mapOf("firebaseIntegrationFirestorePort" to "not-a-port"))
+        }
+    }
     @Test fun onlySeparateDemoNamespaceLiteralEndpointsAndFakeIdentifiersAreAccepted() {
         val policy = FirebaseIntegrationPolicy()
         assertEquals("demo-thesaurus-integration", policy.projectId)

@@ -11,7 +11,7 @@ internal data class FirebaseIntegrationPolicy(
 ) {
     init {
         require(projectId == PROJECT_ID) { "Integration fixtures require the separate emulator-only project" }
-        require(host == "10.0.2.2" && authPort == 9099 && firestorePort == 8080) {
+        require(host == "10.0.2.2" && (authPort to firestorePort) in setOf(9099 to 8080, 9199 to 8180)) {
             "Integration fixtures require the literal Android emulator endpoints"
         }
         require(apiKey == "fake-api-key-integration" && applicationId == "1:1234567890:android:integration") {
@@ -29,5 +29,11 @@ internal data class FirebaseIntegrationPolicy(
 
     companion object {
         const val PROJECT_ID = "demo-thesaurus-integration"
+
+        /** Runner overrides let local tests use isolated services while preserving CI defaults. */
+        fun fromRunnerArguments(arguments: Map<String, String>): FirebaseIntegrationPolicy = FirebaseIntegrationPolicy(
+            authPort = arguments["firebaseIntegrationAuthPort"]?.toInt() ?: 9099,
+            firestorePort = arguments["firebaseIntegrationFirestorePort"]?.toInt() ?: 8080,
+        )
     }
 }

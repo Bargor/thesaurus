@@ -88,7 +88,7 @@ internal class FirebaseIntegrationFixture private constructor(
     }
 
     companion object {
-        suspend fun open(label: String, policy: FirebaseIntegrationPolicy = FirebaseIntegrationPolicy()): FirebaseIntegrationFixture {
+        suspend fun open(label: String, policy: FirebaseIntegrationPolicy = runnerPolicy()): FirebaseIntegrationFixture {
             val name = policy.appName(label, UUID.randomUUID().toString())
             var app: FirebaseApp? = null
             var auth: FirebaseAuth? = null
@@ -122,6 +122,13 @@ internal class FirebaseIntegrationFixture private constructor(
                 ), error)
                 throw error
             }
+        }
+
+        private fun runnerPolicy(): FirebaseIntegrationPolicy {
+            val arguments = InstrumentationRegistry.getArguments()
+            return FirebaseIntegrationPolicy.fromRunnerArguments(arguments.keySet().mapNotNull { key ->
+                arguments.getString(key)?.let { key to it }
+            }.toMap())
         }
     }
 
