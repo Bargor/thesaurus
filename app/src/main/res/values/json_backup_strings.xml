@@ -1,0 +1,36 @@
+<resources>
+    <string name="json_backup_title">Kopia zapasowa JSON</string>
+    <string name="json_backup_empty">Wybierz kopię, aby przygotować podgląd scalania.</string>
+    <string name="json_backup_preview">Podgląd scalania</string>
+    <string name="json_backup_preview_help">Dodane zostaną tylko nowe dane. Konflikty pozostaną bez zmian. Sprawdź liczby przed zatwierdzeniem.</string>
+    <string name="json_backup_counts">Nowe: %1$d · Pominięte: %2$d · Konflikty: %3$d</string>
+    <string name="json_backup_confirm">Zatwierdź dodanie nowych danych</string>
+    <string name="json_backup_progress">Przetworzono %1$d z %2$d nowych elementów</string>
+    <string name="json_backup_busy">Trwa przygotowanie lub zapis…</string>
+    <string name="json_backup_summary">Wynik scalania</string>
+    <string name="json_backup_kind_counts">%1$s: dodano %2$d, pominięto %3$d, konflikty %4$d, błędy %5$d, niezapisane %6$d</string>
+    <string name="json_backup_kind_preview">%1$s: nowe %2$d, pominięte %3$d, konflikty %4$d</string>
+    <string name="json_backup_balance">Saldo początkowe</string>
+    <string name="json_backup_categories">Kategorie</string>
+    <string name="json_backup_subcategories">Podkategorie</string>
+    <string name="json_backup_entries">Wpisy</string>
+    <string name="json_backup_retry">Przygotuj ponownie z tej samej kopii</string>
+    <string name="json_backup_retry_help">Potwierdzone zapisy pozostają zachowane. Ponowienie odczyta aktualne dane i wymaga zatwierdzenia nowego podglądu.</string>
+    <string name="json_backup_export">Przygotuj pełną kopię JSON</string>
+    <string name="json_backup_all_skipped">Brak nowych danych do zapisania.</string>
+    <string name="json_backup_no_new">Brak nowych danych do dodania. Konflikty pozostają bez zmian.</string>
+    <string name="json_backup_conflict_item">%1$s · %2$s: %3$s</string>
+    <string name="json_backup_conflict_without_id">%1$s: %2$s</string>
+    <string name="json_backup_error_balance">Istniejące saldo początkowe lub historia uniemożliwia zmianę salda.</string>
+    <string name="json_backup_error_deleted">Kopia zawiera usunięcie istniejącego aktywnego wpisu. Wpis pozostaje aktywny.</string>
+    <string name="json_backup_error_entry">Wpis z tej kopii ma już zmienione dane albo stan usunięcia. Istniejący wpis pozostaje bez zmian.</string>
+    <string name="json_backup_error_ambiguous">Kilka istniejących kategorii lub podkategorii pasuje do danych kopii.</string>
+    <string name="json_backup_error_parent">Nie można jednoznacznie dopasować kategorii lub podkategorii tego elementu.</string>
+    <string name="json_backup_error_id">Identyfikator jest zajęty przez inne dane. Istniejące dane pozostają zachowane.</string>
+    <string name="json_backup_error_stale">Dane zmieniły się od przygotowania podglądu. Przygotuj podgląd ponownie.</string>
+    <string name="json_backup_error_access">Wymagane jest aktualne połączenie, właściwe konto oraz uprawnienia właściciela do importu.</string>
+    <string name="json_backup_error_file">Kopia JSON jest nieprawidłowa, zbyt duża lub zawiera nieobsługiwaną wersję albo wartości.</string>
+    <string name="json_backup_error_future">Kopia zawiera wpis z przyszłą datą.</string>
+    <string name="json_backup_error_write">Zapis został przerwany. Sprawdź wynik i przygotuj ponownie tę samą kopię.</string>
+    <string name="json_backup_error_generic">Operacja nie powiodła się. Spróbuj ponownie po sprawdzeniu połączenia.</string>
+</resources>

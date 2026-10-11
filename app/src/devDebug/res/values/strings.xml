@@ -1,4 +1,11 @@
 <resources>
+    <string name="dev_json_backup_preview">Symulacja kopii JSON</string>
+    <string name="dev_json_backup_banner">SYMULACJA — fikcyjne dane w pamięci. Brak zapisów do bazy i plików.</string>
+    <string name="dev_json_backup_prepare">Przykład: pełna kopia</string>
+    <string name="dev_json_backup_conflict">Przykład: konflikty salda i usunięcia</string>
+    <string name="dev_json_backup_failure">Przykład: przerwany zapis</string>
+    <string name="dev_json_backup_repeat">Powtórz tę samą kopię</string>
+    <string name="dev_json_backup_artifact">%1$s · %2$d bajtów · odczytano %3$d wpisy</string>
     <string name="dev_csv_import_preview">Symulacja importu CSV</string>
     <string name="dev_csv_import_banner">SYMULACJA — fikcyjny właściciel i dane w pamięci. Brak zapisów do bazy danych.</string>
     <string name="dev_csv_import_auto">Przykład: rozpoznane nagłówki</string>

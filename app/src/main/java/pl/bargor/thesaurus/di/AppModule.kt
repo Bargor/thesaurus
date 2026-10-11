@@ -23,6 +23,10 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object FirebaseModule {
     @Provides
+    fun provideJsonBackupCoordinator(backend: pl.bargor.thesaurus.data.firebase.FirestoreJsonBackupBackend, clock: Clock): pl.bargor.thesaurus.data.transfer.JsonBackupCoordinator =
+        pl.bargor.thesaurus.data.transfer.JsonBackupCoordinator(backend) { java.time.LocalDate.now(clock) }
+
+    @Provides
     fun provideCsvImportCoordinator(backend: pl.bargor.thesaurus.data.firebase.FirestoreCsvImportBackend, clock: Clock): pl.bargor.thesaurus.data.transfer.CsvImportCoordinator =
         pl.bargor.thesaurus.data.transfer.CsvImportCoordinator(backend) { java.time.LocalDate.now(clock) }
 

@@ -70,9 +70,13 @@ Reports refresh calendar boundaries at local midnight while resumed and immediat
 
 ## Requirements
 
-Import/export is being delivered incrementally in issues #108–#115. JSON contracts, CSV export/parsing/validation, the owner-only persistence coordinator and CSV mapping/repair UI are documented in [Import/export contracts](docs/data-transfer-contracts.md). Parsing and restoration never write entries; importing and saving repairs require explicit actions. Settings actions/system document pickers follow in #114.
+Import/export is being delivered incrementally in issues #108–#115. JSON backup export/merge import, CSV export/parsing/validation, the owner-only persistence coordinator and CSV mapping/repair UI are documented in [Import/export contracts](docs/data-transfer-contracts.md). Parsing and restoration never write entries; importing and saving repairs require explicit actions. Settings actions/system document pickers follow in #114.
 
 In a DEV build, open the developer tools and choose **Symulacja importu CSV** to exercise automatic/manual mapping, errors, repairs and the final summary. This uses synthetic data and an in-memory backend: it does not change the household you use for manual testing. The production CSV screen is a leaf component awaiting the document-picker integration in #114. [Visual evidence for #112](docs/visual-proofs/issue-112/README.md) includes the repair workflow and enlarged-font mapping screen.
+
+Choose **Symulacja kopii JSON** to exercise the full-backup preview, explicit confirmation, conflicts, partial failure/retry, repeated import and export. This simulation also writes only synthetic memory and needs no Firebase services. The JSON leaf UI hands a validated export artifact to its caller; saving/selecting real files follows in #114. [Visual evidence for #113](docs/visual-proofs/issue-113/README.md) covers preview, summary and large-font confirmation.
+
+JSON imports require the updated Firestore rules in this change to create archived taxonomy, tombstones and current-member authors. No production rules are deployed automatically. Deploy the reviewed rules before enabling JSON import in a production APK; ordinary member permissions, immutable authorship and tombstone protection remain enforced.
 
 - JDK 21
 - Android SDK Platform 37, Build Tools 37.0.0, and platform-tools

@@ -709,6 +709,67 @@ test('opening balance is signed owner-only data and revision cannot be bypassed'
   await assertSucceeds(updateDoc(householdRef(alice), { openingBalanceGrosze: 0, updatedAt: serverTimestamp() }));
 });
 
+test('JSON owner may create archived taxonomy and attributed historical ledger with current audits', async () => {
+  const alice = db('alice');
+  const parent = `json_${'a'.repeat(64)}`;
+  const child = `json_${'b'.repeat(64)}`;
+  await assertSucceeds(setDoc(categoryRef(alice, parent), category('charlie', {
+    archived: true, updatedById: 'alice',
+  })));
+  await assertSucceeds(setDoc(subcategoryRef(alice, parent, child), subcategory('charlie', parent, {
+    archived: true, updatedById: 'alice',
+  })));
+  for (const [suffix, deleted] of [['c', false], ['d', true]]) {
+    const reference = entryRef(alice, `json_${suffix.repeat(64)}`);
+    await assertSucceeds(setDoc(reference, entry('charlie', {
+      categoryId: parent, subcategoryId: child, updatedById: 'alice', deleted,
+      tags: Array.from({ length: 10 }, (_, index) => `${index}${'x'.repeat(39)}`),
+      deletedAt: deleted ? serverTimestamp() : null, deletedById: deleted ? 'alice' : null,
+    })));
+    assert.equal((await getDoc(reference)).data().authorId, 'charlie');
+    if (deleted) {
+      await assertFails(updateDoc(reference, {
+        deleted: false, deletedAt: null, deletedById: null, updatedById: 'alice', updatedAt: serverTimestamp(),
+      }));
+    }
+  }
+});
+
+test('JSON historical creation is narrowly limited to owner and full digest IDs', async () => {
+  const parent = `json_${'a'.repeat(64)}`;
+  for (const uid of ['charlie', 'mallory']) {
+    const database = db(uid);
+    await assertFails(setDoc(categoryRef(database, `json_${'e'.repeat(64)}`), category(uid, { archived: true })));
+    await assertFails(setDoc(subcategoryRef(database, parent, `json_${'e'.repeat(64)}`), subcategory(uid, parent, { archived: true })));
+    await assertFails(setDoc(entryRef(database, `json_${'e'.repeat(64)}`), entry(uid, { categoryId: parent })));
+  }
+  const alice = db('alice');
+  for (const id of ['json_short', `csv_${'f'.repeat(64)}`, `json_${'G'.repeat(64)}`, `json_${'f'.repeat(63)}`]) {
+    await assertFails(setDoc(categoryRef(alice, id), category('alice', { archived: true })));
+    await assertFails(setDoc(entryRef(alice, id), entry('alice', { categoryId: parent })));
+  }
+});
+
+test('JSON owner import forbids foreign authors forged audits invalid relations and unfenced entries', async () => {
+  const alice = db('alice');
+  const parent = `json_${'a'.repeat(64)}`;
+  const id = `json_${'f'.repeat(64)}`;
+  await assertFails(setDoc(categoryRef(alice, id), category('foreign', { archived: true, updatedById: 'alice' })));
+  await assertFails(setDoc(subcategoryRef(alice, parent, id), subcategory('foreign', parent, { updatedById: 'alice' })));
+  for (const overrides of [
+    { authorId: 'foreign' }, { updatedById: 'charlie' },
+    { createdAt: Timestamp.fromMillis(0) }, { updatedAt: Timestamp.fromMillis(0) },
+    { deleted: true, deletedById: 'charlie', deletedAt: serverTimestamp() },
+    { deleted: true, deletedById: 'alice', deletedAt: Timestamp.fromMillis(0) },
+    { subcategoryId: 'missing-child' }, { categoryId: 'missing-parent' },
+  ]) {
+    await assertFails(setDoc(entryRef(alice, id), entry('charlie', {
+      categoryId: parent, updatedById: 'alice', ...overrides,
+    })));
+  }
+  await assertFails(firestoreSetDoc(entryRef(alice, id), entry('charlie', { categoryId: parent, updatedById: 'alice' })));
+});
+
 test('owner removal revokes household access but preserves entry attribution', async () => {
   const alice = db('alice');
   const bob = db('bob');
