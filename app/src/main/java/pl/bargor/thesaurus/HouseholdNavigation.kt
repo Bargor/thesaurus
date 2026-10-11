@@ -37,6 +37,7 @@ import pl.bargor.thesaurus.ui.balance.GlobalAccountBalanceUiState
 import pl.bargor.thesaurus.ui.settings.LocalSettingsNavigation
 import pl.bargor.thesaurus.ui.settings.SettingsNavigation
 import pl.bargor.thesaurus.ui.settings.SettingsScreen
+import pl.bargor.thesaurus.ui.data.DataRoute
 
 enum class Destination(
     @param:StringRes val labelRes: Int,
@@ -87,12 +88,13 @@ internal fun HouseholdApp(
     balanceState: GlobalAccountBalanceUiState? = GlobalAccountBalanceUiState(),
     familyContent: (@Composable (onBack: () -> Unit) -> Unit)? = null,
     openingBalanceContent: (@Composable (onBack: () -> Unit) -> Unit)? = null,
+    dataContent: (@Composable (onBack: () -> Unit) -> Unit)? = null,
 ) {
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
     val dismissOfflineTooltip = LocalDismissOfflineTooltip.current
     LaunchedEffect(currentBackStackEntry) { dismissOfflineTooltip() }
-    val settingsRoutes = setOf("settings", "taxonomy", "family", "opening-balance")
+    val settingsRoutes = setOf("settings", "taxonomy", "family", "opening-balance", "data")
     val openSettings = {
         if (currentRoute != "settings") navController.navigate("settings") { launchSingleTop = true }
         Unit
@@ -158,6 +160,7 @@ internal fun HouseholdApp(
                     onSetAccountBalance = { navController.navigate("opening-balance") {
                         launchSingleTop = true
                     } },
+                    onOpenData = { navController.navigate("data") { launchSingleTop = true } },
                 )
             }
             composable("taxonomy") {
@@ -167,6 +170,11 @@ internal fun HouseholdApp(
                     actorId = actorId,
                     onBack = onBack,
                 )
+            }
+            composable("data") {
+                val onBack = { navController.popBackStack(); Unit }
+                if (dataContent != null) dataContent(onBack)
+                else DataRoute(householdId = householdId, actorId = actorId, onBack = onBack)
             }
             composable("opening-balance") {
                 val onBack = { navController.popBackStack(); Unit }

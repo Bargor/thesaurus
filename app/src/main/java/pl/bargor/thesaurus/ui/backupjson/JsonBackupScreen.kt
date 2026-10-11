@@ -33,7 +33,8 @@ fun JsonBackupRoute(controller: JsonBackupController, actionScope: CoroutineScop
 }
 
 @Composable
-fun JsonBackupScreen(state: JsonBackupUiState, onAction: (JsonBackupAction) -> Unit, modifier: Modifier = Modifier) {
+fun JsonBackupScreen(state: JsonBackupUiState, onAction: (JsonBackupAction) -> Unit, modifier: Modifier = Modifier,
+    showExport: Boolean = true) {
     val report = state.report
     val conflicts = remember(report) { report?.items.orEmpty().filter { it.status == JsonMergeStatus.CONFLICT } }
     val counts = remember(report) { JsonMergeItemKind.entries.associateWith { kind ->
@@ -102,7 +103,7 @@ fun JsonBackupScreen(state: JsonBackupUiState, onAction: (JsonBackupAction) -> U
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("json_backup_retry")) { Text(stringResource(R.string.json_backup_retry)) }
             }
         }
-        item { OutlinedButton(onClick = { onAction(JsonBackupAction.EXPORT) }, enabled = !state.busy,
+        if (showExport) item { OutlinedButton(onClick = { onAction(JsonBackupAction.EXPORT) }, enabled = !state.busy,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("json_backup_export")) { Text(stringResource(R.string.json_backup_export)) } }
     }
 }

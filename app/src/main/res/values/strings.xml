@@ -1,5 +1,25 @@
 <resources>
     <string name="settings_title">Ustawienia</string>
+    <string name="settings_data">Dane</string>
+    <string name="data_export_csv">Exportuj wpisy do CSV</string>
+    <string name="data_export_json">Exportuj kopię zapasową JSON</string>
+    <string name="data_import_csv">Importuj wpisy z CSV</string>
+    <string name="data_import_json">Importuj kopię zapasową JSON</string>
+    <string name="data_description">Zapisz dane do pliku lub wybierz plik do importu. Przed importem sprawdzisz dane i potwierdzisz zapis.</string>
+    <string name="data_owner_only">Import jest dostępny tylko dla właściciela rodziny.</string>
+    <string name="data_offline">Import wymaga połączenia z internetem.</string>
+    <string name="data_pending">Zaczekaj na synchronizację zmian przed importem.</string>
+    <string name="data_loading">Sprawdzanie dostępu i synchronizacji…</string>
+    <string name="data_readiness_error">Nie można potwierdzić dostępu lub synchronizacji. Sprawdź połączenie i otwórz Dane ponownie.</string>
+    <string name="data_busy">Przygotowywanie danych…</string>
+    <string name="data_export_complete">Plik został zapisany.</string>
+    <string name="data_error">Nie udało się wykonać operacji. Sprawdź połączenie i dostęp do pliku, a następnie spróbuj ponownie.</string>
+    <string name="data_export_error">Nie udało się zapisać eksportu. Sprawdź wolne miejsce i uprawnienia do zapisu pliku. Plik może być niekompletny i nie stanowi poprawnej kopii zapasowej. Usuń go przed ponowną próbą.</string>
+    <string name="data_privacy_title">Dane prywatne w pliku</string>
+    <string name="data_privacy_warning">Eksport zawiera prywatne dane finansowe rodziny. Plik nie jest szyfrowany. Zapisz go w bezpiecznym miejscu i udostępniaj tylko zaufanym osobom.</string>
+    <string name="data_privacy_confirm">Wybierz miejsce zapisu</string>
+    <string name="data_cancel">Anuluj</string>
+    <string name="dev_data_banner">DEV — podgląd danych, bez połączenia z kontem</string>
     <string name="settings_open_description">Otwórz ustawienia</string>
     <string name="settings_selected">Ustawienia otwarte</string>
     <string name="settings_unselected">Ustawienia zamknięte</string>

@@ -30,6 +30,7 @@ fun SettingsScreen(
     onOpenFamily: () -> Unit,
     onSetAccountBalance: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenData: () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -52,6 +53,10 @@ fun SettingsScreen(
         OutlinedButton(onClick = onSetAccountBalance,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("settings-opening-balance")) {
             Text(stringResource(R.string.settings_set_account_balance))
+        }
+        OutlinedButton(onClick = onOpenData,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("settings-data")) {
+            Text(stringResource(R.string.settings_data))
         }
     }
 }

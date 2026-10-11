@@ -5,6 +5,7 @@
     <application android:usesCleartextTraffic="true">
         <activity android:name=".CsvImportPreviewActivity" android:exported="true" />
         <activity android:name=".JsonBackupPreviewActivity" android:exported="true" />
+        <activity android:name=".DataPreviewActivity" android:exported="true" />
         <provider
             android:name="com.google.firebase.provider.FirebaseInitProvider"
             tools:node="remove" />

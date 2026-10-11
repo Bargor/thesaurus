@@ -17,6 +17,22 @@ class JsonBackupCoordinator(
     private val mutex = Mutex()
     fun currentIdentity(): CsvImportIdentity? = backend.currentIdentity()
 
+    /** Same owner, identity and synchronized server guard used immediately before import. */
+    suspend fun checkImportReadiness(householdId: String) {
+        val identity = backend.currentIdentity() ?: throw JsonBackupException("JSON_AUTH_REQUIRED")
+        load(householdId, identity, true)
+    }
+
+    suspend fun exportCsv(householdId: String, exportedAt: Instant): CsvExportArtifact {
+        val identity = backend.currentIdentity() ?: throw JsonBackupException("JSON_AUTH_REQUIRED")
+        val snapshot = load(householdId, identity, false)
+        val document = JsonBackupExporter.toDocument(snapshot, exportedAt)
+        return CsvExporter.export(document.entries, CsvNameLookup(
+            categoryNames = document.categories.associate { it.id to it.name },
+            subcategoryNames = document.subcategories.associate { (it.categoryId to it.id) to it.name },
+        ), exportedAt.atZone(ZoneOffset.UTC).toLocalDate())
+    }
+
     suspend fun prepare(householdId: String, bytes: ByteArray): JsonMergeSession {
         val document = BackupJsonCodec.decode(bytes)
         val currentDate = today()
@@ -132,7 +148,13 @@ class JsonBackupCoordinator(
 object JsonBackupExporter {
     fun export(snapshot: JsonBackupSnapshot, exportedAt: Instant,
         appVersion: String? = null): JsonBackupExportArtifact {
-        val document = BackupDocument(ExportMetadata(exportedAt, snapshot.household.id, appVersion),
+        val document = toDocument(snapshot, exportedAt, appVersion)
+        return JsonBackupExportArtifact(BackupJsonCodec.encode(document),
+            "thesaurus-${exportedAt.atZone(ZoneOffset.UTC).toLocalDate()}.json")
+    }
+
+    fun toDocument(snapshot: JsonBackupSnapshot, exportedAt: Instant,
+        appVersion: String? = null): BackupDocument = BackupDocument(ExportMetadata(exportedAt, snapshot.household.id, appVersion),
             snapshot.household.openingBalanceGrosze,
             snapshot.categories.map { BackupCategory(it.id, it.name, it.authorId, it.updatedById,
                 it.color, it.archived, TransferEntryType.valueOf(it.defaultEntryType.name), it.createdAt, it.updatedAt) },
@@ -141,7 +163,4 @@ object JsonBackupExporter {
             snapshot.entries.map { BackupEntry(it.id, it.amountGrosze, it.date, it.categoryId, it.authorId,
                 it.updatedById, it.title, it.subcategoryId, it.tags, it.createdAt, it.updatedAt,
                 it.deleted, it.deletedAt, it.deletedById) })
-        return JsonBackupExportArtifact(BackupJsonCodec.encode(document),
-            "thesaurus-${exportedAt.atZone(ZoneOffset.UTC).toLocalDate()}.json")
-    }
 }
