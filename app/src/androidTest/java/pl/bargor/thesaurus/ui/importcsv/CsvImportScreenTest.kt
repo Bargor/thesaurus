@@ -81,7 +81,10 @@ class CsvImportScreenTest {
             mapping = CsvColumnMapping(date = 0, amount = 1, category = 2))
         display(state, action = actions::add)
         compose.onNodeWithTag("csv_import_start").assertDoesNotExist()
-        compose.onNodeWithTag("csv_import_confirm_mapping").performScrollTo().assertIsEnabled().performClick()
+        // The confirmation item may not be composed until the lazy list scrolls to it.
+        compose.onNodeWithTag("csv_import_screen")
+            .performScrollToNode(hasTestTag("csv_import_confirm_mapping"))
+        compose.onNodeWithTag("csv_import_confirm_mapping").assertIsDisplayed().assertIsEnabled().performClick()
         assertEquals(listOf(CsvImportAction.Mapping(state.mapping, state.dateFormat)), actions)
     }
 
