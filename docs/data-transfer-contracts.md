@@ -1,6 +1,6 @@
 # Import/export contracts (format version 1)
 
-Issue [#108](https://github.com/Bargor/thesaurus/issues/108) introduces file-layer contracts. CSV export (#109), parsing/validation (#110), owner-only persistence (#111) and mapping/repair UI (#112) build on those contracts. Android document pickers follow in #114. No import/export actions appear in production Settings yet.
+Issue [#108](https://github.com/Bargor/thesaurus/issues/108) introduces file-layer contracts. CSV export (#109), parsing/validation (#110), owner-only persistence (#111), mapping/repair UI (#112) and full JSON backup merge (#113) build on those contracts. Android document pickers follow in #114. No import/export actions appear in production Settings yet.
 
 ## JSON scope
 
@@ -34,6 +34,33 @@ Unknown fields and wrong container shapes are rejected before their contents are
 The raw-cell limit is distinct from valid ledger-field limits: a 161-character title must remain available to row validation/repair instead of disappearing. CSV parser enforcement is implemented in #110. Category order's existing 200-ID preference limit is not treated as a taxonomy limit.
 
 ## Shared CSV/import state
+
+### Full JSON backup and merge (issue #113)
+
+`JsonBackupCoordinator.export` requires an authenticated household member and a complete server snapshot. It exports the opening balance, all categories/subcategories (including archived records and color/default direction), and active/deleted entries with their stored audit references/timestamps. Membership is consulted only for authorization and is never included in the file. Export returns complete validated UTF-8 bytes and `thesaurus-YYYY-MM-DD.json` (UTC export date); it does not open a destination file.
+
+`prepare` decodes and validates the complete file before server reads or writes, rejects future dates and invalid domain-normalized values, and verifies the current owner against a complete, synchronized server snapshot. Duplicate destination IDs, broken destination references and oversized collections fail closed; queries use overflow sentinels, never silent truncation. Counts are bounded by the file contract for both existing and uniquely planned new records; a merge that would exceed those collection limits fails before any write. Membership reads have a separate 10,000-member safety cap.
+
+The read-only preview distinguishes new, skipped and conflicting items, separately for the opening balance, categories, subcategories and entries. Explicit confirmation rereads and compares the exact preview snapshot; changed household state, membership, taxonomy or ledger requires a fresh preview rather than silently expanding the approved changes.
+
+| Imported item | Additive merge policy |
+| --- | --- |
+| Opening balance | Equal values are skipped. A differing value is initialized only when the destination has zero balance, no entries and revision zero; otherwise it is a conflict and the current value stays unchanged. |
+| Category | Match trimmed, case-insensitive name, effective color, archive state and default direction. Multiple matches are a conflict. Different content gets a new deterministic ID rather than overwriting the source ID. |
+| Subcategory | Match normalized name/archive state under the remapped parent category. Conflicting parents propagate to their children. |
+| Entry | Reserve known source identities first, then match date, signed grosze, normalized title/tags and remapped taxonomy one-to-one, preferring matching deletion state and author. Existing tombstones stay deleted. An incoming tombstone conflicting with an active record is reported as a conflict, not applied as deletion. |
+
+SHA-256 IDs use the `json_` namespace: taxonomy IDs derive from content, while entry IDs derive from source household and source entry identity. Source ID collisions do not overwrite current documents. Occupied generated IDs with different content are conflicts. Known identities are reserved before content matching, so one existing entry cannot satisfy two source rows. Distinct equal-valued entries, including an active entry and tombstone with identical financial fields, retain their multiplicity in an empty destination. Reimporting an older backup cannot replace an edited record with the same known identity. Nullable legacy colors resolve using the original category ID so ID remapping cannot change their displayed color.
+
+New-record authors whose UID still belongs to the current household are preserved; other source authors map to the importer. This is UID-based mapping, not e-mail matching. Import deliberately does **not** replay historical editor/deleter identities or timestamps: new records use the importing user and fresh server-created/updated/deleted timestamps. The backup itself retains the original audit values; restore preserves financial content, relationships and archive/deletion state, not the old server audit trail. Existing records are never modified.
+
+Writes are one-operation transactions, with parents before children and the optional opening balance first. This bounds atomic work and [Firestore rule-access budgets](https://firebase.google.com/docs/firestore/security/rules-conditions#access_call_limits). Each transaction reauthorizes the owner, current author membership, household balance/revision fence and selected taxonomy. Ledger creates atomically increment `ledgerRevision`; initializing opening balance does not increment it. Server-only preflight respects disabled networking, and there are no queued offline import writes. Like CSV, an already dispatched Firestore transaction is awaited to its terminal result; it is not a hard network-acknowledgement timeout.
+
+The first failed/conflicting transaction stops the remaining plan, retaining confirmed outcomes and pending items. Retry rereads the original file and server state into a **new preview requiring confirmation**. Content deduplication and deterministic insert-only IDs make retry safe after partial or unacknowledged success. Progress callbacks do not copy the complete report or reload the ledger per record, and callback failures cannot downgrade an acknowledged write.
+
+Firestore rules add narrowly scoped, owner-only `json_<64 hex>` creation for archived taxonomy and historical entries with existing coherent taxonomy and current-family authors. All existing field validators, server audit checks, ledger revision fencing, immutable authorship and tombstone update prohibitions remain. These rules are not deployed to production automatically.
+
+`JsonBackupController` and the Polish leaf UI expose preview, confirmation, scalar progress, conflict reasons, per-kind outcomes, retry and an export-artifact callback for #114. A retained ViewModel scope protects configuration changes; source bytes stay in private memory, not saved-instance-state Bundles. A process restart requires selecting the backup again; import then deduplicates confirmed server data. The DEV-only simulation uses this real flow with a synthetic memory backend, including archived/deleted data and partial failure, without accessing Firebase or the interactive household.
 
 ### CSV export (issue #109)
 

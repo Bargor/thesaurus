@@ -12,6 +12,11 @@ import androidx.compose.ui.res.stringResource
 @Composable
 internal fun DeveloperToolsContent(onSignOut: () -> Unit) {
     val context = LocalContext.current
+    TextButton(modifier = Modifier.testTag("dev-json-backup-preview"), onClick = {
+        context.startActivity(Intent(context, JsonBackupPreviewActivity::class.java))
+    }) {
+        Text(stringResource(R.string.dev_json_backup_preview))
+    }
     TextButton(modifier = Modifier.testTag("dev-csv-import-preview"), onClick = {
         context.startActivity(Intent(context, CsvImportPreviewActivity::class.java))
     }) {
