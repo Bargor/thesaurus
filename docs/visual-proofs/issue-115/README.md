@@ -16,3 +16,17 @@ Both files remain in Downloads for manual verification. The global balance remai
 [Privacy actions at 320dp / 200% font](privacy-large-font.png) shows the actual updated DEV application. Confirmation and cancellation occupy separate full-width rows, with no overlap. All warning text remains visible. Emulator font scale and density were restored to their original 100% / 420dpi after inspection; physical resolution was not changed.
 
 The final DEV regression passed 52/52 tests, including six accessibility checks and the Polish/Arabic locale check. Accessibility tests apply real device font/density settings before launching the activity and restore the exact prior settings in `finally`, so dialogs are covered too. They verify the bulk-mapping checkbox's spoken label and 48dp bounds, mapping/repair scrolling, callbacks, summaries, warning geometry, and a deliberately clipped-text fixture that must fail the layout assertion.
+
+## CI follow-up: constrained display height
+
+The first CI run exposed two additional failures on its 320x640 / 160dpi emulator: the CSV repair test scrolled a TextField's nested viewport instead of the outer editor, and the privacy notice was genuinely clipped at 200% font. The editor test now scrolls the explicit outer viewport and verifies that supporting errors are fully visible. The dialog heading and complete notice share a scrollable viewport; consent and cancellation remain outside it, always reachable.
+
+These screenshots show the updated real DEV app, not a test fixture:
+
+- [320x640, top](privacy-ci-top.png): the heading and start of the notice, with separate confirmation/cancellation actions.
+- [320x640, bottom](privacy-ci-bottom.png): the end of the same notice after scrolling; the actions stay in place.
+- [320x480, bottom](privacy-short-viewport.png): the final notice lines and both actions on a still shorter display, including this AVD's system insets.
+
+The entire notice is reachable by scrolling, not simultaneously visible at these font/display settings. Only the dialog was inspected and cancelled; no export or import was started in this follow-up. Physical-size overrides, density and font scale were restored to the original 1080x2400 / 420dpi / 100% afterwards, without clearing data.
+
+Final follow-up verification: Debug accessibility **7/7**, DEV transfer UI/navigation/restoration/locale regression **53/53**, Debug JVM **400/400**, DEV JVM **400/400**, and `lintDebug` passed. The accessibility rule now sets and reads back both the actual display size and density, covers 320x640 and 320x480, checks scrolling/text geometry and callbacks, and restores all original settings in `finally`.

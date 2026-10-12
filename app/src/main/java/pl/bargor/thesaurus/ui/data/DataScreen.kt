@@ -69,8 +69,19 @@ fun DataScreen(
     if (state.warning != null) AlertDialog(
         modifier = Modifier.testTag("data-privacy-warning"),
         onDismissRequest = onDismissWarning,
-        title = { Text(stringResource(R.string.data_privacy_title)) },
-        text = { Text(stringResource(R.string.data_privacy_warning)) },
+        text = {
+            // Keep the heading and entire notice in one viewport: at large fonts even
+            // the heading can otherwise consume all space reserved above the actions.
+            Column(Modifier.testTag("data-privacy-notice-scroll")
+                .verticalScroll(rememberScrollState()).semantics { isTraversalGroup = true },
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(stringResource(R.string.data_privacy_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.testTag("data-privacy-title").semantics { heading() })
+                Text(stringResource(R.string.data_privacy_warning), modifier = Modifier.testTag("data-privacy-notice"))
+            }
+        },
         confirmButton = {
             // Keep multiline actions in separate rows at large font sizes.
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
