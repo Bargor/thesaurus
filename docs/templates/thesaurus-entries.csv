@@ -1,0 +1,5 @@
+date,amount,type,title,category,subcategory,tags,author
+2026-01-10,-12.34,expense,"Lunch, ""Żółć"" 🍲",Food,Groceries,"[""food,home"",""żółć""]",Example author
+2026-01-11,2500.00,income,,Salary,,[],Example author
+2026-01-12,-0.01,expense,"First line
+Second line",Food,,"[""quote\""tag"",""line\nbreak""]",Example author

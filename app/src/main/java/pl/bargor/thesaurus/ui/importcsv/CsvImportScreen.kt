@@ -153,6 +153,7 @@ private fun OriginalCells(headers: List<String>, cells: List<String>) {
 @Composable
 private fun RowEditor(state: CsvImportUiState, row: CsvImportRowResult, onAction: (CsvImportAction) -> Unit, close: () -> Unit) {
     val number = row.source.rowNumber
+    val batchLabel = stringResource(R.string.csv_import_batch)
     var batch by rememberSaveable(number) { mutableStateOf(false) }
     var categoryName by rememberSaveable(number) { mutableStateOf("") }
     var subcategoryName by rememberSaveable(number) { mutableStateOf("") }
@@ -180,7 +181,11 @@ private fun RowEditor(state: CsvImportUiState, row: CsvImportRowResult, onAction
                         Column { Text(header); row.source.issues.filter { it.field.equals(field.name, ignoreCase = true) }.forEach { IssueText(it) } }
                     }, modifier = Modifier.fillMaxWidth().testTag("csv_import_edit_field_$index"))
                 }
-                Row { Checkbox(batch, { batch = it }, enabled = !state.busy, modifier = Modifier.testTag("csv_import_batch_mapping")); Text(stringResource(R.string.csv_import_batch), modifier = Modifier.padding(top = 12.dp)) }
+                Row {
+                    Checkbox(batch, { batch = it }, enabled = !state.busy,
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag("csv_import_batch_mapping").semantics { contentDescription = batchLabel })
+                    Text(batchLabel, modifier = Modifier.padding(top = 12.dp))
+                }
                 Choice(stringResource(R.string.csv_import_category), state.categories.firstOrNull { it.id == parent }?.name ?: stringResource(R.string.csv_import_existing), state.categories.filter { !it.archived }.map { it.id to it.name }, !state.busy, "csv_import_category") { onAction(CsvImportAction.Category(number, it, batch)) }
                 Choice(stringResource(R.string.csv_import_subcategory), (state.selectedSubcategories[number] ?: row.entry?.subcategoryId)?.let { id -> state.subcategories.firstOrNull { it.id == id }?.name } ?: if (state.selectedSubcategories.containsKey(number)) stringResource(R.string.csv_import_no_subcategory) else stringResource(R.string.csv_import_existing), listOf(null to stringResource(R.string.csv_import_no_subcategory)) + state.subcategories.filter { !it.archived && it.categoryId == parent }.map { it.id to it.name }, !state.busy && parent != null, "csv_import_subcategory") { onAction(CsvImportAction.Subcategory(number, it, batch)) }
                 OutlinedTextField(categoryName, { categoryName = it }, enabled = !state.busy, label = { Text(stringResource(R.string.csv_import_new_category_name)) }, modifier = Modifier.fillMaxWidth().testTag("csv_import_new_category_name"))
