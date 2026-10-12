@@ -119,6 +119,9 @@ class TransferAccessibilityTest {
             }
         }
         val issue = hasTestTag("csv_import_issue_2_date_INVALID_DATE") and hasAnyAncestor(hasTestTag("csv_import_editor"))
+        // Offscreen TextField supporting children may be unplaced. Bring their measured
+        // field ancestor back into the editor before inspecting the error's own bounds.
+        scrollWithin("csv_import_editor", compose.onNodeWithTag("csv_import_edit_field_0"))
         val issueNode = compose.onNode(issue, useUnmergedTree = true)
         scrollWithin("csv_import_editor", issueNode, fullyVisible = true)
         assertTrue(issueNode.fetchSemanticsNode().config[SemanticsProperties.Error].isNotBlank())
@@ -228,6 +231,13 @@ class TransferAccessibilityTest {
         val visible = viewport.fetchSemanticsNode().boundsInRoot
         val density = viewport.fetchSemanticsNode().layoutInfo.density.density
         val bounds = node.getUnclippedBoundsInRoot()
+        val target = node.fetchSemanticsNode()
+        val range = viewport.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        val detail = "targetPlaced=${target.layoutInfo.isPlaced}, target=$bounds, clipped=${target.boundsInRoot}, " +
+            "viewport=$visible, scroll=${range.value()}/${range.maxValue()}"
+        assertTrue("Scroll target must be placed before measuring in $viewportTag: $detail", target.layoutInfo.isPlaced)
+        assertTrue("Scroll target must have finite bounds in $viewportTag: $detail",
+            listOf(bounds.top.value, bounds.bottom.value, bounds.left.value, bounds.right.value).all { it.isFinite() })
         val top = bounds.top.value * density
         val bottom = bounds.bottom.value * density
         val delta = when {
@@ -236,8 +246,19 @@ class TransferAccessibilityTest {
             bottom > visible.bottom -> bottom - visible.bottom
             else -> 0f
         }
-        if (delta != 0f) viewport.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, delta) }
-        node.assertIsDisplayed()
+        if (delta != 0f) {
+            viewport.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, delta) }
+            // ScrollBy launches an animated coroutine; settle it before inspecting
+            // placement or dispatching another scroll that could cancel that animation.
+            compose.waitForIdle()
+        }
+        val afterBounds = node.getUnclippedBoundsInRoot()
+        try {
+            node.assertIsDisplayed()
+        } catch (failure: AssertionError) {
+            throw AssertionError("Scroll must expose the target in $viewportTag: before=[$detail], delta=$delta, " +
+                "after=$afterBounds, clipped=${node.fetchSemanticsNode().boundsInRoot}, scroll=${range.value()}/${range.maxValue()}", failure)
+        }
         if (fullyVisible) {
             val after = node.getUnclippedBoundsInRoot()
             assertTrue("Text must be fully reachable in $viewportTag: text=$after, viewport=$visible",
