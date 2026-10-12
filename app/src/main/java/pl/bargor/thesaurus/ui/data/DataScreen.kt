@@ -71,12 +71,17 @@ fun DataScreen(
         onDismissRequest = onDismissWarning,
         title = { Text(stringResource(R.string.data_privacy_title)) },
         text = { Text(stringResource(R.string.data_privacy_warning)) },
-        confirmButton = { TextButton(onClick = onConfirmExport, modifier = Modifier.testTag("data-privacy-confirm")) {
-            Text(stringResource(R.string.data_privacy_confirm))
-        } },
-        dismissButton = { TextButton(onClick = onDismissWarning, modifier = Modifier.testTag("data-privacy-cancel")) {
-            Text(stringResource(R.string.data_cancel))
-        } },
+        confirmButton = {
+            // Keep multiline actions in separate rows at large font sizes.
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onConfirmExport, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("data-privacy-confirm")) {
+                    Text(stringResource(R.string.data_privacy_confirm))
+                }
+                TextButton(onClick = onDismissWarning, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("data-privacy-cancel")) {
+                    Text(stringResource(R.string.data_cancel))
+                }
+            }
+        },
     )
 }
 
