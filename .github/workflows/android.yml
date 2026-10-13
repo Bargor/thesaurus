@@ -19,6 +19,23 @@ permissions:
   contents: read
 
 jobs:
+  dev-launcher:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        powershell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test DEV launcher orchestration and process handling
+        env:
+          DEV_LAUNCHER_TEST_SHELL: ${{ matrix.powershell }}
+        run: npm run test:dev-launcher
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30

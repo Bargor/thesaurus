@@ -152,6 +152,52 @@ The app connects to production by default. Emulator routing is explicitly opt-in
 
 `devDebug` is a separate installable app, **Thesaurus DEV** (`pl.bargor.thesaurus.dev`). It uses only the `demo-thesaurus` Firebase project and routes Authentication to `10.0.2.2:9099` and Firestore to `10.0.2.2:8080`. Its checked-in `app/src/devDebug/google-services.json` contains fake emulator identifiers. The normal `debug` and `release` builds keep Google login and the production Firebase configuration. **Never enter real credentials or production data in the DEV app.** The DEV app is intended for an Android emulator; `10.0.2.2` will not reach the host from a physical phone.
 
+### One-command DEV launch
+
+Install JDK 21, Node.js 22 or later, the Android SDK packages from **Requirements**, and the Android Emulator. Create an API 31+ Google APIs AVD as described in **Create an emulator**. Make sure `JAVA_HOME` points to JDK 21. Install the repository's pinned Firebase CLI once with `npm ci`; a global Firebase CLI, Firebase login, and the separate `android` CLI are not required by the launcher.
+
+From PowerShell in the repository root:
+
+```powershell
+.\scripts\start-dev.ps1 -AvdName thesaurus_api31
+```
+
+Use your own AVD name from Android Studio Device Manager (or `emulator -list-avds`) instead of `thesaurus_api31`. The launcher checks prerequisites, starts or reuses that Android emulator and the local `demo-thesaurus` Auth/Firestore services, waits until they are ready, builds `devDebug`, installs its APK with `adb install -r` on the selected emulator only, and opens **Thesaurus DEV**. It never installs on a connected phone, deploys Firebase configuration, wipes the AVD, uninstalls the app, or clears app data. A wrong project, occupied incompatible ports, or failed readiness/build/install stops the launch with an error instead of falling back to production.
+
+If your SDK is not at the standard location, pass its path explicitly:
+
+```powershell
+.\scripts\start-dev.ps1 -AvdName thesaurus_api31 -SdkPath 'D:\Android\Sdk'
+```
+
+If `local.properties` already defines `sdk.dir`, it must agree with the selected SDK; the launcher refuses conflicting paths rather than having Gradle silently build against a different installation.
+
+After launch, sign in using the fake account described below. Existing emulator services and app data are reused; the first launch of a new Firebase process starts with empty temporary server data unless you provide a previously exported DEV snapshot. New Android emulator launches cold-boot without loading or saving Quick Boot snapshots; their AVD disk and app data are preserved. Use `-SoftwareRendering` if host GPU startup fails; this applies only to a newly started emulator, not to a running device or saved AVD settings.
+
+See the launcher's help (`Get-Help .\scripts\start-dev.ps1 -Detailed`) for options. Readiness defaults to 300 seconds per service (`-TimeoutSeconds` changes this); the Gradle build has its own 30-minute limit. Logs and per-invocation ownership records are in the ignored `build\dev-launcher` directory. Helpers start in the background; the Android emulator window is visible. Closing the launcher does not stop those services, including after a build/readiness failure. Reused services retain their original ownership; recorded PIDs are informational and must not be blindly used later to stop a possibly unrelated process.
+
+To preserve synthetic Firebase data before stopping a suite, export it while it is running to a **new** local directory:
+
+```powershell
+npx --no-install firebase emulators:export .\app\build\my-dev-export --project demo-thesaurus --config .\firebase.json
+```
+
+Afterwards, stop only the Firebase process you started (for a manual foreground suite, use Ctrl+C in its terminal; for a launcher-started suite, identify the live Node process by its exact command line and session record before ending it). The exported snapshot remains available. On a later start:
+
+```powershell
+.\scripts\start-dev.ps1 -AvdName thesaurus_api31 -FirebaseImportPath .\app\build\my-dev-export
+```
+
+Import is applied only when starting a new suite; it never replaces data in a running suite. Do not use real-account or production snapshots. `app\build` is ignored but may be removed by Gradle clean; keep any snapshot you need long-term in a private location outside generated build directories and outside version control. Do not confuse preserving app data during installation with persisting Firebase's in-memory data across a computer restart.
+
+If PowerShell blocks execution of the checked-in script, use a trusted-repository invocation without changing machine-wide policy:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -AvdName thesaurus_api31
+```
+
+### Manual launch (alternative)
+
 From PowerShell in the repository root, install dependencies and start Auth and Firestore in one terminal. Leave it running:
 
 ```powershell
@@ -247,30 +293,45 @@ The device should be listed as `device`, not `offline`. The normal local suite n
 
 ## Build and install on a phone
 
-1. Install the prerequisites and complete the Firebase/SHA setup above.
+Use the ordinary **`debug`** build (`pl.bargor.thesaurus`), not **`devDebug`**. A physical phone needs Android 12 / API 31 or newer, internet access, and Google sign-in for the configured Firebase project. It does **not** need the local Firebase emulators or Node.js. The checked-in DEV launcher is intentionally emulator-only.
+
+1. Install JDK 21 and the Android SDK prerequisites above. Set `JAVA_HOME` to JDK 21 and configure the SDK in Android Studio or `local.properties`. The checked-in `app/google-services.json` selects the existing Firebase project; for your own project, follow **Firebase setup** first. Installing an APK does not deploy Firestore rules or indexes: the project owner must separately ensure that the reviewed server configuration is compatible with this app version.
 2. On the phone, open **Settings > About phone** and tap **Build number** seven times. Return to **Developer options** and enable **USB debugging**.
 3. Connect the unlocked phone with a data-capable USB cable and accept its RSA debugging prompt.
-4. Verify the connection:
+4. In PowerShell at the repository root, locate ADB and list devices:
 
-   ```sh
-   adb devices
+   ```powershell
+   $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+   & $adb devices -l
    ```
 
-5. Build the debug APK from the repository root:
+   For a custom SDK location, replace `$adb` with that SDK's `platform-tools\adb.exe`. Copy the phone's serial from the first column and use it below as `<PHONE_SERIAL>`; do not choose an `emulator-...` entry. Its state must be `device`, not `unauthorized` or `offline`. Explicit serial selection lets the emulator remain running without accidentally installing on it.
 
-   ```sh
-   ./gradlew assembleDebug
+5. Build the ordinary debug APK and display its signing fingerprints:
+
+   ```powershell
+   .\gradlew.bat :app:assembleDebug :app:signingReport
    ```
 
-   On Windows use `.\gradlew.bat assembleDebug`.
+   The APK is `app\build\outputs\apk\debug\app-debug.apk`. For Google login, the Firebase project owner must register the **debug variant's actual SHA-1 and SHA-256** in Firebase and the corresponding package/certificate restriction on the client API key. Use fingerprints from this machine's signing report, not another developer's or CI's certificate. The Android package is `pl.bargor.thesaurus`. See **Firebase setup**; do not remove API-key restrictions to make login work. Download an updated client configuration and rebuild if the Firebase setup requires it.
 
 6. Install or update the APK while keeping its existing app data:
 
-   ```sh
-   adb install -r app/build/outputs/apk/debug/app-debug.apk
+   ```powershell
+   & $adb -s '<PHONE_SERIAL>' install -r 'app\build\outputs\apk\debug\app-debug.apk'
    ```
 
-7. Open **Thesaurus** from the device launcher and sign in with an account registered for the configured Firebase project.
+7. Open the application explicitly (or tap **Thesaurus** in the phone launcher):
+
+   ```powershell
+   & $adb -s '<PHONE_SERIAL>' shell am start -W -n pl.bargor.thesaurus/pl.bargor.thesaurus.MainActivity
+   ```
+
+   Sign in with Google and create or join a household. This is the real configured Firebase backend, not the synthetic DEV household. Data entered here is not imported automatically from the emulator.
+
+For later updates, repeat the build and `install -r` with the **same signing key**. Do not uninstall or run `pm clear` as an update workaround: both erase local app data and may lose unsynchronized entries. `INSTALL_FAILED_UPDATE_INCOMPATIBLE` means the installed app and new APK have different signing certificates; recover/use the original signing key or resolve the data-migration plan before uninstalling. `assembleRelease` alone produces an unsigned release APK with this repository's current configuration; use the debug APK above for direct personal testing, or separately configure release signing before distributing a release build.
+
+On macOS/Linux, replace `.\gradlew.bat` with `./gradlew` and use `adb` from your SDK's `platform-tools` directory with the same `-s <PHONE_SERIAL>` selection. The USB steps follow [Android's hardware-device guide](https://developer.android.com/studio/run/device) and [ADB documentation](https://developer.android.com/tools/adb).
 
 `adb` is in the Android SDK's `platform-tools` directory (for example, `%LOCALAPPDATA%\Android\Sdk\platform-tools` on a default Windows installation). `./gradlew installDebug` is an equivalent convenience command when one device is connected. If `adb devices` shows `unauthorized`, unlock the phone and accept the prompt; if it shows no device, try a data-capable cable, another USB mode/port, or restart `adb` with `adb kill-server` followed by `adb start-server`. Windows devices may also require the manufacturer's OEM USB driver.
 
@@ -278,6 +339,7 @@ The device should be listed as `device`, not `offline`. The normal local suite n
 
 1. Open the repository root and wait for Gradle sync to finish with JDK 21.
 2. Select the `app` run configuration.
+   In **Build Variants**, select **debug** for a phone, not **devDebug**. Google login still needs the correct Firebase signing fingerprints above.
 3. Select the connected phone or the running API 31+ emulator.
 4. Click **Run**. Android Studio builds, installs, and launches the same debug application.
 
