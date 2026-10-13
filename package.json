@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:dev-launcher": "node --test scripts/test-dev-launcher.mjs",
     "test:ci-assembly": "node --test scripts/test-ci-assembly.mjs",
     "test:ci-instrumentation": "node --test scripts/test-ci-instrumentation.mjs",
     "test:variants": "node --test scripts/test-variant-sources.mjs",
